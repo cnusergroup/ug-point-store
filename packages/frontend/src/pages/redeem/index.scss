@@ -1,0 +1,644 @@
+/* ============================================
+   Redeem Page
+   Uses design system CSS variables from app.scss
+   ============================================ */
+
+.redeem-page {
+  min-height: 100vh;
+  background-color: var(--bg-base);
+  padding-bottom: var(--space-10);
+}
+
+/* ---- Header ---- */
+.redeem-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  background: rgba(26, 27, 37, 0.95);
+  border-bottom: 1px solid var(--card-border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+
+  &__back {
+    font-size: 15px;
+    color: var(--text-secondary);
+    cursor: pointer;
+
+    &:hover {
+      color: var(--text-primary);
+    }
+  }
+
+  &__title {
+    font-family: var(--font-display);
+    font-size: var(--text-body-lg);
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  &__spacer {
+    width: var(--space-10);
+  }
+}
+
+/* ---- Loading / Error ---- */
+.redeem-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 120px var(--space-5);
+
+  &__text {
+    color: var(--text-tertiary);
+    font-size: var(--text-body);
+  }
+}
+
+.redeem-error-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 120px var(--space-5);
+  gap: var(--space-4);
+
+  &__text {
+    color: var(--error);
+    font-size: var(--text-body);
+  }
+
+  &__back-btn {
+    padding: var(--space-3) var(--space-6);
+    background: rgba(124, 109, 240, 0.15);
+    color: var(--accent-primary);
+    border-radius: var(--space-2);
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    cursor: pointer;
+  }
+}
+
+/* ---- Content wrapper ---- */
+.redeem-content {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-5);
+}
+
+/* ---- Product Summary Card ---- */
+.redeem-product {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--card-border);
+  border-radius: var(--space-3);
+  margin-bottom: var(--space-6);
+
+  &__image {
+    width: 64px;
+    height: 64px;
+    border-radius: var(--radius-md);
+    flex-shrink: 0;
+  }
+
+  &__image-placeholder {
+    width: 64px;
+    height: 64px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(135deg, var(--bg-surface), var(--bg-elevated));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  &__image-placeholder-icon {
+    font-size: 28px;
+  }
+
+  &__info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__name {
+    display: block;
+    font-family: var(--font-display);
+    font-size: var(--text-body-lg);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--space-1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__type {
+    display: inline-block;
+    font-size: var(--text-overline);
+    font-weight: 600;
+    padding: 2px var(--space-2);
+    border-radius: var(--space-1);
+  }
+
+  &__type--points {
+    background: rgba(124, 109, 240, 0.15);
+    color: var(--accent-primary);
+  }
+
+  &__type--code {
+    background: rgba(245, 166, 35, 0.12);
+    color: var(--role-leader);
+  }
+}
+
+/* ---- Points Confirmation ---- */
+.redeem-confirm {
+  background: var(--bg-surface);
+  border: 1px solid var(--card-border);
+  border-radius: var(--space-3);
+  padding: var(--space-6) var(--space-5);
+  margin-bottom: var(--space-6);
+
+  &__title {
+    display: block;
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: var(--space-5);
+    text-align: center;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+
+  &__label {
+    font-size: var(--text-body);
+    color: var(--text-secondary);
+  }
+
+  &__value {
+    font-family: var(--font-display);
+    font-size: var(--text-body-lg);
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  &__value--cost {
+    color: var(--error);
+  }
+
+  &__value--balance {
+    color: var(--accent-primary);
+  }
+
+  &__value--after {
+    color: var(--success);
+  }
+
+  &__value--insufficient {
+    color: var(--error);
+  }
+
+  &__divider {
+    height: 1px;
+    background: var(--glass-border);
+    margin: var(--space-2) 0;
+  }
+}
+
+/* ---- Code Input Section ---- */
+.redeem-code {
+  background: var(--bg-surface);
+  border: 1px solid var(--card-border);
+  border-radius: var(--space-3);
+  padding: var(--space-6) var(--space-5);
+  margin-bottom: var(--space-6);
+
+  &__title {
+    display: block;
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: var(--space-2);
+    text-align: center;
+  }
+
+  &__subtitle {
+    display: block;
+    font-size: var(--text-body-sm);
+    color: var(--text-tertiary);
+    margin-bottom: var(--space-5);
+    text-align: center;
+  }
+
+  &__input-wrap {
+    position: relative;
+    margin-bottom: var(--space-2);
+  }
+
+  &__input {
+    width: 100%;
+    padding: 14px var(--space-4);
+    background: var(--bg-void);
+    border: 2px solid var(--card-border);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: var(--text-body-lg);
+    font-family: var(--font-mono);
+    letter-spacing: 2px;
+    text-align: center;
+    outline: none;
+    transition: border-color var(--transition-fast);
+    box-sizing: border-box;
+
+    &:focus {
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 3px rgba(124, 109, 240, 0.2);
+    }
+
+    &::placeholder {
+      color: var(--text-tertiary);
+      letter-spacing: 0;
+      font-family: inherit;
+    }
+  }
+
+  &__hint {
+    display: block;
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    text-align: center;
+    margin-top: var(--space-2);
+  }
+}
+
+/* ---- Action Button ---- */
+.redeem-btn {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, var(--accent-primary) 0%, #9b8afb 100%);
+  color: #fff;
+  border-radius: var(--radius-full);
+  font-family: var(--font-body);
+  font-size: var(--text-body-lg);
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  margin-bottom: var(--space-3);
+
+  &:hover {
+    box-shadow: var(--shadow-glow);
+    transform: translateY(-1px);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+
+  &--disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+
+    &:hover {
+      box-shadow: none;
+      transform: none;
+    }
+  }
+
+  &--loading {
+    opacity: 0.6;
+    pointer-events: none;
+  }
+}
+
+.redeem-cancel {
+  width: 100%;
+  padding: var(--space-3);
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-full);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    color: var(--text-primary);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+}
+
+/* ---- Error Message ---- */
+.redeem-error {
+  padding: var(--space-3) var(--space-4);
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-5);
+
+  &__text {
+    font-size: var(--text-body-sm);
+    color: var(--error);
+    display: block;
+    text-align: center;
+  }
+}
+
+/* ---- Success State ---- */
+.redeem-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-10) var(--space-5);
+  gap: var(--space-4);
+
+  &__icon {
+    font-size: 64px;
+    animation: successPop 0.6s ease;
+  }
+
+  &__title {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  &__message {
+    font-size: var(--text-body);
+    color: var(--text-secondary);
+    text-align: center;
+    line-height: 1.6;
+  }
+
+  &__detail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-4) var(--space-6);
+    background: rgba(45, 212, 168, 0.08);
+    border: 1px solid rgba(45, 212, 168, 0.2);
+    border-radius: var(--space-3);
+    margin-top: var(--space-2);
+  }
+
+  &__detail-label {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+  }
+
+  &__detail-value {
+    font-family: var(--font-display);
+    font-size: var(--text-price);
+    font-weight: 800;
+    color: var(--success);
+  }
+
+  &__actions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    width: 100%;
+    max-width: 320px;
+    margin-top: var(--space-4);
+  }
+
+  &__back-btn {
+    width: 100%;
+    padding: 14px;
+    background: linear-gradient(135deg, var(--accent-primary) 0%, #9b8afb 100%);
+    color: #fff;
+    border-radius: var(--radius-full);
+    font-family: var(--font-body);
+    font-size: var(--text-body-lg);
+    font-weight: 600;
+    text-align: center;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+
+    &:hover {
+      box-shadow: var(--shadow-glow);
+      transform: translateY(-1px);
+    }
+  }
+}
+
+/* ---- NOTE: @keyframes successPop is defined globally in app.scss ---- */
+
+/* ---- Points Code (no product) Section ---- */
+.redeem-points-code {
+  &__icon {
+    display: block;
+    font-size: 48px;
+    text-align: center;
+    margin-bottom: var(--space-4);
+  }
+}
+
+/* ---- Address Selector ---- */
+.redeem-address {
+  background: var(--bg-surface);
+  border: 1px solid var(--card-border);
+  border-radius: var(--space-3);
+  margin-bottom: var(--space-6);
+  overflow: hidden;
+
+  &--empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--space-6) var(--space-5);
+    gap: var(--space-2);
+  }
+
+  &__empty-icon {
+    font-size: 32px;
+  }
+
+  &__empty-text {
+    font-size: var(--text-body);
+    color: var(--text-tertiary);
+  }
+
+  &__empty-link {
+    font-size: var(--text-body-sm);
+    color: var(--accent-primary);
+    cursor: pointer;
+    margin-top: var(--space-1);
+
+    &:hover {
+      color: var(--accent-hover);
+    }
+  }
+
+  &__selected {
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-4) var(--space-5);
+    cursor: pointer;
+    position: relative;
+    transition: background var(--transition-fast);
+
+    &:hover {
+      background: var(--bg-hover);
+    }
+  }
+
+  &__label {
+    font-size: var(--text-body-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--space-2);
+  }
+
+  &__info {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  &__name-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  &__name {
+    font-family: var(--font-display);
+    font-size: var(--text-body-lg);
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  &__phone {
+    font-size: var(--text-body);
+    color: var(--text-primary);
+    opacity: 0.85;
+  }
+
+  &__badge {
+    font-size: var(--text-overline);
+    font-weight: 600;
+    padding: 1px var(--space-2);
+    border-radius: var(--space-1);
+    background: rgba(124, 109, 240, 0.15);
+    color: var(--accent-primary);
+  }
+
+  &__detail {
+    font-size: var(--text-body);
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+
+  &__placeholder {
+    font-size: var(--text-body);
+    color: var(--text-tertiary);
+  }
+
+  &__arrow {
+    position: absolute;
+    right: var(--space-5);
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+  }
+
+  &__list {
+    border-top: 1px solid var(--card-border);
+  }
+
+  &__item {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-5);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+
+    &:hover {
+      background: var(--bg-hover);
+    }
+
+    &--active {
+      background: rgba(124, 109, 240, 0.06);
+    }
+
+    & + & {
+      border-top: 1px solid rgba(255, 255, 255, 0.04);
+    }
+  }
+
+  &__item-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  &__radio {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid var(--card-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+    transition: border-color var(--transition-fast);
+
+    &--checked {
+      border-color: var(--accent-primary);
+    }
+  }
+
+  &__radio-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent-primary);
+  }
+}
+
+/* ---- Success Order Button ---- */
+.redeem-success__order-btn {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, var(--accent-primary) 0%, #9b8afb 100%);
+  color: #fff;
+  border-radius: var(--radius-full);
+  font-family: var(--font-body);
+  font-size: var(--text-body-lg);
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    box-shadow: var(--shadow-glow);
+    transform: translateY(-1px);
+  }
+}

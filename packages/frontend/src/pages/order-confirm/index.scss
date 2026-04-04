@@ -1,0 +1,516 @@
+/* ============================================
+   Order Confirm Page
+   Uses design system CSS variables from app.scss
+   ============================================ */
+
+.confirm-page {
+  min-height: 100vh;
+  background-color: var(--bg-base);
+  padding-bottom: 80px;
+}
+
+/* ---- Header ---- */
+.confirm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  background: rgba(26, 27, 37, 0.95);
+  border-bottom: 1px solid var(--card-border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+
+  &__back {
+    font-size: 15px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    min-width: 60px;
+
+    &:hover {
+      color: var(--text-primary);
+    }
+  }
+
+  &__title {
+    font-family: var(--font-display);
+    font-size: var(--text-h4);
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  &__placeholder {
+    min-width: 60px;
+  }
+}
+
+/* ---- Loading / Error ---- */
+.confirm-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 120px var(--space-5);
+
+  &__text {
+    color: var(--text-tertiary);
+    font-size: var(--text-body);
+  }
+}
+
+.confirm-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 120px var(--space-5);
+
+  &__text {
+    color: var(--error);
+    font-size: var(--text-body);
+  }
+}
+
+/* ---- Content ---- */
+.confirm-content {
+  padding: var(--space-4);
+}
+
+/* ---- Section ---- */
+.confirm-section {
+  margin-bottom: var(--space-5);
+
+  &__title {
+    display: block;
+    font-family: var(--font-body);
+    font-size: var(--text-body-lg);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--space-3);
+  }
+}
+
+/* ---- Address Empty ---- */
+.confirm-address-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-4);
+  background: var(--bg-surface);
+  border: 1px dashed var(--card-border);
+  border-radius: var(--radius-md);
+
+  &__text {
+    font-size: var(--text-body);
+    color: var(--text-tertiary);
+  }
+
+  &__btn {
+    padding: var(--space-2) var(--space-5);
+    font-size: var(--text-body-sm);
+  }
+}
+
+/* ---- Address List ---- */
+.confirm-address-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.confirm-address-add {
+  display: block;
+  text-align: center;
+  font-size: var(--text-body-sm);
+  color: var(--accent-primary);
+  cursor: pointer;
+  padding: var(--space-2) 0;
+  transition: opacity var(--transition-fast);
+
+  &:hover {
+    opacity: 0.7;
+  }
+}
+
+/* ---- Address Card ---- */
+.confirm-address-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+
+  &:hover {
+    border-color: var(--card-border-hover);
+  }
+
+  &--selected {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 12px var(--accent-glow);
+  }
+
+  &__radio {
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
+    border-radius: var(--radius-full);
+    border: 2px solid var(--text-tertiary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: var(--space-1);
+    transition: border-color var(--transition-fast);
+
+    &--checked {
+      border-color: var(--accent-primary);
+    }
+  }
+
+  &__radio-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: var(--radius-full);
+    background: var(--accent-primary);
+  }
+
+  &__info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  &__name-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+  }
+
+  &__name {
+    font-size: var(--text-body);
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  &__phone {
+    font-family: var(--font-display);
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+  }
+
+  &__badge {
+    display: inline-block;
+    padding: 2px var(--space-2);
+    background: var(--accent-glow);
+    color: var(--accent-primary);
+    font-size: var(--text-caption);
+    font-weight: 600;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(124, 109, 240, 0.3);
+  }
+
+  &__detail {
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+    line-height: 1.4;
+    word-break: break-all;
+  }
+}
+
+/* ---- Items ---- */
+.confirm-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.confirm-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+
+  &__image-wrap {
+    width: 64px;
+    height: 64px;
+    min-width: 64px;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--bg-elevated);
+  }
+
+  &__image {
+    width: 100%;
+    height: 100%;
+  }
+
+  &__image-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    background: linear-gradient(135deg, var(--bg-surface), var(--bg-elevated));
+  }
+
+  &__info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  &__name {
+    font-size: var(--text-body);
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  &__price {
+    font-family: var(--font-display);
+    font-size: var(--text-body);
+    font-weight: 700;
+    color: var(--accent-primary);
+  }
+
+  &__qty {
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+  }
+
+  &__subtotal {
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+  }
+}
+
+/* ---- Summary ---- */
+.confirm-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+
+  &__label {
+    font-size: var(--text-body);
+    color: var(--text-secondary);
+  }
+
+  &__value-wrap {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-1);
+  }
+
+  &__diamond {
+    color: var(--accent-primary);
+    font-size: var(--text-body-lg);
+  }
+
+  &__value {
+    font-family: var(--font-display);
+    font-size: var(--text-h3);
+    font-weight: 800;
+    color: var(--text-primary);
+  }
+}
+
+/* ---- Bottom Bar ---- */
+.confirm-bottom {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
+  background: rgba(18, 19, 26, 0.95);
+  border-top: 1px solid var(--card-border);
+  z-index: 20;
+
+  &__info {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-1);
+  }
+
+  &__label {
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+  }
+
+  &__diamond {
+    color: var(--accent-primary);
+    font-size: var(--text-body);
+  }
+
+  &__total {
+    font-family: var(--font-display);
+    font-size: var(--text-h4);
+    font-weight: 800;
+    color: var(--text-primary);
+  }
+
+  &__btn {
+    padding: var(--space-2) var(--space-6);
+    background: linear-gradient(135deg, var(--accent-primary) 0%, #9b8afb 100%);
+    color: #fff;
+    border-radius: var(--radius-full);
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    font-weight: 600;
+    text-align: center;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+
+    &:hover {
+      box-shadow: var(--shadow-glow);
+      transform: translateY(-1px);
+    }
+
+    &:active {
+      transform: translateY(0);
+    }
+
+    &--disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+
+      &:hover {
+        box-shadow: none;
+        transform: none;
+      }
+    }
+  }
+}
+
+/* ---- Modal Overlay ---- */
+.confirm-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: var(--space-4);
+}
+
+/* ---- Modal ---- */
+.confirm-modal {
+  width: 100%;
+  max-width: 420px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+
+  &__title {
+    display: block;
+    font-family: var(--font-display);
+    font-size: var(--text-h3);
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: var(--space-5);
+    text-align: center;
+  }
+
+  &__field {
+    margin-bottom: var(--space-4);
+  }
+
+  &__label {
+    display: block;
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+    margin-bottom: var(--space-2);
+  }
+
+  &__input,
+  &__textarea {
+    width: 100%;
+    padding: var(--space-3) var(--space-4);
+    background: var(--bg-surface);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    outline: none;
+    transition: border-color var(--transition-fast);
+    box-sizing: border-box;
+
+    &::placeholder {
+      color: var(--text-tertiary);
+    }
+
+    &:focus {
+      border-color: var(--accent-primary);
+    }
+  }
+
+  &__textarea {
+    min-height: 80px;
+    resize: vertical;
+    line-height: 1.5;
+  }
+
+  &__error {
+    display: block;
+    font-size: var(--text-caption);
+    color: var(--error);
+    margin-top: var(--space-1);
+  }
+
+  &__actions {
+    display: flex;
+    gap: var(--space-3);
+    margin-top: var(--space-5);
+  }
+
+  &__btn {
+    flex: 1;
+    text-align: center;
+  }
+}
+
+@media (min-width: 1024px) {
+  .confirm-content {
+    max-width: 700px;
+    margin: 0 auto;
+  }
+
+  .confirm-bottom {
+    justify-content: center;
+    gap: var(--space-8);
+  }
+}

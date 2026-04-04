@@ -1,0 +1,539 @@
+/* ============================================
+   Profile Page - Personal Center
+   Uses design system CSS variables from app.scss
+   ============================================ */
+
+.profile-page {
+  min-height: 100vh;
+  background-color: var(--bg-base);
+  padding-bottom: var(--space-10);
+}
+
+/* ---- User Info Card ---- */
+.profile-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 28px var(--space-5);
+  background: linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-elevated) 100%);
+  border-bottom: 1px solid var(--card-border);
+  position: relative;
+  overflow: hidden;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -15%;
+    width: 200px;
+    height: 200px;
+    background: radial-gradient(circle, rgba(124, 109, 240, 0.2) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  &__avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent-primary) 0%, #9b8afb 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  &__avatar-text {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  &__info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__nickname {
+    display: block;
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: var(--space-1);
+  }
+
+  &__email {
+    display: block;
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    margin-bottom: var(--space-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__roles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+  }
+
+  &__points {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: var(--space-3) var(--space-4);
+    background: rgba(124, 109, 240, 0.1);
+    border: 1px solid rgba(124, 109, 240, 0.2);
+    border-radius: var(--space-3);
+    flex-shrink: 0;
+  }
+
+  &__points-diamond {
+    color: var(--accent-primary);
+    font-size: 18px;
+  }
+
+  &__points-value {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--accent-primary);
+  }
+
+  &__points-label {
+    font-size: var(--text-overline);
+    color: var(--text-secondary);
+  }
+}
+
+/* ---- NOTE: .role-badge styles are defined globally in app.scss ---- */
+/* ---- NOTE: .profile-role is removed; use global .role-badge instead ---- */
+
+/* ---- Quick Actions ---- */
+.profile-actions {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+
+  &__btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 14px var(--space-2);
+    background: var(--bg-surface);
+    border: 1px solid var(--card-border);
+    border-radius: var(--space-3);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+
+    &:hover {
+      border-color: var(--card-border-hover);
+      background: var(--bg-elevated);
+    }
+  }
+
+  &__btn-icon {
+    font-size: var(--space-6);
+  }
+
+  &__btn-text {
+    font-size: var(--text-caption);
+    color: var(--text-secondary);
+  }
+}
+
+/* ---- Tab Switcher ---- */
+.profile-tabs {
+  display: flex;
+  padding: 0 var(--space-5);
+  border-bottom: 1px solid var(--card-border);
+  background: var(--bg-surface);
+
+  &__item {
+    flex: 1;
+    padding: 14px 0;
+    text-align: center;
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    font-weight: 500;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    position: relative;
+    transition: color var(--transition-fast);
+
+    &:hover {
+      color: var(--text-secondary);
+    }
+
+    &--active {
+      color: var(--accent-primary);
+
+      &::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 25%;
+        width: 50%;
+        height: 2px;
+        background: var(--accent-primary);
+        border-radius: 1px;
+      }
+    }
+  }
+}
+
+/* ---- Record List ---- */
+.record-list {
+  padding: var(--space-3) var(--space-5);
+
+  &__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px var(--space-5);
+    gap: var(--space-3);
+  }
+
+  &__empty-icon {
+    font-size: var(--space-10);
+  }
+
+  &__empty-text {
+    font-size: var(--text-body);
+    color: var(--text-tertiary);
+  }
+
+  &__loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-10) var(--space-5);
+    font-size: var(--text-body-sm);
+    color: var(--text-tertiary);
+  }
+
+  &__load-more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px;
+    margin-top: var(--space-2);
+    background: rgba(124, 109, 240, 0.08);
+    border: 1px solid rgba(124, 109, 240, 0.15);
+    border-radius: var(--radius-md);
+    font-size: var(--text-body-sm);
+    color: var(--accent-primary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+
+    &:hover {
+      background: rgba(124, 109, 240, 0.15);
+    }
+  }
+}
+
+/* ---- Record Item ---- */
+.record-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px var(--space-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--card-border);
+  border-radius: var(--space-3);
+  margin-bottom: var(--space-2);
+  transition: border-color var(--transition-fast);
+
+  &:hover {
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  &--clickable {
+    cursor: pointer;
+
+    &:hover {
+      border-color: var(--card-border-hover);
+      background: var(--bg-elevated);
+    }
+  }
+
+  &__left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__icon {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--text-body-lg);
+    font-weight: 700;
+    flex-shrink: 0;
+
+    &--earn {
+      background: rgba(45, 212, 168, 0.12);
+      color: var(--success);
+    }
+
+    &--spend {
+      background: rgba(124, 109, 240, 0.12);
+      color: var(--accent-primary);
+    }
+
+    &--code {
+      background: rgba(245, 166, 35, 0.12);
+      color: var(--role-leader);
+    }
+  }
+
+  &__info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__source {
+    display: block;
+    font-size: var(--text-body);
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-bottom: var(--space-1);
+  }
+
+  &__time {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+  }
+
+  &__meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  &__method {
+    font-size: var(--text-overline);
+    color: var(--text-secondary);
+    padding: 1px var(--space-1);
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: var(--space-1);
+  }
+
+  &__amount {
+    font-family: var(--font-display);
+    font-size: var(--text-body-lg);
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-left: var(--space-2);
+
+    &--earn {
+      color: var(--success);
+    }
+
+    &--spend {
+      color: var(--error);
+    }
+  }
+
+  &__status {
+    font-size: var(--text-caption);
+    font-weight: 600;
+    padding: 3px var(--space-3);
+    border-radius: var(--radius-full);
+    flex-shrink: 0;
+    margin-left: var(--space-2);
+  }
+}
+
+/* ---- NOTE: Status badges use global .status-tag from app.scss ---- */
+/* Legacy status classes kept for backward compatibility */
+.status {
+  &--success {
+    background: rgba(45, 212, 168, 0.12);
+    color: var(--success);
+    border: 1px solid rgba(45, 212, 168, 0.2);
+  }
+
+  &--pending {
+    background: rgba(245, 166, 35, 0.12);
+    color: var(--warning);
+    border: 1px solid rgba(245, 166, 35, 0.2);
+  }
+
+  &--failed {
+    background: rgba(239, 68, 68, 0.12);
+    color: var(--error);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+  }
+}
+
+/* ---- Shipping Status Tags ---- */
+.shipping-tag {
+  font-size: var(--text-caption);
+  font-weight: 600;
+  padding: 3px var(--space-3);
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+  margin-left: var(--space-2);
+
+  &--pending {
+    background: rgba(245, 166, 35, 0.12);
+    color: var(--warning);
+    border: 1px solid rgba(245, 166, 35, 0.2);
+  }
+
+  &--shipped {
+    background: rgba(91, 141, 239, 0.12);
+    color: var(--info);
+    border: 1px solid rgba(91, 141, 239, 0.2);
+  }
+
+  &--in-transit {
+    background: rgba(124, 109, 240, 0.12);
+    color: var(--accent-primary);
+    border: 1px solid rgba(124, 109, 240, 0.2);
+  }
+
+  &--delivered {
+    background: rgba(45, 212, 168, 0.12);
+    color: var(--success);
+    border: 1px solid rgba(45, 212, 168, 0.2);
+  }
+}
+
+/* ---- Logout Button ---- */
+.profile-logout {
+  margin: var(--space-8) var(--space-5) 0;
+  padding: 14px;
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: var(--radius-full);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  color: var(--error);
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    background: rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.4);
+  }
+}
+
+/* ---- Change Password Modal ---- */
+.pwd-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: var(--space-5);
+}
+
+.pwd-modal {
+  width: 100%;
+  max-width: 400px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  backdrop-filter: blur(16px);
+  box-shadow: var(--shadow-lg);
+
+  &__title {
+    display: block;
+    font-family: var(--font-display);
+    font-size: var(--text-h3);
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: var(--space-5);
+    text-align: center;
+  }
+
+  &__feedback {
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-4);
+    font-size: var(--text-body-sm);
+    text-align: center;
+
+    &--success {
+      background: rgba(45, 212, 168, 0.12);
+      color: var(--success);
+      border: 1px solid rgba(45, 212, 168, 0.2);
+    }
+
+    &--error {
+      background: rgba(239, 68, 68, 0.12);
+      color: var(--error);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+  }
+
+  &__field {
+    margin-bottom: var(--space-4);
+  }
+
+  &__label {
+    display: block;
+    font-family: var(--font-body);
+    font-size: var(--text-caption);
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-2);
+  }
+
+  &__input {
+    width: 100%;
+    padding: var(--space-3) var(--space-4);
+    background: var(--bg-surface);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color var(--transition-fast);
+    box-sizing: border-box;
+
+    &::placeholder {
+      color: var(--text-tertiary);
+    }
+
+    &:focus {
+      border-color: var(--accent-primary);
+    }
+  }
+
+  &__actions {
+    display: flex;
+    gap: var(--space-3);
+    margin-top: var(--space-5);
+  }
+
+  &__btn {
+    flex: 1;
+    text-align: center;
+    padding: var(--space-3) var(--space-4);
+  }
+}

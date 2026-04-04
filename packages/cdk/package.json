@@ -1,0 +1,19 @@
+{
+  "name": "@points-mall/cdk",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "cdk": "cdk"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.200.0",
+    "constructs": "^10.4.2",
+    "@points-mall/shared": "*"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.200.0"
+  }
+}

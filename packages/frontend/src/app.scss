@@ -1,0 +1,338 @@
+/* ============================================
+   积分商城 设计系统（Design System）
+   基于 frontend-design.md 规范
+   ============================================ */
+
+/* === 字体引入 === */
+/* 显示字体：Outfit — 几何感强，适合标题和数字 */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
+/* 正文字体：Noto Sans SC — 中文最佳可读性 */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap');
+
+:root {
+  /* === 基础色板 === */
+  --bg-void: #0a0b0f;
+  --bg-base: #12131a;
+  --bg-surface: #1a1b25;
+  --bg-elevated: #222333;
+  --bg-hover: #2a2b3d;
+
+  --text-primary: #f0f0f5;
+  --text-secondary: #9a9bb0;
+  --text-tertiary: #5d5e72;
+  --text-inverse: #0a0b0f;
+
+  /* === 角色专属色 === */
+  --role-leader: #f5a623;
+  --role-leader-glow: rgba(245, 166, 35, 0.25);
+  --role-builder: #2dd4a8;
+  --role-builder-glow: rgba(45, 212, 168, 0.25);
+  --role-speaker: #5b8def;
+  --role-speaker-glow: rgba(91, 141, 239, 0.25);
+  --role-volunteer: #f06292;
+  --role-volunteer-glow: rgba(240, 98, 146, 0.25);
+
+  /* === 功能色 === */
+  --accent-primary: #7c6df0;
+  --accent-hover: #6b5ce0;
+  --accent-active: #5a4bd0;
+  --accent-glow: rgba(124, 109, 240, 0.3);
+  --success: #2dd4a8;
+  --warning: #f5a623;
+  --error: #ef4444;
+  --info: #5b8def;
+
+  /* === 特殊效果色 === */
+  --gold-shimmer: linear-gradient(135deg, #f5a623 0%, #ffd700 50%, #f5a623 100%);
+  --card-border: rgba(255, 255, 255, 0.06);
+  --card-border-hover: rgba(255, 255, 255, 0.12);
+  --glass-bg: rgba(26, 27, 37, 0.85);
+  --glass-border: rgba(255, 255, 255, 0.08);
+
+  /* === 间距系统（8px 基准） === */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* === 圆角 === */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* === 阴影 === */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 20px var(--accent-glow);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 1px var(--card-border);
+  --shadow-card-hover: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--card-border-hover);
+
+  /* === 过渡 === */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-spring: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* === 字体 === */
+  --font-display: 'Outfit', sans-serif;
+  --font-body: 'Noto Sans SC', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* === 字号层级 === */
+  --text-hero: 48px;
+  --text-h1: 32px;
+  --text-h2: 24px;
+  --text-h3: 20px;
+  --text-h4: 16px;
+  --text-body-lg: 16px;
+  --text-body: 14px;
+  --text-body-sm: 13px;
+  --text-caption: 12px;
+  --text-overline: 11px;
+  --text-points: 36px;
+  --text-price: 24px;
+  --text-badge: 11px;
+}
+
+/* === 全局基础样式 === */
+page {
+  font-family: var(--font-body);
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-size: var(--text-body);
+  /* 微妙的噪点纹理增加质感 */
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.02'/%3E%3C/svg%3E");
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ============================================
+   共享组件样式（Shared Components）
+   ============================================ */
+
+/* --- 角色徽章系统 --- */
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-family: var(--font-body);
+  font-size: var(--text-badge);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    box-shadow: 0 0 12px currentColor;
+    transform: scale(1.05);
+  }
+
+  &--leader {
+    background: var(--role-leader-glow);
+    color: var(--role-leader);
+    border: 1px solid rgba(245, 166, 35, 0.3);
+  }
+
+  &--builder {
+    background: var(--role-builder-glow);
+    color: var(--role-builder);
+    border: 1px solid rgba(45, 212, 168, 0.3);
+  }
+
+  &--speaker {
+    background: var(--role-speaker-glow);
+    color: var(--role-speaker);
+    border: 1px solid rgba(91, 141, 239, 0.3);
+  }
+
+  &--volunteer {
+    background: var(--role-volunteer-glow);
+    color: var(--role-volunteer);
+    border: 1px solid rgba(240, 98, 146, 0.3);
+  }
+
+  &--admin {
+    background: rgba(124, 109, 240, 0.15);
+    color: var(--accent-primary);
+    border: 1px solid rgba(124, 109, 240, 0.3);
+  }
+
+  &--superadmin {
+    background: rgba(245, 166, 35, 0.15);
+    color: var(--role-leader);
+    border: 1px solid rgba(245, 166, 35, 0.3);
+  }
+
+  &--all {
+    background: rgba(124, 109, 240, 0.15);
+    color: var(--accent-primary);
+    border: 1px solid rgba(124, 109, 240, 0.3);
+  }
+}
+
+/* --- 按钮系统 --- */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-6);
+  background: var(--accent-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  position: relative;
+  overflow: hidden;
+
+  &:hover {
+    background: var(--accent-hover);
+    box-shadow: var(--shadow-glow);
+    transform: translateY(-1px);
+  }
+
+  &:active {
+    background: var(--accent-active);
+    transform: translateY(0);
+  }
+
+  &:disabled, &--disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+}
+
+.btn-redeem {
+  @extend .btn-primary;
+  background: linear-gradient(135deg, var(--accent-primary) 0%, #9b8afb 100%);
+  padding: var(--space-3) var(--space-8);
+  border-radius: var(--radius-full);
+  font-size: var(--text-body-lg);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-6);
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    background: var(--bg-hover);
+    border-color: var(--card-border-hover);
+  }
+}
+
+.btn-danger {
+  @extend .btn-secondary;
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--error);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+
+  &:hover {
+    background: rgba(239, 68, 68, 0.25);
+  }
+}
+
+/* --- 状态标签 --- */
+.status-tag {
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-caption);
+  font-weight: 600;
+
+  &--active, &--success {
+    color: var(--success);
+    background: rgba(45, 212, 168, 0.15);
+    border: 1px solid rgba(45, 212, 168, 0.2);
+  }
+
+  &--inactive {
+    color: var(--text-tertiary);
+    background: rgba(93, 94, 114, 0.15);
+  }
+
+  &--pending, &--warning {
+    color: var(--warning);
+    background: rgba(245, 166, 35, 0.12);
+    border: 1px solid rgba(245, 166, 35, 0.2);
+  }
+
+  &--failed, &--error {
+    color: var(--error);
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+  }
+}
+
+/* --- 共享动画 --- */
+@keyframes cardEnter {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+@keyframes lockPulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes successPop {
+  0% { opacity: 0; transform: scale(0.5); }
+  60% { transform: scale(1.05); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pointsBounce {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.2); color: var(--success); }
+  100% { transform: scale(1); }
+}
+
+@keyframes pointsDecrease {
+  0% { transform: scale(1); }
+  30% { transform: scale(0.9); color: var(--error); }
+  100% { transform: scale(1); }
+}
+
+@keyframes tabIndicator {
+  from { width: 0; opacity: 0; }
+  to { width: 60%; opacity: 1; }
+}

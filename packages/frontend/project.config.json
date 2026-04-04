@@ -1,0 +1,22 @@
+{
+  "miniprogramRoot": "dist/weapp/",
+  "projectname": "points-mall",
+  "description": "积分商城微信小程序",
+  "appid": "wx4f4ee5dbc37b0b68",
+  "setting": {
+    "urlCheck": true,
+    "es6": false,
+    "enhance": false,
+    "compileHotReLoad": false,
+    "postcss": false,
+    "minified": false,
+    "newFeature": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
+  },
+  "compileType": "miniprogram",
+  "condition": {}
+}

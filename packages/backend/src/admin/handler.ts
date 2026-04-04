@@ -1,0 +1,637 @@
+import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { S3Client } from '@aws-sdk/client-s3';
+import { ErrorHttpStatus } from '@points-mall/shared';
+import type { Product, UserRole } from '@points-mall/shared';
+import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware';
+import { assignRoles } from './roles';
+import { batchGeneratePointsCodes, generateProductCodes, listCodes, disableCode, deleteCode } from './codes';
+import { createPointsProduct, createCodeExclusiveProduct, updateProduct, setProductStatus } from './products';
+import { getUploadUrl, deleteImage } from './images';
+import { batchGenerateInvites, listInvites, revokeInvite } from './invites';
+import { listUsers, setUserStatus, deleteUser } from './users';
+import { reviewClaim, listAllClaims } from '../claims/review';
+
+// Create client outside handler for Lambda container reuse
+const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const s3Client = new S3Client({});
+
+const USERS_TABLE = process.env.USERS_TABLE ?? '';
+const PRODUCTS_TABLE = process.env.PRODUCTS_TABLE ?? '';
+const CODES_TABLE = process.env.CODES_TABLE ?? '';
+const IMAGES_BUCKET = process.env.IMAGES_BUCKET ?? '';
+const INVITES_TABLE = process.env.INVITES_TABLE ?? '';
+const REGISTER_BASE_URL = process.env.REGISTER_BASE_URL ?? '';
+const CLAIMS_TABLE = process.env.CLAIMS_TABLE ?? '';
+const POINTS_RECORDS_TABLE = process.env.POINTS_RECORDS_TABLE ?? '';
+
+const CORS_HEADERS = {
+  'Content-Type': 'application/json',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+  'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+};
+
+function jsonResponse(statusCode: number, body: unknown): APIGatewayProxyResult {
+  return {
+    statusCode,
+    headers: CORS_HEADERS,
+    body: JSON.stringify(body),
+  };
+}
+
+function errorResponse(code: string, message: string, statusCode?: number): APIGatewayProxyResult {
+  const status = statusCode ?? (ErrorHttpStatus as Record<string, number>)[code] ?? 400;
+  return jsonResponse(status, { code, message });
+}
+
+function parseBody(event: APIGatewayProxyEvent): Record<string, unknown> | null {
+  if (!event.body) return null;
+  try {
+    return JSON.parse(event.body);
+  } catch {
+    return null;
+  }
+}
+
+// Path patterns for routes with path parameters
+const USERS_ROLES_REGEX = /^\/api\/admin\/users\/([^/]+)\/roles$/;
+const CODES_DISABLE_REGEX = /^\/api\/admin\/codes\/([^/]+)\/disable$/;
+const CODES_DELETE_REGEX = /^\/api\/admin\/codes\/([^/]+)$/;
+const PRODUCTS_UPDATE_REGEX = /^\/api\/admin\/products\/([^/]+)$/;
+const PRODUCTS_STATUS_REGEX = /^\/api\/admin\/products\/([^/]+)\/status$/;
+const PRODUCTS_UPLOAD_URL_REGEX = /^\/api\/admin\/products\/([^/]+)\/upload-url$/;
+const PRODUCTS_DELETE_IMAGE_REGEX = /^\/api\/admin\/products\/([^/]+)\/images\/(.+)$/;
+const INVITES_REVOKE_REGEX = /^\/api\/admin\/invites\/([^/]+)\/revoke$/;
+const USERS_STATUS_REGEX = /^\/api\/admin\/users\/([^/]+)\/status$/;
+const USERS_DELETE_REGEX = /^\/api\/admin\/users\/([^/]+)$/;
+const CLAIMS_REVIEW_REGEX = /^\/api\/admin\/claims\/([^/]+)\/review$/;
+
+/**
+ * Check if the authenticated user has admin privileges.
+ * Only users with Admin or SuperAdmin role are considered admins.
+ */
+function isAdmin(event: AuthenticatedEvent): boolean {
+  return event.user.roles.some(r => r === 'Admin' || r === 'SuperAdmin');
+}
+
+const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise<APIGatewayProxyResult> => {
+  // Admin role check
+  if (!isAdmin(event)) {
+    return errorResponse('FORBIDDEN', '需要管理员权限', 403);
+  }
+
+  const method = event.httpMethod;
+  const path = event.path;
+
+  // PUT /api/admin/users/{id}/roles
+  if (method === 'PUT') {
+    const usersMatch = path.match(USERS_ROLES_REGEX);
+    if (usersMatch) {
+      return await handleAssignRoles(usersMatch[1], event);
+    }
+
+    // PUT /api/admin/products/{id}
+    const productsMatch = path.match(PRODUCTS_UPDATE_REGEX);
+    if (productsMatch) {
+      return await handleUpdateProduct(productsMatch[1], event);
+    }
+  }
+
+  // POST routes
+  if (method === 'POST') {
+    const uploadUrlMatch = path.match(PRODUCTS_UPLOAD_URL_REGEX);
+    if (uploadUrlMatch) {
+      return await handleGetUploadUrl(uploadUrlMatch[1], event);
+    }
+    if (path === '/api/admin/codes/batch-generate') {
+      return await handleBatchGenerateCodes(event);
+    }
+    if (path === '/api/admin/codes/product-code') {
+      return await handleGenerateProductCodes(event);
+    }
+    if (path === '/api/admin/products') {
+      return await handleCreateProduct(event);
+    }
+    if (path === '/api/admin/invites/batch') {
+      return await handleBatchGenerateInvites(event);
+    }
+  }
+
+  // GET routes
+  if (method === 'GET' && path === '/api/admin/codes') {
+    return await handleListCodes(event);
+  }
+
+  if (method === 'GET' && path === '/api/admin/invites') {
+    return await handleListInvites(event);
+  }
+
+  if (method === 'GET' && path === '/api/admin/users') {
+    return await handleListUsers(event);
+  }
+
+  if (method === 'GET' && path === '/api/admin/claims') {
+    return await handleListAllClaims(event);
+  }
+
+  // PATCH routes
+  if (method === 'PATCH') {
+    const codesMatch = path.match(CODES_DISABLE_REGEX);
+    if (codesMatch) {
+      return await handleDisableCode(codesMatch[1]);
+    }
+
+    const statusMatch = path.match(PRODUCTS_STATUS_REGEX);
+    if (statusMatch) {
+      return await handleSetProductStatus(statusMatch[1], event);
+    }
+
+    const invitesRevokeMatch = path.match(INVITES_REVOKE_REGEX);
+    if (invitesRevokeMatch) {
+      return await handleRevokeInvite(invitesRevokeMatch[1]);
+    }
+
+    const usersStatusMatch = path.match(USERS_STATUS_REGEX);
+    if (usersStatusMatch) {
+      return await handleSetUserStatus(usersStatusMatch[1], event);
+    }
+
+    const claimsReviewMatch = path.match(CLAIMS_REVIEW_REGEX);
+    if (claimsReviewMatch) {
+      return await handleReviewClaim(claimsReviewMatch[1], event);
+    }
+  }
+
+  // DELETE routes
+  if (method === 'DELETE') {
+    const deleteImageMatch = path.match(PRODUCTS_DELETE_IMAGE_REGEX);
+    if (deleteImageMatch) {
+      return await handleDeleteImage(deleteImageMatch[1], deleteImageMatch[2]);
+    }
+
+    const codesDeleteMatch = path.match(CODES_DELETE_REGEX);
+    if (codesDeleteMatch) {
+      return await handleDeleteCode(codesDeleteMatch[1]);
+    }
+
+    const usersDeleteMatch = path.match(USERS_DELETE_REGEX);
+    if (usersDeleteMatch) {
+      return await handleDeleteUser(usersDeleteMatch[1], event);
+    }
+  }
+
+  return errorResponse('NOT_FOUND', 'Route not found', 404);
+});
+
+export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
+  // Handle CORS preflight
+  if (event.httpMethod === 'OPTIONS') {
+    return jsonResponse(200, {});
+  }
+
+  try {
+    return await authenticatedHandler(event);
+  } catch (err) {
+    console.error('Unhandled error:', err);
+    return errorResponse('INTERNAL_ERROR', 'Internal server error', 500);
+  }
+}
+
+// ---- Route Handlers ----
+
+async function handleAssignRoles(userId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || !Array.isArray(body.roles)) {
+    return errorResponse('INVALID_REQUEST', 'Missing required field: roles (array)', 400);
+  }
+
+  const result = await assignRoles(userId, body.roles as string[], dynamoClient, USERS_TABLE, event.user.roles);
+
+  if (!result.success) {
+    return jsonResponse(400, result.error);
+  }
+
+  return jsonResponse(200, { message: '角色分配成功' });
+}
+
+async function handleBatchGenerateCodes(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || !body.count || !body.pointsValue || !body.maxUses) {
+    return errorResponse('INVALID_REQUEST', 'Missing required fields: count, pointsValue, maxUses', 400);
+  }
+
+  const result = await batchGeneratePointsCodes(
+    {
+      count: body.count as number,
+      pointsValue: body.pointsValue as number,
+      maxUses: body.maxUses as number,
+      name: (body.name as string) || undefined,
+    },
+    dynamoClient,
+    CODES_TABLE,
+  );
+
+  if (!result.success) {
+    return jsonResponse(400, result.error);
+  }
+
+  return jsonResponse(201, { codes: result.data });
+}
+
+async function handleGenerateProductCodes(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || !body.productId || !body.count) {
+    return errorResponse('INVALID_REQUEST', 'Missing required fields: productId, count', 400);
+  }
+
+  const result = await generateProductCodes(
+    { productId: body.productId as string, count: body.count as number },
+    dynamoClient,
+    CODES_TABLE,
+  );
+
+  if (!result.success) {
+    return jsonResponse(400, result.error);
+  }
+
+  return jsonResponse(201, { codes: result.data });
+}
+
+async function handleListCodes(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const pageSize = event.queryStringParameters?.pageSize
+    ? parseInt(event.queryStringParameters.pageSize, 10)
+    : undefined;
+  const lastKeyStr = event.queryStringParameters?.lastKey;
+  let lastKey: Record<string, unknown> | undefined;
+  if (lastKeyStr) {
+    try {
+      lastKey = JSON.parse(lastKeyStr);
+    } catch {
+      // ignore invalid lastKey
+    }
+  }
+
+  const result = await listCodes(dynamoClient, CODES_TABLE, { pageSize, lastKey });
+
+  return jsonResponse(200, { codes: result.codes, lastKey: result.lastKey });
+}
+
+async function handleDisableCode(codeId: string): Promise<APIGatewayProxyResult> {
+  const result = await disableCode(codeId, dynamoClient, CODES_TABLE);
+
+  if (!result.success) {
+    return jsonResponse(400, result.error);
+  }
+
+  return jsonResponse(200, { message: 'Code 已禁用' });
+}
+
+async function handleDeleteCode(codeId: string): Promise<APIGatewayProxyResult> {
+  const result = await deleteCode(codeId, dynamoClient, CODES_TABLE);
+
+  if (!result.success) {
+    return jsonResponse(400, result.error);
+  }
+
+  return jsonResponse(200, { message: 'Code 已删除' });
+}
+
+async function handleCreateProduct(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || !body.type || !body.name) {
+    return errorResponse('INVALID_REQUEST', 'Missing required fields: type, name', 400);
+  }
+
+  if (body.type === 'points') {
+    const result = await createPointsProduct(
+      {
+        name: body.name as string,
+        description: (body.description as string) ?? '',
+        imageUrl: (body.imageUrl as string) ?? '',
+        pointsCost: body.pointsCost as number,
+        stock: (body.stock as number) ?? 0,
+        allowedRoles: (body.allowedRoles as any) ?? 'all',
+        images: body.images as any,
+        sizeOptions: body.sizeOptions as any,
+        purchaseLimitEnabled: body.purchaseLimitEnabled as boolean | undefined,
+        purchaseLimitCount: body.purchaseLimitCount as number | undefined,
+      },
+      dynamoClient,
+      PRODUCTS_TABLE,
+    );
+
+    if (!result.success) {
+      return jsonResponse(400, result.error);
+    }
+
+    return jsonResponse(201, result.data);
+  }
+
+  if (body.type === 'code_exclusive') {
+    const result = await createCodeExclusiveProduct(
+      {
+        name: body.name as string,
+        description: (body.description as string) ?? '',
+        imageUrl: (body.imageUrl as string) ?? '',
+        eventInfo: (body.eventInfo as string) ?? '',
+        stock: (body.stock as number) ?? 0,
+        images: body.images as any,
+        sizeOptions: body.sizeOptions as any,
+        purchaseLimitEnabled: body.purchaseLimitEnabled as boolean | undefined,
+        purchaseLimitCount: body.purchaseLimitCount as number | undefined,
+      },
+      dynamoClient,
+      PRODUCTS_TABLE,
+    );
+
+    if (!result.success) {
+      return jsonResponse(400, result.error);
+    }
+
+    return jsonResponse(201, result.data);
+  }
+
+  return errorResponse('INVALID_REQUEST', 'Invalid product type, must be "points" or "code_exclusive"', 400);
+}
+
+async function handleUpdateProduct(productId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body) {
+    return errorResponse('INVALID_REQUEST', 'Missing request body', 400);
+  }
+
+  const result = await updateProduct(productId, body, dynamoClient, PRODUCTS_TABLE);
+
+  if (!result.success) {
+    return jsonResponse(400, result.error);
+  }
+
+  return jsonResponse(200, { message: '商品更新成功' });
+}
+
+async function handleSetProductStatus(productId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || !body.status) {
+    return errorResponse('INVALID_REQUEST', 'Missing required field: status', 400);
+  }
+
+  const result = await setProductStatus(
+    productId,
+    body.status as 'active' | 'inactive',
+    dynamoClient,
+    PRODUCTS_TABLE,
+  );
+
+  if (!result.success) {
+    return jsonResponse(400, result.error);
+  }
+
+  return jsonResponse(200, { message: '商品状态更新成功' });
+}
+
+async function handleGetUploadUrl(productId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || !body.fileName || !body.contentType) {
+    return errorResponse('INVALID_REQUEST', 'Missing required fields: fileName, contentType', 400);
+  }
+
+  // Fetch product to check current image count
+  const productResult = await dynamoClient.send(
+    new GetCommand({
+      TableName: PRODUCTS_TABLE,
+      Key: { productId },
+    }),
+  );
+
+  const product = productResult.Item as Product | undefined;
+  if (!product) {
+    return errorResponse('NOT_FOUND', '商品不存在', 404);
+  }
+
+  const currentImageCount = product.images?.length ?? 0;
+
+  const result = await getUploadUrl(
+    {
+      productId,
+      fileName: body.fileName as string,
+      contentType: body.contentType as string,
+    },
+    currentImageCount,
+    s3Client,
+    IMAGES_BUCKET,
+  );
+
+  if (!result.success) {
+    return jsonResponse(result.error!.code === 'IMAGE_LIMIT_EXCEEDED' ? 400 : 400, result.error);
+  }
+
+  return jsonResponse(200, result.data);
+}
+
+async function handleDeleteImage(productId: string, imageKey: string): Promise<APIGatewayProxyResult> {
+  // Fetch product to find the image in the images array
+  const productResult = await dynamoClient.send(
+    new GetCommand({
+      TableName: PRODUCTS_TABLE,
+      Key: { productId },
+    }),
+  );
+
+  const product = productResult.Item as Product | undefined;
+  if (!product) {
+    return errorResponse('NOT_FOUND', '商品不存在', 404);
+  }
+
+  const images = product.images ?? [];
+  const fullKey = `products/${productId}/images/${imageKey}`;
+
+  // Try matching with the full constructed key first, then the raw imageKey
+  const imageIndex = images.findIndex(img => img.key === fullKey || img.key === imageKey);
+  if (imageIndex === -1) {
+    return errorResponse('IMAGE_NOT_FOUND', '图片不存在', 404);
+  }
+
+  const actualKey = images[imageIndex].key;
+
+  // Delete from S3
+  await deleteImage(actualKey, s3Client, IMAGES_BUCKET);
+
+  // Remove image from the array
+  const updatedImages = images.filter((_, i) => i !== imageIndex);
+
+  // Sync imageUrl: first image url or empty string
+  const newImageUrl = updatedImages.length > 0 ? updatedImages[0].url : '';
+
+  // Update product record
+  await updateProduct(
+    productId,
+    { images: updatedImages, imageUrl: newImageUrl },
+    dynamoClient,
+    PRODUCTS_TABLE,
+  );
+
+  return jsonResponse(200, { message: '图片删除成功' });
+}
+
+async function handleListUsers(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const role = event.queryStringParameters?.role;
+  const pageSize = event.queryStringParameters?.pageSize
+    ? parseInt(event.queryStringParameters.pageSize, 10)
+    : undefined;
+  const lastKeyStr = event.queryStringParameters?.lastKey;
+  let lastKey: Record<string, unknown> | undefined;
+  if (lastKeyStr) {
+    try {
+      lastKey = JSON.parse(lastKeyStr);
+    } catch {
+      // ignore invalid lastKey
+    }
+  }
+
+  const result = await listUsers({ role, pageSize, lastKey }, dynamoClient, USERS_TABLE);
+
+  return jsonResponse(200, { users: result.users, lastKey: result.lastKey });
+}
+
+async function handleSetUserStatus(userId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || !body.status) {
+    return errorResponse('INVALID_REQUEST', 'Missing required field: status', 400);
+  }
+
+  const result = await setUserStatus(
+    userId,
+    body.status as 'active' | 'disabled',
+    event.user.userId,
+    event.user.roles,
+    dynamoClient,
+    USERS_TABLE,
+  );
+
+  if (!result.success) {
+    const statusCode = (ErrorHttpStatus as Record<string, number>)[result.error!.code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { message: '用户状态更新成功' });
+}
+
+async function handleDeleteUser(userId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const result = await deleteUser(
+    userId,
+    event.user.userId,
+    event.user.roles,
+    dynamoClient,
+    USERS_TABLE,
+  );
+
+  if (!result.success) {
+    const statusCode = (ErrorHttpStatus as Record<string, number>)[result.error!.code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { message: '用户删除成功' });
+}
+
+async function handleBatchGenerateInvites(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || body.count === undefined || body.role === undefined) {
+    return errorResponse('INVALID_REQUEST', 'Missing required fields: count, role', 400);
+  }
+
+  const result = await batchGenerateInvites(
+    body.count as number,
+    body.role as UserRole,
+    dynamoClient,
+    INVITES_TABLE,
+    REGISTER_BASE_URL,
+  );
+
+  if (!result.success) {
+    return jsonResponse(400, result.error);
+  }
+
+  return jsonResponse(201, { invites: result.invites });
+}
+
+async function handleListInvites(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const status = event.queryStringParameters?.status as string | undefined;
+  const pageSize = event.queryStringParameters?.pageSize
+    ? parseInt(event.queryStringParameters.pageSize, 10)
+    : undefined;
+  const lastKeyStr = event.queryStringParameters?.lastKey;
+  let lastKey: Record<string, unknown> | undefined;
+  if (lastKeyStr) {
+    try {
+      lastKey = JSON.parse(lastKeyStr);
+    } catch {
+      // ignore invalid lastKey
+    }
+  }
+
+  const result = await listInvites(status as any, lastKey, pageSize, dynamoClient, INVITES_TABLE);
+
+  return jsonResponse(200, { invites: result.invites, lastKey: result.lastKey });
+}
+
+async function handleRevokeInvite(token: string): Promise<APIGatewayProxyResult> {
+  const result = await revokeInvite(token, dynamoClient, INVITES_TABLE);
+
+  if (!result.success) {
+    const statusCode = result.error.code === 'INVITE_NOT_FOUND' ? 404 : 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { message: '邀请已撤销' });
+}
+
+async function handleListAllClaims(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const status = event.queryStringParameters?.status as 'pending' | 'approved' | 'rejected' | undefined;
+  const pageSize = event.queryStringParameters?.pageSize
+    ? parseInt(event.queryStringParameters.pageSize, 10)
+    : undefined;
+  const lastKey = event.queryStringParameters?.lastKey;
+
+  const result = await listAllClaims({ status, pageSize, lastKey }, dynamoClient, CLAIMS_TABLE);
+
+  if (!result.success) {
+    return jsonResponse(400, result.error);
+  }
+
+  return jsonResponse(200, { claims: result.claims, lastKey: result.lastKey });
+}
+
+async function handleReviewClaim(claimId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || !body.action) {
+    return errorResponse('INVALID_REQUEST', 'Missing required field: action', 400);
+  }
+
+  // Fetch reviewer nickname from Users table
+  const reviewerResult = await dynamoClient.send(
+    new GetCommand({ TableName: USERS_TABLE, Key: { userId: event.user.userId }, ProjectionExpression: 'nickname' }),
+  );
+  const reviewerNickname = reviewerResult.Item?.nickname ?? '';
+
+  const result = await reviewClaim(
+    {
+      claimId,
+      reviewerId: event.user.userId,
+      reviewerNickname,
+      action: body.action as 'approve' | 'reject',
+      awardedPoints: body.awardedPoints as number | undefined,
+      rejectReason: body.rejectReason as string | undefined,
+    },
+    dynamoClient,
+    { claimsTable: CLAIMS_TABLE, usersTable: USERS_TABLE, pointsRecordsTable: POINTS_RECORDS_TABLE },
+  );
+
+  if (!result.success) {
+    const statusCode = (ErrorHttpStatus as Record<string, number>)[result.error!.code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { claim: result.claim });
+}

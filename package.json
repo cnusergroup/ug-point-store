@@ -1,0 +1,26 @@
+{
+  "name": "points-mall",
+  "private": true,
+  "workspaces": [
+    "packages/shared",
+    "packages/backend",
+    "packages/cdk",
+    "packages/frontend"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "build:frontend": "cd packages/frontend && npm run build:h5",
+    "build:weapp": "cd packages/frontend && npm run build:weapp",
+    "deploy:frontend": "aws s3 sync packages/frontend/dist/h5 s3://$STATIC_BUCKET --delete && aws cloudfront create-invalidation --distribution-id $CF_DIST_ID --paths \"/*\"",
+    "test": "vitest --run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "synth": "cd packages/cdk && npx cdk synth",
+    "deploy": "cd packages/cdk && npx cdk deploy --all"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.1",
+    "fast-check": "^4.1.1"
+  }
+}
