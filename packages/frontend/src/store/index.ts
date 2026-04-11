@@ -8,6 +8,7 @@ import type {
   OrderResponse,
   OrderListItem,
 } from '@points-mall/shared';
+import type { Locale } from '../i18n/types';
 
 const USER_KEY = 'user_info';
 
@@ -47,12 +48,32 @@ interface AuthResponse {
   user: UserState;
 }
 
+/** 主题类型 */
+export type ThemeType = 'default' | 'warm';
+
 /** Store 状态 */
 interface AppState {
   /** 是否已认证 */
   isAuthenticated: boolean;
   /** 当前用户信息 */
   user: UserState | null;
+
+  /** 当前主题 */
+  theme: ThemeType;
+  /** 设置主题 */
+  setTheme: (theme: ThemeType) => void;
+
+  /** 当前语言 */
+  locale: Locale;
+  /** 设置语言 */
+  setLocale: (locale: Locale) => void;
+
+  /** 购物车可用商品数量（用于 Tab Bar 徽标） */
+  cartCount: number;
+  /** 获取购物车数量 */
+  fetchCartCount: () => Promise<void>;
+  /** 更新购物车数量（本地更新，用于操作后即时反馈） */
+  setCartCount: (count: number) => void;
 
   /** 邮箱密码登录 */
   loginByEmail: (email: string, password: string) => Promise<void>;
@@ -79,7 +100,7 @@ interface AppState {
 
   // ── 购物车 ──
   /** 添加商品到购物车 */
-  addToCart: (productId: string) => Promise<void>;
+  addToCart: (productId: string, quantity?: number, selectedSize?: string) => Promise<void>;
   /** 获取购物车 */
   getCart: () => Promise<CartResponse>;
   /** 更新购物车项数量 */
@@ -116,6 +137,43 @@ interface AppState {
 export const useAppStore = create<AppState>((set) => ({
   isAuthenticated: !!getToken(),
   user: getSavedUser(),
+  cartCount: 0,
+  theme: ((): ThemeType => {
+    try {
+      const saved = Taro.getStorageSync('app_theme');
+      return saved === 'warm' ? 'warm' : 'default';
+    } catch { return 'default'; }
+  })(),
+
+  setTheme: (theme) => {
+    try { Taro.setStorageSync('app_theme', theme); } catch { /* ignore */ }
+    set({ theme });
+  },
+
+  locale: ((): Locale => {
+    try {
+      const saved = Taro.getStorageSync('app_locale');
+      if (['zh', 'en', 'ja', 'ko', 'zh-TW'].includes(saved)) return saved as Locale;
+    } catch { /* ignore */ }
+    return 'zh';
+  })(),
+
+  setLocale: (locale) => {
+    try { Taro.setStorageSync('app_locale', locale); } catch { /* ignore */ }
+    set({ locale });
+  },
+
+  fetchCartCount: async () => {
+    try {
+      const res = await request<CartResponse>({ url: '/api/cart' });
+      const count = res.items.filter((item) => item.available).length;
+      set({ cartCount: count });
+    } catch {
+      // on error keep cartCount at 0
+    }
+  },
+
+  setCartCount: (count) => set({ cartCount: count }),
 
   loginByEmail: async (email, password) => {
     const res = await request<AuthResponse>({
@@ -251,8 +309,12 @@ export const useAppStore = create<AppState>((set) => ({
 
   // ── 购物车 ──
 
-  addToCart: async (productId) => {
-    await request({ url: '/api/cart/items', method: 'POST', data: { productId } });
+  addToCart: async (productId, quantity, selectedSize) => {
+    await request({
+      url: '/api/cart/items',
+      method: 'POST',
+      data: { productId, quantity: quantity ?? 1, ...(selectedSize ? { selectedSize } : {}) },
+    });
   },
 
   getCart: async () => {

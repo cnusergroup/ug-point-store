@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, Input, Textarea } from '@tarojs/components';
+import { View, Text, Input } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useAppStore } from '../../store';
 import { request, RequestError } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
+import { useTranslation } from '../../i18n';
+import { ClaimIcon } from '../../components/icons';
 import {
   ShippingStatus,
   SHIPPING_STATUS_ORDER,
@@ -13,23 +15,20 @@ import {
 import type { OrderResponse, OrderListItem, OrderStats, ShippingEvent } from '@points-mall/shared';
 import './orders.scss';
 
-const STATUS_LABELS: Record<ShippingStatus, string> = {
-  pending: '待发货',
-  shipped: '已发货',
-  in_transit: '运输中',
-  delivered: '已签收',
-};
-
-const STATUS_TABS: { key: ShippingStatus | 'all'; label: string }[] = [
-  { key: 'all', label: '全部' },
-  { key: 'pending', label: '待发货' },
-  { key: 'shipped', label: '已发货' },
-  { key: 'in_transit', label: '运输中' },
-  { key: 'delivered', label: '已签收' },
-];
-
 export default function AdminOrdersPage() {
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
+  const { t } = useTranslation();
+
+  const STATUS_LABELS: Record<ShippingStatus, string> = {
+    pending: t('admin.orders.statusPending'),
+    shipped: t('admin.orders.statusShipped'),
+  };
+
+  const STATUS_TABS: { key: ShippingStatus | 'all'; label: string }[] = [
+    { key: 'all', label: t('admin.orders.filterAll') },
+    { key: 'pending', label: t('admin.orders.statusPending') },
+    { key: 'shipped', label: t('admin.orders.statusShipped') },
+  ];
 
   const [orders, setOrders] = useState<OrderListItem[]>([]);
   const [stats, setStats] = useState<OrderStats | null>(null);
@@ -147,12 +146,12 @@ export default function AdminOrdersPage() {
 
     const validation = validateStatusTransition(orderDetail.shippingStatus, shipTargetStatus as ShippingStatus);
     if (!validation.valid) {
-      setShipError(validation.message || '状态流转不合法');
+      setShipError(validation.message || t('admin.orders.statusTransitionInvalid'));
       return;
     }
 
     if (shipTargetStatus === 'shipped' && !shipTrackingNumber.trim()) {
-      setShipError('发货时必须填写物流单号');
+      setShipError(t('admin.orders.trackingNumberRequired'));
       return;
     }
 
@@ -168,7 +167,7 @@ export default function AdminOrdersPage() {
           remark: shipRemark.trim() || undefined,
         },
       });
-      Taro.showToast({ title: '物流状态已更新', icon: 'none' });
+      Taro.showToast({ title: t('admin.orders.shippingUpdated'), icon: 'none' });
       setShowShipForm(false);
       // Refresh detail and list
       const res = await request<OrderResponse>({ url: `/api/admin/orders/${orderDetail.orderId}` });
@@ -177,7 +176,7 @@ export default function AdminOrdersPage() {
       fetchOrders(activeTab, 1);
       setPage(1);
     } catch (err) {
-      setShipError(err instanceof RequestError ? err.message : '更新失败');
+      setShipError(err instanceof RequestError ? err.message : t('admin.orders.updateFailed'));
     } finally {
       setShipSubmitting(false);
     }
@@ -203,9 +202,9 @@ export default function AdminOrdersPage() {
     <View className='admin-orders'>
       <View className='admin-orders__toolbar'>
         <View className='admin-orders__back' onClick={handleBack}>
-          <Text>‹ 返回</Text>
+          <Text>{t('admin.orders.backButton')}</Text>
         </View>
-        <Text className='admin-orders__title'>订单管理</Text>
+        <Text className='admin-orders__title'>{t('admin.orders.title')}</Text>
         <View className='admin-orders__spacer' />
       </View>
 
@@ -214,19 +213,11 @@ export default function AdminOrdersPage() {
         <View className='order-stats'>
           <View className='order-stats__card order-stats__card--warning'>
             <Text className='order-stats__num'>{stats.pending}</Text>
-            <Text className='order-stats__label'>待发货</Text>
+            <Text className='order-stats__label'>{t('admin.orders.statsPending')}</Text>
           </View>
           <View className='order-stats__card order-stats__card--info'>
             <Text className='order-stats__num'>{stats.shipped}</Text>
-            <Text className='order-stats__label'>已发货</Text>
-          </View>
-          <View className='order-stats__card order-stats__card--accent'>
-            <Text className='order-stats__num'>{stats.inTransit}</Text>
-            <Text className='order-stats__label'>运输中</Text>
-          </View>
-          <View className='order-stats__card order-stats__card--success'>
-            <Text className='order-stats__num'>{stats.delivered}</Text>
-            <Text className='order-stats__label'>已签收</Text>
+            <Text className='order-stats__label'>{t('admin.orders.statsShipped')}</Text>
           </View>
         </View>
       )}
@@ -246,11 +237,11 @@ export default function AdminOrdersPage() {
 
       {/* Order List */}
       {loading ? (
-        <View className='admin-loading'><Text>加载中...</Text></View>
+        <View className='admin-loading'><Text>{t('admin.orders.loading')}</Text></View>
       ) : orders.length === 0 ? (
         <View className='admin-empty'>
-          <Text className='admin-empty__icon'>📋</Text>
-          <Text className='admin-empty__text'>暂无订单</Text>
+          <Text className='admin-empty__icon'><ClaimIcon size={48} color='var(--text-tertiary)' /></Text>
+          <Text className='admin-empty__text'>{t('admin.orders.noOrders')}</Text>
         </View>
       ) : (
         <View className='order-list'>
@@ -271,7 +262,7 @@ export default function AdminOrdersPage() {
                 </View>
               </View>
               <View className='order-card__summary'>
-                <Text className='order-card__meta'>商品 {order.itemCount} 件</Text>
+                <Text className='order-card__meta'>{t('admin.orders.itemsCount', { count: order.itemCount })}</Text>
                 <Text className='order-card__points'>◆ {order.totalPoints}</Text>
               </View>
 
@@ -279,12 +270,12 @@ export default function AdminOrdersPage() {
               {expandedOrderId === order.orderId && (
                 <View className='order-detail'>
                   {detailLoading ? (
-                    <View className='order-detail__loading'><Text>加载详情...</Text></View>
+                    <View className='order-detail__loading'><Text>{t('admin.orders.loadingDetail')}</Text></View>
                   ) : orderDetail ? (
                     <>
                       {/* Items */}
                       <View className='order-detail__section'>
-                        <Text className='order-detail__section-title'>商品列表</Text>
+                        <Text className='order-detail__section-title'>{t('admin.orders.productListTitle')}</Text>
                         {orderDetail.items.map((item, idx) => (
                           <View key={idx} className='order-detail__item'>
                             <View className='order-detail__item-info'>
@@ -298,7 +289,7 @@ export default function AdminOrdersPage() {
 
                       {/* Shipping Address */}
                       <View className='order-detail__section'>
-                        <Text className='order-detail__section-title'>收货信息</Text>
+                        <Text className='order-detail__section-title'>{t('admin.orders.shippingInfoTitle')}</Text>
                         <View className='order-detail__address'>
                           <Text className='order-detail__addr-line'>
                             {orderDetail.shippingAddress.recipientName}　{maskPhone(orderDetail.shippingAddress.phone)}
@@ -312,14 +303,14 @@ export default function AdminOrdersPage() {
                       {/* Tracking Number */}
                       {orderDetail.trackingNumber && (
                         <View className='order-detail__section'>
-                          <Text className='order-detail__section-title'>物流单号</Text>
+                          <Text className='order-detail__section-title'>{t('admin.orders.trackingNumberTitle')}</Text>
                           <Text className='order-detail__tracking'>{orderDetail.trackingNumber}</Text>
                         </View>
                       )}
 
                       {/* Shipping Timeline */}
                       <View className='order-detail__section'>
-                        <Text className='order-detail__section-title'>物流时间线</Text>
+                        <Text className='order-detail__section-title'>{t('admin.orders.shippingTimelineTitle')}</Text>
                         <View className='shipping-timeline'>
                           {orderDetail.shippingEvents.map((evt: ShippingEvent, idx: number) => (
                             <View key={idx} className={`shipping-timeline__item shipping-timeline__item--${evt.status}`}>
@@ -339,10 +330,10 @@ export default function AdminOrdersPage() {
                       </View>
 
                       {/* Update Shipping Action */}
-                      {orderDetail.shippingStatus !== 'delivered' && !showShipForm && (
+                      {orderDetail.shippingStatus !== 'shipped' && !showShipForm && (
                         <View className='order-detail__action'>
                           <View className='order-detail__update-btn' onClick={openShipForm}>
-                            <Text>更新为「{getNextStatusLabel(orderDetail.shippingStatus)}」</Text>
+                            <Text>{t('admin.orders.updateToStatus', { status: getNextStatusLabel(orderDetail.shippingStatus) ?? '' })}</Text>
                           </View>
                         </View>
                       )}
@@ -350,12 +341,12 @@ export default function AdminOrdersPage() {
                       {/* Shipping Update Form */}
                       {showShipForm && (
                         <View className='ship-form'>
-                          <Text className='ship-form__title'>更新物流状态</Text>
+                          <Text className='ship-form__title'>{t('admin.orders.updateShippingTitle')}</Text>
                           {shipError && (
                             <View className='ship-form__error'><Text>{shipError}</Text></View>
                           )}
                           <View className='ship-form__field'>
-                            <Text className='ship-form__label'>目标状态</Text>
+                            <Text className='ship-form__label'>{t('admin.orders.targetStatusLabel')}</Text>
                             <View className='ship-form__status-options'>
                               {SHIPPING_STATUS_ORDER.map((s) => {
                                 const v = validateStatusTransition(orderDetail.shippingStatus, s);
@@ -373,40 +364,40 @@ export default function AdminOrdersPage() {
                           </View>
                           {shipTargetStatus === 'shipped' && (
                             <View className='ship-form__field'>
-                              <Text className='ship-form__label'>物流单号 *</Text>
+                              <Text className='ship-form__label'>{t('admin.orders.trackingNumberLabel')}</Text>
                               <Input
                                 className='ship-form__input'
                                 value={shipTrackingNumber}
                                 onInput={(e) => setShipTrackingNumber(e.detail.value)}
-                                placeholder='请输入物流单号'
+                                placeholder={t('admin.orders.trackingNumberPlaceholder')}
                               />
                             </View>
                           )}
                           <View className='ship-form__field'>
-                            <Text className='ship-form__label'>备注</Text>
-                            <Textarea
+                            <Text className='ship-form__label'>{t('admin.orders.remarkLabel')}</Text>
+                            <textarea
                               className='ship-form__textarea'
                               value={shipRemark}
-                              onInput={(e) => setShipRemark(e.detail.value)}
-                              placeholder='可选备注信息'
+                              onChange={(e) => setShipRemark((e.target as HTMLTextAreaElement).value)}
+                              placeholder={t('admin.orders.remarkPlaceholder')}
                             />
                           </View>
                           <View className='ship-form__actions'>
                             <View className='ship-form__cancel' onClick={() => setShowShipForm(false)}>
-                              <Text>取消</Text>
+                              <Text>{t('common.cancel')}</Text>
                             </View>
                             <View
                               className={`ship-form__submit ${shipSubmitting ? 'ship-form__submit--loading' : ''}`}
                               onClick={handleShipSubmit}
                             >
-                              <Text>{shipSubmitting ? '提交中...' : '确认更新'}</Text>
+                              <Text>{shipSubmitting ? t('admin.orders.submitting') : t('admin.orders.confirmUpdate')}</Text>
                             </View>
                           </View>
                         </View>
                       )}
                     </>
                   ) : (
-                    <View className='order-detail__loading'><Text>加载失败</Text></View>
+                    <View className='order-detail__loading'><Text>{t('admin.orders.loadFailed')}</Text></View>
                   )}
                 </View>
               )}
@@ -415,7 +406,7 @@ export default function AdminOrdersPage() {
 
           {hasMore && !loading && (
             <View className='order-list__more' onClick={handleLoadMore}>
-              <Text>加载更多</Text>
+              <Text>{t('admin.orders.loadMore')}</Text>
             </View>
           )}
         </View>

@@ -3,6 +3,9 @@ import { View, Text } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useAppStore } from '../../store';
 import { RequestError } from '../../utils/request';
+import { goBack } from '../../utils/navigation';
+import { useTranslation } from '../../i18n';
+import { KeyIcon } from '../../components/icons';
 import './index.scss';
 
 /** 邮箱格式校验 */
@@ -11,6 +14,7 @@ function isValidEmail(email: string): boolean {
 }
 
 export default function ForgotPasswordPage() {
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -24,11 +28,11 @@ export default function ForgotPasswordPage() {
     setError('');
 
     if (!email.trim()) {
-      setEmailError('请输入邮箱地址');
+      setEmailError(t('forgotPassword.errorEmailRequired'));
       return false;
     }
     if (!isValidEmail(email)) {
-      setEmailError('邮箱格式不正确');
+      setEmailError(t('forgotPassword.errorEmailInvalid'));
       return false;
     }
     return true;
@@ -45,7 +49,7 @@ export default function ForgotPasswordPage() {
       if (err instanceof RequestError) {
         setError(err.message);
       } else {
-        setError('请求失败，请稍后重试');
+        setError(t('forgotPassword.errorDefault'));
       }
     } finally {
       setLoading(false);
@@ -53,9 +57,7 @@ export default function ForgotPasswordPage() {
   }, [email, forgotPassword, validateForm]);
 
   const goToLogin = useCallback(() => {
-    Taro.navigateBack({ delta: 1 }).catch(() => {
-      Taro.redirectTo({ url: '/pages/login/index' });
-    });
+    goBack('/pages/login/index');
   }, []);
 
   if (success) {
@@ -65,13 +67,13 @@ export default function ForgotPasswordPage() {
         <View className='forgot-page__bg-glow forgot-page__bg-glow--right' />
         <View className='forgot-card'>
           <View className='forgot-card__success'>
-            <Text className='forgot-card__success-icon'>✉️</Text>
-            <Text className='forgot-card__success-title'>邮件已发送</Text>
+            <Text className='forgot-card__success-icon'>✓</Text>
+            <Text className='forgot-card__success-title'>{t('forgotPassword.successTitle')}</Text>
             <Text className='forgot-card__success-msg'>
-              如果该邮箱已注册，重置邮件已发送
+              {t('forgotPassword.successMessage')}
             </Text>
             <View className='forgot-card__submit' onClick={goToLogin}>
-              <Text>返回登录</Text>
+              <Text>{t('common.backToLogin')}</Text>
             </View>
           </View>
         </View>
@@ -86,9 +88,9 @@ export default function ForgotPasswordPage() {
 
       <View className='forgot-card'>
         <View className='forgot-card__logo'>
-          <Text className='forgot-card__logo-icon'>🔑</Text>
-          <Text className='forgot-card__logo-text'>忘记密码</Text>
-          <Text className='forgot-card__logo-sub'>输入邮箱以重置密码</Text>
+          <Text className='forgot-card__logo-icon'><KeyIcon size={32} color='var(--accent-primary)' /></Text>
+          <Text className='forgot-card__logo-text'>{t('forgotPassword.title')}</Text>
+          <Text className='forgot-card__logo-sub'>{t('forgotPassword.subtitle')}</Text>
         </View>
 
         {error && (
@@ -99,11 +101,11 @@ export default function ForgotPasswordPage() {
 
         <View className='forgot-card__form'>
           <View className='forgot-card__field'>
-            <Text className='forgot-card__label'>邮箱</Text>
+            <Text className='forgot-card__label'>{t('forgotPassword.emailLabel')}</Text>
             <input
               className='forgot-card__input'
               type='text'
-              placeholder='请输入注册邮箱地址'
+              placeholder={t('forgotPassword.emailPlaceholder')}
               value={email}
               onInput={(e: any) => setEmail(e.target.value || e.detail?.value || '')}
             />
@@ -114,11 +116,11 @@ export default function ForgotPasswordPage() {
             className={`forgot-card__submit ${loading ? 'forgot-card__submit--loading' : ''}`}
             onClick={handleSubmit}
           >
-            <Text>{loading ? '发送中...' : '发送重置邮件'}</Text>
+            <Text>{loading ? t('forgotPassword.sending') : t('forgotPassword.submitButton')}</Text>
           </View>
 
           <View className='forgot-card__footer'>
-            <Text className='forgot-card__footer-link' onClick={goToLogin}>返回登录</Text>
+            <Text className='forgot-card__footer-link' onClick={goToLogin}>{t('common.backToLogin')}</Text>
           </View>
         </View>
       </View>

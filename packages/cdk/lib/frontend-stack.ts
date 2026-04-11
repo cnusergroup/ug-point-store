@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import { Construct } from 'constructs';
 
 export interface FrontendStackProps extends cdk.StackProps {
@@ -61,6 +62,10 @@ export class FrontendStack extends cdk.Stack {
     this.distribution = new cloudfront.Distribution(this, 'Distribution', {
       comment: 'Points Mall CDN',
       defaultRootObject: 'index.html',
+      domainNames: ['store.awscommunity.cn'],
+      certificate: acm.Certificate.fromCertificateArn(this, 'CustomCert',
+        'arn:aws:acm:us-east-1:778409058172:certificate/1e9c7abe-e4b1-4a39-95e1-00deb0cf2c46',
+      ),
 
       // Default behavior: static assets from S3
       defaultBehavior: {
@@ -86,6 +91,12 @@ export class FrontendStack extends cdk.Stack {
         },
         // Claim images → images S3 bucket (new format: /claims/...)
         '/claims/*': {
+          origin: imagesOrigin,
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        },
+        // Content documents → images S3 bucket (content hub files)
+        '/content/*': {
           origin: imagesOrigin,
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,

@@ -53,6 +53,14 @@ vi.mock('../claims/review', () => ({
   reviewClaim: vi.fn(),
   listAllClaims: vi.fn(),
 }));
+vi.mock('../content/admin', () => ({
+  reviewContent: vi.fn(),
+  listAllContent: vi.fn(),
+  deleteContent: vi.fn(),
+  createCategory: vi.fn(),
+  updateCategory: vi.fn(),
+  deleteCategory: vi.fn(),
+}));
 
 // Mock auth middleware - inject user with admin role by default
 let mockUserRoles: string[] = ['Admin'];
@@ -75,7 +83,9 @@ import { batchGeneratePointsCodes, generateProductCodes, listCodes, disableCode 
 import { createPointsProduct, createCodeExclusiveProduct, updateProduct, setProductStatus } from './products';
 import { getUploadUrl, deleteImage } from './images';
 import { listUsers, setUserStatus, deleteUser } from './users';
+import { batchGenerateInvites } from './invites';
 import { reviewClaim, listAllClaims } from '../claims/review';
+import { reviewContent, listAllContent, deleteContent, createCategory, updateCategory, deleteCategory } from '../content/admin';
 
 function makeEvent(overrides: Partial<APIGatewayProxyEvent> = {}): APIGatewayProxyEvent {
   return {
@@ -915,6 +925,244 @@ describe('Admin Lambda Handler', () => {
       const result = await handler(event);
       expect(result.statusCode).toBe(400);
       expect(JSON.parse(result.body).code).toBe('CLAIM_ALREADY_REVIEWED');
+    });
+  });
+
+  describe('POST /api/admin/invites/batch', () => {
+    it('routes to batchGenerateInvites with roles array from body', async () => {
+      const mockInvites = [
+        {
+          token: 'tok-1',
+          link: 'https://example.com/register?token=tok-1',
+          roles: ['Speaker', 'Volunteer'],
+          expiresAt: '2025-01-02T00:00:00.000Z',
+        },
+      ];
+      vi.mocked(batchGenerateInvites).mockResolvedValue({ success: true, invites: mockInvites });
+
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/invites/batch',
+        body: JSON.stringify({ count: 1, roles: ['Speaker', 'Volunteer'] }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(201);
+      expect(JSON.parse(result.body).invites).toEqual(mockInvites);
+      expect(batchGenerateInvites).toHaveBeenCalledWith(
+        1,
+        ['Speaker', 'Volunteer'],
+        expect.anything(),
+        '',
+        '',
+      );
+    });
+
+    it('returns 400 when roles is not an array', async () => {
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/invites/batch',
+        body: JSON.stringify({ count: 5, roles: 'Speaker' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+    });
+
+    it('returns 400 when roles field is missing', async () => {
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/invites/batch',
+        body: JSON.stringify({ count: 5 }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+    });
+
+    it('returns 400 when count is missing', async () => {
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/invites/batch',
+        body: JSON.stringify({ roles: ['Speaker'] }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+    });
+
+    it('returns error when batchGenerateInvites fails', async () => {
+      vi.mocked(batchGenerateInvites).mockResolvedValue({
+        success: false,
+        error: { code: 'INVALID_ROLES', message: '请至少选择一个角色' },
+      });
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/invites/batch',
+        body: JSON.stringify({ count: 1, roles: [] }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_ROLES');
+    });
+  });
+
+  // ── Content Management Routes ──────────────────────────────
+
+  describe('GET /api/admin/content', () => {
+    it('routes to listAllContent and returns results', async () => {
+      vi.mocked(listAllContent).mockResolvedValue({ items: [], lastKey: undefined });
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/content' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body)).toEqual({ items: [], lastKey: undefined });
+    });
+
+    it('passes status, pageSize and lastKey query params', async () => {
+      vi.mocked(listAllContent).mockResolvedValue({ items: [], lastKey: undefined });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/content',
+        queryStringParameters: { status: 'pending', pageSize: '10', lastKey: 'some-key' },
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(listAllContent).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'pending', pageSize: 10, lastKey: 'some-key' }),
+        expect.anything(),
+        '',
+      );
+    });
+  });
+
+  describe('PATCH /api/admin/content/:id/review', () => {
+    it('requires SuperAdmin role', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'PATCH',
+        path: '/api/admin/content/content-1/review',
+        body: JSON.stringify({ action: 'approve' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('CONTENT_REVIEW_FORBIDDEN');
+    });
+
+    it('routes to reviewContent when user is SuperAdmin', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(reviewContent).mockResolvedValue({
+        success: true,
+        item: { contentId: 'content-1', status: 'approved' } as any,
+      });
+      const event = makeEvent({
+        httpMethod: 'PATCH',
+        path: '/api/admin/content/content-1/review',
+        body: JSON.stringify({ action: 'approve' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(reviewContent).toHaveBeenCalledWith(
+        expect.objectContaining({ contentId: 'content-1', reviewerId: 'admin-user-id', action: 'approve' }),
+        expect.anything(),
+        '',
+      );
+    });
+
+    it('returns 400 when action field is missing', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      const event = makeEvent({
+        httpMethod: 'PATCH',
+        path: '/api/admin/content/content-1/review',
+        body: JSON.stringify({}),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+    });
+  });
+
+  describe('DELETE /api/admin/content/:id', () => {
+    it('routes to deleteContent with correct contentId', async () => {
+      vi.mocked(deleteContent).mockResolvedValue({ success: true });
+      const event = makeEvent({
+        httpMethod: 'DELETE',
+        path: '/api/admin/content/content-1',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(deleteContent).toHaveBeenCalledWith(
+        'content-1',
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ contentItemsTable: '' }),
+        '',
+      );
+    });
+  });
+
+  describe('POST /api/admin/content/categories', () => {
+    it('routes to createCategory with correct name', async () => {
+      vi.mocked(createCategory).mockResolvedValue({
+        success: true,
+        category: { categoryId: 'cat-1', name: 'Tech', createdAt: '2024-01-01' },
+      });
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/content/categories',
+        body: JSON.stringify({ name: 'Tech' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(201);
+      expect(createCategory).toHaveBeenCalledWith('Tech', expect.anything(), '');
+    });
+
+    it('returns 400 when name is missing', async () => {
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/content/categories',
+        body: JSON.stringify({}),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+    });
+  });
+
+  describe('PUT /api/admin/content/categories/:id', () => {
+    it('routes to updateCategory with correct params', async () => {
+      vi.mocked(updateCategory).mockResolvedValue({
+        success: true,
+        category: { categoryId: 'cat-1', name: 'Updated', createdAt: '2024-01-01' },
+      });
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/content/categories/cat-1',
+        body: JSON.stringify({ name: 'Updated' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(updateCategory).toHaveBeenCalledWith('cat-1', 'Updated', expect.anything(), '');
+    });
+
+    it('returns 400 when name is missing', async () => {
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/content/categories/cat-1',
+        body: JSON.stringify({}),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+    });
+  });
+
+  describe('DELETE /api/admin/content/categories/:id', () => {
+    it('routes to deleteCategory with correct categoryId', async () => {
+      vi.mocked(deleteCategory).mockResolvedValue({ success: true });
+      const event = makeEvent({
+        httpMethod: 'DELETE',
+        path: '/api/admin/content/categories/cat-1',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(deleteCategory).toHaveBeenCalledWith('cat-1', expect.anything(), '');
     });
   });
 });

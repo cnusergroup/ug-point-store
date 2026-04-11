@@ -4,6 +4,8 @@ import Taro from '@tarojs/taro';
 import { useAppStore } from '../../store';
 import { request, RequestError } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
+import { useTranslation } from '../../i18n';
+import { TicketIcon, ClaimIcon } from '../../components/icons';
 import './codes.scss';
 
 interface CodeInfo {
@@ -29,14 +31,9 @@ interface ProductInfo {
 type FormView = 'hidden' | 'batch-points' | 'product-code';
 type TypeFilter = 'all' | 'points' | 'product';
 
-const TYPE_TABS: { key: TypeFilter; label: string }[] = [
-  { key: 'all', label: '全部' },
-  { key: 'points', label: '积分码' },
-  { key: 'product', label: '商品码' },
-];
-
 export default function AdminCodesPage() {
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
+  const { t } = useTranslation();
 
   const [codes, setCodes] = useState<CodeInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -122,30 +119,30 @@ export default function AdminCodesPage() {
     const count = Number(batchCount);
     const pointsValue = Number(batchPointsValue);
     const maxUses = Number(batchMaxUses);
-    if (!count || count <= 0) { setError('请输入有效数量'); return; }
-    if (!pointsValue || pointsValue <= 0) { setError('请输入有效积分值'); return; }
-    if (!maxUses || maxUses <= 0) { setError('请输入有效最大使用次数'); return; }
+    if (!count || count <= 0) { setError(t('admin.codes.errorCountRequired')); return; }
+    if (!pointsValue || pointsValue <= 0) { setError(t('admin.codes.errorPointsRequired')); return; }
+    if (!maxUses || maxUses <= 0) { setError(t('admin.codes.errorMaxUsesRequired')); return; }
     setSubmitting(true); setError('');
     try {
       await request({ url: '/api/admin/codes/batch-generate', method: 'POST', data: { count, pointsValue, maxUses, name: batchName.trim() || undefined } });
       closeForm(); fetchCodes();
-      Taro.showToast({ title: `已生成 ${count} 个积分码`, icon: 'none' });
+      Taro.showToast({ title: t('admin.codes.generatedPointsCodes', { count }), icon: 'none' });
     } catch (err) {
-      setError(err instanceof RequestError ? err.message : '生成失败');
+      setError(err instanceof RequestError ? err.message : t('admin.codes.generateFailed'));
     } finally { setSubmitting(false); }
   };
 
   const handleProductCodeGenerate = async () => {
     const count = Number(prodCodeCount);
-    if (!prodCodeProductId.trim()) { setError('请选择商品'); return; }
-    if (!count || count <= 0) { setError('请输入有效数量'); return; }
+    if (!prodCodeProductId.trim()) { setError(t('admin.codes.errorSelectProduct')); return; }
+    if (!count || count <= 0) { setError(t('admin.codes.errorCountRequired')); return; }
     setSubmitting(true); setError('');
     try {
       await request({ url: '/api/admin/codes/product-code', method: 'POST', data: { productId: prodCodeProductId.trim(), count } });
       closeForm(); fetchCodes();
-      Taro.showToast({ title: `已生成 ${count} 个商品码`, icon: 'none' });
+      Taro.showToast({ title: t('admin.codes.generatedProductCodes', { count }), icon: 'none' });
     } catch (err) {
-      setError(err instanceof RequestError ? err.message : '生成失败');
+      setError(err instanceof RequestError ? err.message : t('admin.codes.generateFailed'));
     } finally { setSubmitting(false); }
   };
 
@@ -154,7 +151,7 @@ export default function AdminCodesPage() {
       await request({ url: `/api/admin/codes/${code.codeId}/disable`, method: 'PATCH' });
       fetchCodes();
     } catch (err) {
-      Taro.showToast({ title: err instanceof RequestError ? err.message : '禁用失败', icon: 'none' });
+      Taro.showToast({ title: err instanceof RequestError ? err.message : t('admin.codes.disableFailed'), icon: 'none' });
     }
   };
 
@@ -164,9 +161,9 @@ export default function AdminCodesPage() {
       await request({ url: `/api/admin/codes/${deleteTarget.codeId}`, method: 'DELETE' });
       setDeleteTarget(null);
       fetchCodes();
-      Taro.showToast({ title: '已删除', icon: 'none' });
+      Taro.showToast({ title: t('common.deleteSuccess'), icon: 'none' });
     } catch (err) {
-      Taro.showToast({ title: err instanceof RequestError ? err.message : '删除失败', icon: 'none' });
+      Taro.showToast({ title: err instanceof RequestError ? err.message : t('admin.codes.deleteFailed'), icon: 'none' });
       setDeleteTarget(null);
     }
   };
@@ -177,10 +174,10 @@ export default function AdminCodesPage() {
 
   const handleBack = () => goBack('/pages/admin/index');
 
-  const statusLabel: Record<string, { text: string; cls: string }> = {
-    active: { text: '有效', cls: 'code-status--active' },
-    disabled: { text: '已禁用', cls: 'code-status--disabled' },
-    exhausted: { text: '已用尽', cls: 'code-status--exhausted' },
+  const statusLabel: Record<string, { textKey: string; cls: string }> = {
+    active: { textKey: 'admin.codes.statusActive', cls: 'code-status--active' },
+    disabled: { textKey: 'admin.codes.statusDisabled', cls: 'code-status--disabled' },
+    exhausted: { textKey: 'admin.codes.statusExhausted', cls: 'code-status--exhausted' },
   };
 
   const formatTime = (iso: string) => {
@@ -192,17 +189,21 @@ export default function AdminCodesPage() {
   return (
     <View className='admin-codes'>
       <View className='admin-codes__toolbar'>
-        <View className='admin-codes__back' onClick={handleBack}><Text>‹ 返回</Text></View>
-        <Text className='admin-codes__title'>Code 管理</Text>
+        <View className='admin-codes__back' onClick={handleBack}><Text>{t('admin.codes.backButton')}</Text></View>
+        <Text className='admin-codes__title'>{t('admin.codes.title')}</Text>
         <View className='admin-codes__btns'>
-          <View className='admin-codes__gen-btn' onClick={openBatchPoints}><Text>+ 积分码</Text></View>
-          <View className='admin-codes__gen-btn admin-codes__gen-btn--alt' onClick={openProductCode}><Text>+ 商品码</Text></View>
+          <View className='admin-codes__gen-btn' onClick={openBatchPoints}><Text>{t('admin.codes.addPointsCode')}</Text></View>
+          <View className='admin-codes__gen-btn admin-codes__gen-btn--alt' onClick={openProductCode}><Text>{t('admin.codes.addProductCode')}</Text></View>
         </View>
       </View>
 
       {/* Type Filter Tabs */}
       <View className='code-tabs'>
-        {TYPE_TABS.map((tab) => (
+        {([
+          { key: 'all' as TypeFilter, label: t('admin.codes.filterAll') },
+          { key: 'points' as TypeFilter, label: t('admin.codes.filterPoints') },
+          { key: 'product' as TypeFilter, label: t('admin.codes.filterProduct') },
+        ]).map((tab) => (
           <View
             key={tab.key}
             className={`code-tabs__item ${typeFilter === tab.key ? 'code-tabs__item--active' : ''}`}
@@ -218,35 +219,35 @@ export default function AdminCodesPage() {
         <View className='form-overlay'>
           <View className='form-modal'>
             <View className='form-modal__header'>
-              <Text className='form-modal__title'>批量生成积分码</Text>
+              <Text className='form-modal__title'>{t('admin.codes.batchGenerateTitle')}</Text>
               <View className='form-modal__close' onClick={closeForm}><Text>✕</Text></View>
             </View>
             {error && <View className='form-modal__error'><Text>{error}</Text></View>}
             <View className='form-modal__body'>
               <View className='form-field'>
-                <Text className='form-field__label'>积分码名称</Text>
+                <Text className='form-field__label'>{t('admin.codes.codeNameLabel')}</Text>
                 <Input className='form-field__input' value={batchName}
-                  onInput={(e) => setBatchName(e.detail.value)} placeholder='例如: AWS Summit 2026 签到码' />
+                  onInput={(e) => setBatchName(e.detail.value)} placeholder={t('admin.codes.codeNamePlaceholder')} />
               </View>
               <View className='form-field'>
-                <Text className='form-field__label'>生成数量</Text>
+                <Text className='form-field__label'>{t('admin.codes.countLabel')}</Text>
                 <Input className='form-field__input' type='number' value={batchCount}
-                  onInput={(e) => setBatchCount(e.detail.value)} placeholder='例如: 100' />
+                  onInput={(e) => setBatchCount(e.detail.value)} placeholder={t('admin.codes.countPlaceholder')} />
               </View>
               <View className='form-field'>
-                <Text className='form-field__label'>每码积分值</Text>
+                <Text className='form-field__label'>{t('admin.codes.pointsValueLabel')}</Text>
                 <Input className='form-field__input' type='number' value={batchPointsValue}
-                  onInput={(e) => setBatchPointsValue(e.detail.value)} placeholder='例如: 50' />
+                  onInput={(e) => setBatchPointsValue(e.detail.value)} placeholder={t('admin.codes.pointsValuePlaceholder')} />
               </View>
               <View className='form-field'>
-                <Text className='form-field__label'>最大使用次数</Text>
+                <Text className='form-field__label'>{t('admin.codes.maxUsesLabel')}</Text>
                 <Input className='form-field__input' type='number' value={batchMaxUses}
-                  onInput={(e) => setBatchMaxUses(e.detail.value)} placeholder='例如: 1' />
+                  onInput={(e) => setBatchMaxUses(e.detail.value)} placeholder={t('admin.codes.maxUsesPlaceholder')} />
               </View>
             </View>
             <View className={`form-modal__submit ${submitting ? 'form-modal__submit--loading' : ''}`}
               onClick={handleBatchGenerate}>
-              <Text>{submitting ? '生成中...' : '批量生成'}</Text>
+              <Text>{submitting ? t('admin.codes.generating') : t('admin.codes.batchGenerate')}</Text>
             </View>
           </View>
         </View>
@@ -257,15 +258,15 @@ export default function AdminCodesPage() {
         <View className='form-overlay'>
           <View className='form-modal'>
             <View className='form-modal__header'>
-              <Text className='form-modal__title'>生成商品专属码</Text>
+              <Text className='form-modal__title'>{t('admin.codes.productCodeTitle')}</Text>
               <View className='form-modal__close' onClick={closeForm}><Text>✕</Text></View>
             </View>
             {error && <View className='form-modal__error'><Text>{error}</Text></View>}
             <View className='form-modal__body'>
               <View className='form-field'>
-                <Text className='form-field__label'>选择商品</Text>
+                <Text className='form-field__label'>{t('admin.codes.selectProductLabel')}</Text>
                 {codeExclusiveProducts.length === 0 ? (
-                  <Text className='form-field__hint'>暂无 Code 专属商品，请先在商品管理中创建</Text>
+                  <Text className='form-field__hint'>{t('admin.codes.noCodeExclusiveProducts')}</Text>
                 ) : (
                   <View className='form-field__product-list'>
                     {codeExclusiveProducts.map((p) => (
@@ -277,7 +278,7 @@ export default function AdminCodesPage() {
                         {p.imageUrl ? (
                           <Image className='form-field__product-img' src={p.imageUrl} mode='aspectFill' />
                         ) : (
-                          <View className='form-field__product-img-placeholder'><Text>🎫</Text></View>
+                          <View className='form-field__product-img-placeholder'><Text><TicketIcon size={20} color='var(--text-tertiary)' /></Text></View>
                         )}
                         <Text className='form-field__product-name'>{p.name}</Text>
                         {prodCodeProductId === p.productId && <Text className='form-field__product-check'>✓</Text>}
@@ -287,14 +288,14 @@ export default function AdminCodesPage() {
                 )}
               </View>
               <View className='form-field'>
-                <Text className='form-field__label'>生成数量</Text>
+                <Text className='form-field__label'>{t('admin.codes.countLabel')}</Text>
                 <Input className='form-field__input' type='number' value={prodCodeCount}
-                  onInput={(e) => setProdCodeCount(e.detail.value)} placeholder='例如: 50' />
+                  onInput={(e) => setProdCodeCount(e.detail.value)} placeholder={t('admin.codes.countPlaceholder')} />
               </View>
             </View>
             <View className={`form-modal__submit ${submitting ? 'form-modal__submit--loading' : ''}`}
               onClick={handleProductCodeGenerate}>
-              <Text>{submitting ? '生成中...' : '生成商品码'}</Text>
+              <Text>{submitting ? t('admin.codes.generating') : t('admin.codes.generateProductCode')}</Text>
             </View>
           </View>
         </View>
@@ -305,15 +306,15 @@ export default function AdminCodesPage() {
         <View className='form-overlay'>
           <View className='form-modal'>
             <View className='form-modal__header'>
-              <Text className='form-modal__title'>确认删除</Text>
+              <Text className='form-modal__title'>{t('admin.codes.confirmDeleteTitle')}</Text>
               <View className='form-modal__close' onClick={() => setDeleteTarget(null)}><Text>✕</Text></View>
             </View>
             <View className='form-modal__body'>
-              <Text className='confirm-text'>确定要删除 Code「{deleteTarget.codeValue}」吗？此操作不可恢复。</Text>
+              <Text className='confirm-text'>{t('admin.codes.confirmDeleteMessage', { code: deleteTarget.codeValue })}</Text>
             </View>
             <View className='form-modal__actions'>
-              <View className='form-modal__cancel' onClick={() => setDeleteTarget(null)}><Text>取消</Text></View>
-              <View className='form-modal__submit form-modal__submit--danger' onClick={handleDelete}><Text>确认删除</Text></View>
+              <View className='form-modal__cancel' onClick={() => setDeleteTarget(null)}><Text>{t('common.cancel')}</Text></View>
+              <View className='form-modal__submit form-modal__submit--danger' onClick={handleDelete}><Text>{t('admin.codes.confirmDeleteButton')}</Text></View>
             </View>
           </View>
         </View>
@@ -321,11 +322,11 @@ export default function AdminCodesPage() {
 
       {/* Code List */}
       {loading ? (
-        <View className='admin-loading'><Text>加载中...</Text></View>
+        <View className='admin-loading'><Text>{t('admin.codes.loading')}</Text></View>
       ) : filteredCodes.length === 0 ? (
         <View className='admin-empty'>
-          <Text className='admin-empty__icon'>🎟️</Text>
-          <Text className='admin-empty__text'>{typeFilter === 'all' ? '暂无 Code，点击上方按钮生成' : '该类别暂无 Code'}</Text>
+          <Text className='admin-empty__icon'><TicketIcon size={48} color='var(--text-tertiary)' /></Text>
+          <Text className='admin-empty__text'>{typeFilter === 'all' ? t('admin.codes.noCodesAll') : t('admin.codes.noCodesFiltered')}</Text>
         </View>
       ) : (
         <View className='code-list'>
@@ -345,34 +346,34 @@ export default function AdminCodesPage() {
                     <View className='code-row__top'>
                       <Text className='code-row__value'>{code.codeValue}</Text>
                       <Text className={`code-row__type ${code.type === 'product' ? 'code-row__type--product' : ''}`}>
-                        {code.type === 'points' ? '积分码' : '商品码'}
+                        {code.type === 'points' ? t('admin.codes.typePoints') : t('admin.codes.typeProduct')}
                       </Text>
-                      <Text className={`code-row__status ${st.cls}`}>{st.text}</Text>
+                      <Text className={`code-row__status ${st.cls}`}>{t(st.textKey)}</Text>
                     </View>
                     <View className='code-row__meta'>
                       {code.type === 'points' && code.pointsValue != null && (
-                        <Text className='code-row__meta-item'>◆ {code.pointsValue} 积分</Text>
+                        <Text className='code-row__meta-item'>◆ {code.pointsValue} {t('common.pointsUnit')}</Text>
                       )}
                       {code.type === 'points' && code.name && (
-                        <Text className='code-row__meta-item code-row__meta-product'>📋 {code.name}</Text>
+                        <Text className='code-row__meta-item code-row__meta-product'>{code.name}</Text>
                       )}
                       {code.type === 'product' && code.productId && (
                         <Text className='code-row__meta-item code-row__meta-product'>
                           {productMap[code.productId]
-                            ? `🏷️ ${productMap[code.productId].name}`
-                            : `商品: ${code.productId}`}
+                            ? productMap[code.productId].name
+                            : t('admin.codes.productLabel', { name: code.productId })}
                         </Text>
                       )}
-                      <Text className='code-row__meta-item'>使用: {code.currentUses}/{code.maxUses}</Text>
+                      <Text className='code-row__meta-item'>{t('admin.codes.usageLabel', { current: code.currentUses, max: code.maxUses })}</Text>
                       <Text className='code-row__meta-item'>{formatTime(code.createdAt)}</Text>
                     </View>
                   </View>
                   <View className='code-row__actions'>
-                    <View className='code-row__copy-btn' onClick={() => copyCode(code.codeValue)}><Text>复制</Text></View>
+                    <View className='code-row__copy-btn' onClick={() => copyCode(code.codeValue)}><Text>{t('admin.codes.copyButton')}</Text></View>
                     {code.status === 'active' && (
-                      <View className='code-row__disable-btn' onClick={() => handleDisable(code)}><Text>禁用</Text></View>
+                      <View className='code-row__disable-btn' onClick={() => handleDisable(code)}><Text>{t('admin.codes.disableButton')}</Text></View>
                     )}
-                    <View className='code-row__delete-btn' onClick={() => setDeleteTarget(code)}><Text>删除</Text></View>
+                    <View className='code-row__delete-btn' onClick={() => setDeleteTarget(code)}><Text>{t('admin.codes.deleteButton')}</Text></View>
                   </View>
                 </View>
               </View>

@@ -125,6 +125,36 @@ export const ErrorCodes = {
   INVALID_POINTS_AMOUNT: 'INVALID_POINTS_AMOUNT',
   /** 驳回原因格式无效 (400) - 需求 3.6 */
   INVALID_REJECT_REASON: 'INVALID_REJECT_REASON',
+  /** 数量超过库存 (400) - 需求 3.2, 6.2 */
+  QUANTITY_EXCEEDS_STOCK: 'QUANTITY_EXCEEDS_STOCK',
+  /** 数量必须为正整数 (400) - 需求 2.3 */
+  INVALID_QUANTITY: 'INVALID_QUANTITY',
+  /** 请至少选择一个角色 (400) - 需求 2.2 */
+  INVALID_ROLES: 'INVALID_ROLES',
+  /** 不支持的文档格式，仅支持 PPT/PPTX/PDF/DOC/DOCX (400) - 需求 1.4 */
+  INVALID_CONTENT_FILE_TYPE: 'INVALID_CONTENT_FILE_TYPE',
+  /** 文档文件大小超过 50MB 上限 (400) - 需求 1.5 */
+  CONTENT_FILE_TOO_LARGE: 'CONTENT_FILE_TOO_LARGE',
+  /** 视频链接格式无效 (400) - 需求 1.6 */
+  INVALID_VIDEO_URL: 'INVALID_VIDEO_URL',
+  /** 内容标题格式无效（1~100 字符）(400) - 需求 1.2 */
+  INVALID_CONTENT_TITLE: 'INVALID_CONTENT_TITLE',
+  /** 内容描述格式无效（1~2000 字符）(400) - 需求 1.2 */
+  INVALID_CONTENT_DESCRIPTION: 'INVALID_CONTENT_DESCRIPTION',
+  /** 内容不存在 (404) - 需求 4.1 */
+  CONTENT_NOT_FOUND: 'CONTENT_NOT_FOUND',
+  /** 分类不存在 (404) - 需求 3.2 */
+  CATEGORY_NOT_FOUND: 'CATEGORY_NOT_FOUND',
+  /** 该内容已被审核 (400) - 需求 2.3 */
+  CONTENT_ALREADY_REVIEWED: 'CONTENT_ALREADY_REVIEWED',
+  /** 评论内容无效（1~500 字符）(400) - 需求 7.3, 7.4 */
+  INVALID_COMMENT_CONTENT: 'INVALID_COMMENT_CONTENT',
+  /** 需先完成使用预约才能下载 (400) - 需求 5.2 */
+  RESERVATION_REQUIRED: 'RESERVATION_REQUIRED',
+  /** 仅 SuperAdmin 可审核内容 (403) - 需求 2.1 */
+  CONTENT_REVIEW_FORBIDDEN: 'CONTENT_REVIEW_FORBIDDEN',
+  /** 该内容已被预约使用，不允许编辑 (400) - 需求 1.4 */
+  CONTENT_NOT_EDITABLE: 'CONTENT_NOT_EDITABLE',
 } as const;
 
 /** 错误码类型 */
@@ -193,6 +223,21 @@ export const ErrorHttpStatus: Record<ErrorCode, number> = {
   [ErrorCodes.CLAIM_ALREADY_REVIEWED]: 400,
   [ErrorCodes.INVALID_POINTS_AMOUNT]: 400,
   [ErrorCodes.INVALID_REJECT_REASON]: 400,
+  [ErrorCodes.QUANTITY_EXCEEDS_STOCK]: 400,
+  [ErrorCodes.INVALID_QUANTITY]: 400,
+  [ErrorCodes.INVALID_ROLES]: 400,
+  [ErrorCodes.INVALID_CONTENT_FILE_TYPE]: 400,
+  [ErrorCodes.CONTENT_FILE_TOO_LARGE]: 400,
+  [ErrorCodes.INVALID_VIDEO_URL]: 400,
+  [ErrorCodes.INVALID_CONTENT_TITLE]: 400,
+  [ErrorCodes.INVALID_CONTENT_DESCRIPTION]: 400,
+  [ErrorCodes.CONTENT_NOT_FOUND]: 404,
+  [ErrorCodes.CATEGORY_NOT_FOUND]: 404,
+  [ErrorCodes.CONTENT_ALREADY_REVIEWED]: 400,
+  [ErrorCodes.INVALID_COMMENT_CONTENT]: 400,
+  [ErrorCodes.RESERVATION_REQUIRED]: 400,
+  [ErrorCodes.CONTENT_REVIEW_FORBIDDEN]: 403,
+  [ErrorCodes.CONTENT_NOT_EDITABLE]: 400,
 };
 
 /** 错误码对应的默认错误消息 */
@@ -258,4 +303,19 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.CLAIM_ALREADY_REVIEWED]: '该申请已被审批',
   [ErrorCodes.INVALID_POINTS_AMOUNT]: '积分数值无效（1~10000）',
   [ErrorCodes.INVALID_REJECT_REASON]: '驳回原因格式无效',
+  [ErrorCodes.QUANTITY_EXCEEDS_STOCK]: '数量超过库存',
+  [ErrorCodes.INVALID_QUANTITY]: '数量必须为正整数',
+  [ErrorCodes.INVALID_ROLES]: '请至少选择一个角色',
+  [ErrorCodes.INVALID_CONTENT_FILE_TYPE]: '不支持的文档格式，仅支持 PPT/PPTX/PDF/DOC/DOCX',
+  [ErrorCodes.CONTENT_FILE_TOO_LARGE]: '文档文件大小超过 50MB 上限',
+  [ErrorCodes.INVALID_VIDEO_URL]: '视频链接格式无效',
+  [ErrorCodes.INVALID_CONTENT_TITLE]: '内容标题格式无效（1~100 字符）',
+  [ErrorCodes.INVALID_CONTENT_DESCRIPTION]: '内容描述格式无效（1~2000 字符）',
+  [ErrorCodes.CONTENT_NOT_FOUND]: '内容不存在',
+  [ErrorCodes.CATEGORY_NOT_FOUND]: '分类不存在',
+  [ErrorCodes.CONTENT_ALREADY_REVIEWED]: '该内容已被审核',
+  [ErrorCodes.INVALID_COMMENT_CONTENT]: '评论内容无效（1~500 字符）',
+  [ErrorCodes.RESERVATION_REQUIRED]: '需先完成使用预约才能下载',
+  [ErrorCodes.CONTENT_REVIEW_FORBIDDEN]: '仅 SuperAdmin 可审核内容',
+  [ErrorCodes.CONTENT_NOT_EDITABLE]: '该内容已被预约使用，不允许编辑',
 };

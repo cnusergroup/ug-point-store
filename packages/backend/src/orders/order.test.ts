@@ -364,6 +364,7 @@ describe('getOrders', () => {
       totalPoints: 500,
       shippingStatus: 'pending',
       createdAt: '2024-01-02T00:00:00.000Z',
+      productNames: ['Product 1', 'Product 2'],
     });
   });
 

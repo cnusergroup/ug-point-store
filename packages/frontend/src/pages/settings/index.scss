@@ -1,0 +1,203 @@
+.settings-page {
+  min-height: 100vh;
+  background: var(--bg-base);
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--card-border);
+
+  &__back {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: background var(--transition-fast);
+
+    &:active {
+      background: var(--bg-hover);
+    }
+  }
+
+  &__title {
+    font-family: var(--font-body);
+    font-size: var(--text-h4);
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  &__placeholder {
+    width: 32px;
+  }
+}
+
+.settings-list {
+  margin-top: var(--space-3);
+  background: var(--bg-surface);
+}
+
+.settings-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-4);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+
+  &:active {
+    background: var(--bg-hover);
+  }
+
+  &__left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  &__icon {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-elevated);
+    border-radius: var(--radius-md);
+  }
+
+  &__label {
+    font-family: var(--font-body);
+    font-size: var(--text-body-lg);
+    color: var(--text-primary);
+
+    &--danger {
+      color: var(--error);
+    }
+  }
+
+  &__arrow {
+    transition: transform var(--transition-fast);
+
+    &--expanded {
+      transform: rotate(90deg);
+    }
+  }
+}
+
+.settings-divider {
+  height: 1px;
+  margin-left: calc(var(--space-4) + 36px + var(--space-3));
+  margin-right: var(--space-4);
+  background: var(--card-border);
+}
+
+.settings-password-form {
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--card-border);
+
+  &__field {
+    margin-bottom: var(--space-3);
+  }
+
+  &__input {
+    width: 100%;
+    height: 40px;
+    padding: 0 var(--space-3);
+    background: var(--bg-surface);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    transition: border-color var(--transition-fast);
+
+    &:focus {
+      border-color: var(--accent-primary);
+      outline: none;
+    }
+  }
+
+  &__error {
+    display: block;
+    margin-bottom: var(--space-3);
+    font-size: var(--text-caption);
+    color: var(--error);
+  }
+
+  &__success {
+    display: block;
+    margin-bottom: var(--space-3);
+    font-size: var(--text-caption);
+    color: var(--success);
+  }
+
+  &__submit {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 40px;
+    background: var(--accent-primary);
+    border-radius: var(--radius-sm);
+    color: var(--text-inverse);
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    font-weight: 500;
+    cursor: pointer;
+    transition: background var(--transition-fast);
+
+    &:active {
+      background: var(--accent-active);
+    }
+
+    &--loading {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+  }
+}
+
+/* ---- Language Switcher ---- */
+.settings-language {
+  padding: var(--space-3) var(--space-4);
+
+  &__header {
+    margin-bottom: var(--space-2);
+  }
+
+  &__options {
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    padding-left: calc(36px + var(--space-3));
+  }
+
+  &__opt {
+    padding: var(--space-1) var(--space-4);
+    border-radius: var(--radius-full);
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--text-tertiary);
+    background: var(--bg-hover);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+
+    &:hover {
+      color: var(--text-secondary);
+    }
+
+    &--active {
+      color: var(--accent-primary);
+      background: var(--accent-glow);
+      border-color: var(--accent-primary);
+    }
+  }
+}

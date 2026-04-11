@@ -2,16 +2,17 @@ import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { S3Client } from '@aws-sdk/client-s3';
-import { ErrorHttpStatus } from '@points-mall/shared';
+import { ErrorHttpStatus, isSuperAdmin, ErrorCodes, ErrorMessages } from '@points-mall/shared';
 import type { Product, UserRole } from '@points-mall/shared';
 import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware';
 import { assignRoles } from './roles';
 import { batchGeneratePointsCodes, generateProductCodes, listCodes, disableCode, deleteCode } from './codes';
 import { createPointsProduct, createCodeExclusiveProduct, updateProduct, setProductStatus } from './products';
-import { getUploadUrl, deleteImage } from './images';
+import { getUploadUrl, getTempUploadUrl, deleteImage } from './images';
 import { batchGenerateInvites, listInvites, revokeInvite } from './invites';
 import { listUsers, setUserStatus, deleteUser } from './users';
 import { reviewClaim, listAllClaims } from '../claims/review';
+import { reviewContent, listAllContent, deleteContent, createCategory, updateCategory, deleteCategory } from '../content/admin';
 
 // Create client outside handler for Lambda container reuse
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -25,6 +26,11 @@ const INVITES_TABLE = process.env.INVITES_TABLE ?? '';
 const REGISTER_BASE_URL = process.env.REGISTER_BASE_URL ?? '';
 const CLAIMS_TABLE = process.env.CLAIMS_TABLE ?? '';
 const POINTS_RECORDS_TABLE = process.env.POINTS_RECORDS_TABLE ?? '';
+const CONTENT_ITEMS_TABLE = process.env.CONTENT_ITEMS_TABLE ?? '';
+const CONTENT_CATEGORIES_TABLE = process.env.CONTENT_CATEGORIES_TABLE ?? '';
+const CONTENT_COMMENTS_TABLE = process.env.CONTENT_COMMENTS_TABLE ?? '';
+const CONTENT_LIKES_TABLE = process.env.CONTENT_LIKES_TABLE ?? '';
+const CONTENT_RESERVATIONS_TABLE = process.env.CONTENT_RESERVATIONS_TABLE ?? '';
 
 const CORS_HEADERS = {
   'Content-Type': 'application/json',
@@ -67,6 +73,10 @@ const INVITES_REVOKE_REGEX = /^\/api\/admin\/invites\/([^/]+)\/revoke$/;
 const USERS_STATUS_REGEX = /^\/api\/admin\/users\/([^/]+)\/status$/;
 const USERS_DELETE_REGEX = /^\/api\/admin\/users\/([^/]+)$/;
 const CLAIMS_REVIEW_REGEX = /^\/api\/admin\/claims\/([^/]+)\/review$/;
+const CONTENT_REVIEW_REGEX = /^\/api\/admin\/content\/([^/]+)\/review$/;
+const CONTENT_DELETE_REGEX = /^\/api\/admin\/content\/([^/]+)$/;
+const CONTENT_CATEGORIES_UPDATE_REGEX = /^\/api\/admin\/content\/categories\/([^/]+)$/;
+const CONTENT_CATEGORIES_DELETE_REGEX = /^\/api\/admin\/content\/categories\/([^/]+)$/;
 
 /**
  * Check if the authenticated user has admin privileges.
@@ -97,10 +107,21 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     if (productsMatch) {
       return await handleUpdateProduct(productsMatch[1], event);
     }
+
+    // PUT /api/admin/content/categories/{id}
+    const contentCategoriesUpdateMatch = path.match(CONTENT_CATEGORIES_UPDATE_REGEX);
+    if (contentCategoriesUpdateMatch) {
+      return await handleUpdateCategory(contentCategoriesUpdateMatch[1], event);
+    }
   }
 
   // POST routes
   if (method === 'POST') {
+    // POST /api/admin/images/upload-url — temp upload for product creation (no productId needed)
+    if (path === '/api/admin/images/upload-url') {
+      return await handleGetTempUploadUrl(event);
+    }
+
     const uploadUrlMatch = path.match(PRODUCTS_UPLOAD_URL_REGEX);
     if (uploadUrlMatch) {
       return await handleGetUploadUrl(uploadUrlMatch[1], event);
@@ -116,6 +137,9 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     }
     if (path === '/api/admin/invites/batch') {
       return await handleBatchGenerateInvites(event);
+    }
+    if (path === '/api/admin/content/categories') {
+      return await handleCreateCategory(event);
     }
   }
 
@@ -134,6 +158,10 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
 
   if (method === 'GET' && path === '/api/admin/claims') {
     return await handleListAllClaims(event);
+  }
+
+  if (method === 'GET' && path === '/api/admin/content') {
+    return await handleListAllContent(event);
   }
 
   // PATCH routes
@@ -162,6 +190,11 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     if (claimsReviewMatch) {
       return await handleReviewClaim(claimsReviewMatch[1], event);
     }
+
+    const contentReviewMatch = path.match(CONTENT_REVIEW_REGEX);
+    if (contentReviewMatch) {
+      return await handleReviewContent(contentReviewMatch[1], event);
+    }
   }
 
   // DELETE routes
@@ -179,6 +212,18 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     const usersDeleteMatch = path.match(USERS_DELETE_REGEX);
     if (usersDeleteMatch) {
       return await handleDeleteUser(usersDeleteMatch[1], event);
+    }
+
+    // DELETE /api/admin/content/categories/{id} — must check before CONTENT_DELETE_REGEX
+    const contentCategoriesDeleteMatch = path.match(CONTENT_CATEGORIES_DELETE_REGEX);
+    if (contentCategoriesDeleteMatch && path.includes('/categories/')) {
+      return await handleDeleteCategory(contentCategoriesDeleteMatch[1]);
+    }
+
+    // DELETE /api/admin/content/{id}
+    const contentDeleteMatch = path.match(CONTENT_DELETE_REGEX);
+    if (contentDeleteMatch) {
+      return await handleDeleteContent(contentDeleteMatch[1]);
     }
   }
 
@@ -537,13 +582,13 @@ async function handleDeleteUser(userId: string, event: AuthenticatedEvent): Prom
 
 async function handleBatchGenerateInvites(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
   const body = parseBody(event);
-  if (!body || body.count === undefined || body.role === undefined) {
-    return errorResponse('INVALID_REQUEST', 'Missing required fields: count, role', 400);
+  if (!body || body.count === undefined || !Array.isArray(body.roles)) {
+    return errorResponse('INVALID_REQUEST', 'Missing required fields: count, roles (array)', 400);
   }
 
   const result = await batchGenerateInvites(
     body.count as number,
-    body.role as UserRole,
+    body.roles as UserRole[],
     dynamoClient,
     INVITES_TABLE,
     REGISTER_BASE_URL,
@@ -634,4 +679,134 @@ async function handleReviewClaim(claimId: string, event: AuthenticatedEvent): Pr
   }
 
   return jsonResponse(200, { claim: result.claim });
+}
+
+// ---- Content Management Route Handlers ----
+
+async function handleListAllContent(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const status = event.queryStringParameters?.status as 'pending' | 'approved' | 'rejected' | undefined;
+  const pageSize = event.queryStringParameters?.pageSize
+    ? parseInt(event.queryStringParameters.pageSize, 10)
+    : undefined;
+  const lastKey = event.queryStringParameters?.lastKey;
+
+  const result = await listAllContent({ status, pageSize, lastKey }, dynamoClient, CONTENT_ITEMS_TABLE);
+
+  return jsonResponse(200, { items: result.items, lastKey: result.lastKey });
+}
+
+async function handleReviewContent(contentId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  // SuperAdmin permission check
+  if (!isSuperAdmin(event.user.roles as UserRole[])) {
+    return errorResponse(ErrorCodes.CONTENT_REVIEW_FORBIDDEN, ErrorMessages[ErrorCodes.CONTENT_REVIEW_FORBIDDEN]);
+  }
+
+  const body = parseBody(event);
+  if (!body || !body.action) {
+    return errorResponse('INVALID_REQUEST', 'Missing required field: action', 400);
+  }
+
+  const result = await reviewContent(
+    {
+      contentId,
+      reviewerId: event.user.userId,
+      action: body.action as 'approve' | 'reject',
+      rejectReason: body.rejectReason as string | undefined,
+    },
+    dynamoClient,
+    CONTENT_ITEMS_TABLE,
+  );
+
+  if (!result.success) {
+    const statusCode = (ErrorHttpStatus as Record<string, number>)[result.error!.code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { item: result.item });
+}
+
+async function handleDeleteContent(contentId: string): Promise<APIGatewayProxyResult> {
+  const result = await deleteContent(
+    contentId,
+    dynamoClient,
+    s3Client,
+    {
+      contentItemsTable: CONTENT_ITEMS_TABLE,
+      commentsTable: CONTENT_COMMENTS_TABLE,
+      likesTable: CONTENT_LIKES_TABLE,
+      reservationsTable: CONTENT_RESERVATIONS_TABLE,
+    },
+    IMAGES_BUCKET,
+  );
+
+  if (!result.success) {
+    const statusCode = (ErrorHttpStatus as Record<string, number>)[result.error!.code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { message: '内容已删除' });
+}
+
+async function handleCreateCategory(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || !body.name) {
+    return errorResponse('INVALID_REQUEST', 'Missing required field: name', 400);
+  }
+
+  const result = await createCategory(body.name as string, dynamoClient, CONTENT_CATEGORIES_TABLE);
+
+  if (!result.success) {
+    return jsonResponse(400, result.error);
+  }
+
+  return jsonResponse(201, { category: result.category });
+}
+
+async function handleUpdateCategory(categoryId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || !body.name) {
+    return errorResponse('INVALID_REQUEST', 'Missing required field: name', 400);
+  }
+
+  const result = await updateCategory(categoryId, body.name as string, dynamoClient, CONTENT_CATEGORIES_TABLE);
+
+  if (!result.success) {
+    const statusCode = (ErrorHttpStatus as Record<string, number>)[result.error!.code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { category: result.category });
+}
+
+async function handleDeleteCategory(categoryId: string): Promise<APIGatewayProxyResult> {
+  const result = await deleteCategory(categoryId, dynamoClient, CONTENT_CATEGORIES_TABLE);
+
+  if (!result.success) {
+    const statusCode = (ErrorHttpStatus as Record<string, number>)[result.error!.code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { message: '分类已删除' });
+}
+
+async function handleGetTempUploadUrl(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || !body.fileName || !body.contentType) {
+    return errorResponse('INVALID_REQUEST', 'Missing required fields: fileName, contentType', 400);
+  }
+
+  const result = await getTempUploadUrl(
+    {
+      fileName: body.fileName as string,
+      contentType: body.contentType as string,
+    },
+    s3Client,
+    IMAGES_BUCKET,
+  );
+
+  if (!result.success) {
+    return jsonResponse(400, result.error);
+  }
+
+  return jsonResponse(200, result.data);
 }

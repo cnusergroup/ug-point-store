@@ -62,7 +62,7 @@ describe('Property 6: 积分码兑换正确性', () => {
         );
 
         expect(result.success).toBe(true);
-        expect(result.earnedPoints).toBe(code.pointsValue);
+        expect(result.pointsEarned).toBe(code.pointsValue);
       }),
       { numRuns: 100 },
     );

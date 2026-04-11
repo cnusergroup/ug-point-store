@@ -4,11 +4,14 @@ import Taro from '@tarojs/taro';
 import { useAppStore } from '../../store';
 import { request, RequestError } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
+import { useTranslation } from '../../i18n';
+import { ShoppingBagIcon } from '../../components/icons';
 import './invites.scss';
 
 interface InviteRecord {
   token: string;
   role: string;
+  roles?: string[];
   status: 'pending' | 'used' | 'expired';
   createdAt: string;
   expiresAt: string;
@@ -18,7 +21,7 @@ interface InviteRecord {
 interface NewInvite {
   token: string;
   link: string;
-  role: string;
+  roles: string[];
   expiresAt: string;
 }
 
@@ -38,28 +41,23 @@ const ROLE_LABELS: Record<string, { label: string; className: string }> = {
   Volunteer: { label: 'Volunteer', className: 'role-badge--volunteer' },
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  pending: '待使用',
-  used: '已使用',
-  expired: '已过期',
-};
-
-const STATUS_TABS: { key: StatusFilter; label: string }[] = [
-  { key: 'all', label: '全部' },
-  { key: 'pending', label: 'pending' },
-  { key: 'used', label: 'used' },
-  { key: 'expired', label: 'expired' },
-];
+/** 从邀请记录安全获取 roles 数组（兼容旧数据） */
+function getInviteRoles(record: { role?: string; roles?: string[] }): string[] {
+  if (record.roles && record.roles.length > 0) return record.roles;
+  if (record.role) return [record.role];
+  return [];
+}
 
 export default function AdminInvitesPage() {
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
+  const { t } = useTranslation();
 
   const [invites, setInvites] = useState<InviteRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   const [showForm, setShowForm] = useState(false);
-  const [formRole, setFormRole] = useState('UserGroupLeader');
+  const [formRoles, setFormRoles] = useState<string[]>([]);
   const [formCount, setFormCount] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
@@ -91,8 +89,14 @@ export default function AdminInvitesPage() {
     setStatusFilter(tab);
   };
 
+  const toggleRole = (role: string) => {
+    setFormRoles((prev) =>
+      prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
+    );
+  };
+
   const openForm = () => {
-    setFormRole('UserGroupLeader');
+    setFormRoles([]);
     setFormCount('');
     setFormError('');
     setNewInvites([]);
@@ -106,9 +110,13 @@ export default function AdminInvitesPage() {
   };
 
   const handleGenerate = async () => {
+    if (formRoles.length === 0) {
+      setFormError(t('admin.invites.errorRolesRequired') || '请至少选择一个角色');
+      return;
+    }
     const count = Number(formCount);
     if (!count || count < 1 || count > 100) {
-      setFormError('请输入 1~100 之间的数量');
+      setFormError(t('admin.invites.errorCountRequired'));
       return;
     }
     setSubmitting(true);
@@ -117,12 +125,12 @@ export default function AdminInvitesPage() {
       const res = await request<{ invites: NewInvite[] }>({
         url: '/api/admin/invites/batch',
         method: 'POST',
-        data: { count, role: formRole },
+        data: { count, roles: formRoles },
       });
       setNewInvites(res.invites || []);
       fetchInvites(statusFilter);
     } catch (err) {
-      setFormError(err instanceof RequestError ? err.message : '生成失败');
+      setFormError(err instanceof RequestError ? err.message : t('admin.invites.generateFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -132,10 +140,10 @@ export default function AdminInvitesPage() {
     try {
       await request({ url: `/api/admin/invites/${token}/revoke`, method: 'PATCH' });
       fetchInvites(statusFilter);
-      Taro.showToast({ title: '已撤销', icon: 'none' });
+      Taro.showToast({ title: t('admin.invites.revoked'), icon: 'none' });
     } catch (err) {
       Taro.showToast({
-        title: err instanceof RequestError ? err.message : '撤销失败',
+        title: err instanceof RequestError ? err.message : t('admin.invites.revokeFailed'),
         icon: 'none',
       });
     }
@@ -171,17 +179,22 @@ export default function AdminInvitesPage() {
     <View className='admin-invites'>
       <View className='admin-invites__toolbar'>
         <View className='admin-invites__back' onClick={handleBack}>
-          <Text>‹ 返回</Text>
+          <Text>{t('admin.invites.backButton')}</Text>
         </View>
-        <Text className='admin-invites__title'>邀请管理</Text>
+        <Text className='admin-invites__title'>{t('admin.invites.title')}</Text>
         <View className='admin-invites__gen-btn' onClick={openForm}>
-          <Text>+ 生成邀请链接</Text>
+          <Text>{t('admin.invites.generateInvite')}</Text>
         </View>
       </View>
 
       {/* Status Filter Tabs */}
       <View className='invite-tabs'>
-        {STATUS_TABS.map((tab) => (
+        {([
+          { key: 'all' as StatusFilter, label: t('admin.invites.filterAll') },
+          { key: 'pending' as StatusFilter, label: t('admin.invites.filterPending') },
+          { key: 'used' as StatusFilter, label: t('admin.invites.filterUsed') },
+          { key: 'expired' as StatusFilter, label: t('admin.invites.filterExpired') },
+        ]).map((tab) => (
           <View
             key={tab.key}
             className={`invite-tabs__item ${statusFilter === tab.key ? 'invite-tabs__item--active' : ''}`}
@@ -197,7 +210,7 @@ export default function AdminInvitesPage() {
         <View className='form-overlay'>
           <View className='form-modal'>
             <View className='form-modal__header'>
-              <Text className='form-modal__title'>生成邀请链接</Text>
+              <Text className='form-modal__title'>{t('admin.invites.generateTitle')}</Text>
               <View className='form-modal__close' onClick={closeForm}><Text>✕</Text></View>
             </View>
             {formError && (
@@ -205,13 +218,13 @@ export default function AdminInvitesPage() {
             )}
             <View className='form-modal__body'>
               <View className='form-field'>
-                <Text className='form-field__label'>目标角色</Text>
+                <Text className='form-field__label'>{t('admin.invites.targetRolesLabel')}</Text>
                 <View className='invite-role-select'>
                   {ROLE_OPTIONS.map((opt) => (
                     <View
                       key={opt.value}
-                      className={`invite-role-select__item ${formRole === opt.value ? 'invite-role-select__item--active' : ''}`}
-                      onClick={() => setFormRole(opt.value)}
+                      className={`invite-role-select__item ${formRoles.includes(opt.value) ? 'invite-role-select__item--active' : ''}`}
+                      onClick={() => toggleRole(opt.value)}
                     >
                       <Text className={`role-badge ${opt.className}`}>{opt.label}</Text>
                     </View>
@@ -219,13 +232,13 @@ export default function AdminInvitesPage() {
                 </View>
               </View>
               <View className='form-field'>
-                <Text className='form-field__label'>生成数量（1~100）</Text>
+                <Text className='form-field__label'>{t('admin.invites.countLabel')}</Text>
                 <Input
                   className='form-field__input'
                   type='number'
                   value={formCount}
                   onInput={(e) => setFormCount(e.detail.value)}
-                  placeholder='例如: 10'
+                  placeholder={t('admin.invites.countPlaceholder')}
                 />
               </View>
             </View>
@@ -233,15 +246,22 @@ export default function AdminInvitesPage() {
             {/* New invites result list */}
             {newInvites.length > 0 && (
               <View className='new-invites-list'>
-                <Text className='new-invites-list__title'>已生成 {newInvites.length} 条邀请链接</Text>
+                <Text className='new-invites-list__title'>{t('admin.invites.generatedCount', { count: newInvites.length })}</Text>
                 {newInvites.map((inv) => (
                   <View key={inv.token} className='new-invite-row'>
                     <View className='new-invite-row__info'>
-                      <Text className='new-invite-row__token'>{inv.token.slice(0, 8)}...</Text>
+                      <View className='new-invite-row__header'>
+                        <Text className='new-invite-row__token'>{inv.token.slice(0, 8)}...</Text>
+                        {inv.roles.map((role) => (
+                          <Text key={role} className={`role-badge ${ROLE_LABELS[role]?.className || ''}`}>
+                            {ROLE_LABELS[role]?.label || role}
+                          </Text>
+                        ))}
+                      </View>
                       <Text className='new-invite-row__link'>{buildInviteLink(inv.token)}</Text>
                     </View>
                     <View className='new-invite-row__copy' onClick={() => copyLink(buildInviteLink(inv.token))}>
-                      <Text>复制</Text>
+                      <Text>{t('common.copy')}</Text>
                     </View>
                   </View>
                 ))}
@@ -253,12 +273,12 @@ export default function AdminInvitesPage() {
                 className={`form-modal__submit ${submitting ? 'form-modal__submit--loading' : ''}`}
                 onClick={handleGenerate}
               >
-                <Text>{submitting ? '生成中...' : '批量生成'}</Text>
+                <Text>{submitting ? t('admin.invites.generating') : t('admin.invites.batchGenerate')}</Text>
               </View>
             )}
             {newInvites.length > 0 && (
               <View className='form-modal__submit' onClick={closeForm}>
-                <Text>完成</Text>
+                <Text>{t('common.done')}</Text>
               </View>
             )}
           </View>
@@ -267,11 +287,11 @@ export default function AdminInvitesPage() {
 
       {/* Invite List */}
       {loading ? (
-        <View className='admin-loading'><Text>加载中...</Text></View>
+        <View className='admin-loading'><Text>{t('admin.invites.loading')}</Text></View>
       ) : invites.length === 0 ? (
         <View className='admin-empty'>
-          <Text className='admin-empty__icon'>✉️</Text>
-          <Text className='admin-empty__text'>暂无邀请记录</Text>
+          <Text className='admin-empty__icon'><ShoppingBagIcon size={48} color='var(--text-tertiary)' /></Text>
+          <Text className='admin-empty__text'>{t('admin.invites.noInvites')}</Text>
         </View>
       ) : (
         <View className='invite-list'>
@@ -281,18 +301,20 @@ export default function AdminInvitesPage() {
                 <View className='invite-row__info'>
                   <View className='invite-row__top'>
                     <Text className='invite-row__token'>{inv.token.slice(0, 8)}...</Text>
-                    <Text className={`role-badge ${ROLE_LABELS[inv.role]?.className || ''}`}>
-                      {ROLE_LABELS[inv.role]?.label || inv.role}
-                    </Text>
+                    {getInviteRoles(inv).map((role) => (
+                      <Text key={role} className={`role-badge ${ROLE_LABELS[role]?.className || ''}`}>
+                        {ROLE_LABELS[role]?.label || role}
+                      </Text>
+                    ))}
                     <Text className={`invite-status invite-status--${inv.status}`}>
-                      {STATUS_LABELS[inv.status] || inv.status}
+                      {inv.status === 'pending' ? t('admin.invites.statusPending') : inv.status === 'used' ? t('admin.invites.statusUsed') : t('admin.invites.statusExpired')}
                     </Text>
                   </View>
                   <View className='invite-row__meta'>
-                    <Text className='invite-row__meta-item'>创建: {formatTime(inv.createdAt)}</Text>
-                    <Text className='invite-row__meta-item'>过期: {formatTime(inv.expiresAt)}</Text>
+                    <Text className='invite-row__meta-item'>{t('admin.invites.createdLabel', { time: formatTime(inv.createdAt) })}</Text>
+                    <Text className='invite-row__meta-item'>{t('admin.invites.expiresLabel', { time: formatTime(inv.expiresAt) })}</Text>
                     {inv.usedAt && (
-                      <Text className='invite-row__meta-item'>使用: {formatTime(inv.usedAt)}</Text>
+                      <Text className='invite-row__meta-item'>{t('admin.invites.usedLabel', { time: formatTime(inv.usedAt) })}</Text>
                     )}
                   </View>
                 </View>
@@ -302,10 +324,10 @@ export default function AdminInvitesPage() {
                       className='invite-row__copy-btn'
                       onClick={() => copyLink(buildInviteLink(inv.token))}
                     >
-                      <Text>复制链接</Text>
+                      <Text>{t('admin.invites.copyLink')}</Text>
                     </View>
                     <View className='invite-row__revoke-btn' onClick={() => handleRevoke(inv.token)}>
-                      <Text>撤销</Text>
+                      <Text>{t('admin.invites.revokeButton')}</Text>
                     </View>
                   </View>
                 )}

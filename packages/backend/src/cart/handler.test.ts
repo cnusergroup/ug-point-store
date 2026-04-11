@@ -138,7 +138,7 @@ describe('Cart Lambda Handler - Routing', () => {
       const result = await handler(event);
       expect(result.statusCode).toBe(200);
       expect(JSON.parse(result.body).message).toBe('已加入购物车');
-      expect(addToCart).toHaveBeenCalledWith('test-user-id', 'prod-1', expect.anything(), '', '', undefined, '');
+      expect(addToCart).toHaveBeenCalledWith('test-user-id', 'prod-1', 1, expect.anything(), '', '', undefined, '');
     });
 
     it('passes selectedSize to addToCart when provided', async () => {
@@ -150,7 +150,7 @@ describe('Cart Lambda Handler - Routing', () => {
       });
       const result = await handler(event);
       expect(result.statusCode).toBe(200);
-      expect(addToCart).toHaveBeenCalledWith('test-user-id', 'prod-1', expect.anything(), '', '', 'L', '');
+      expect(addToCart).toHaveBeenCalledWith('test-user-id', 'prod-1', 1, expect.anything(), '', '', 'L', '');
     });
 
     it('returns 400 when productId is missing', async () => {
@@ -173,6 +173,30 @@ describe('Cart Lambda Handler - Routing', () => {
       const result = await handler(event);
       expect(result.statusCode).toBe(400);
       expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+    });
+
+    it('passes quantity to addToCart when provided', async () => {
+      vi.mocked(addToCart).mockResolvedValue({ success: true });
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/cart/items',
+        body: JSON.stringify({ productId: 'prod-1', quantity: 5 }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(addToCart).toHaveBeenCalledWith('test-user-id', 'prod-1', 5, expect.anything(), '', '', undefined, '');
+    });
+
+    it('defaults quantity to 1 when not provided', async () => {
+      vi.mocked(addToCart).mockResolvedValue({ success: true });
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/cart/items',
+        body: JSON.stringify({ productId: 'prod-1' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(addToCart).toHaveBeenCalledWith('test-user-id', 'prod-1', 1, expect.anything(), '', '', undefined, '');
     });
 
     it('returns error when addToCart fails', async () => {
@@ -202,7 +226,19 @@ describe('Cart Lambda Handler - Routing', () => {
       const result = await handler(event);
       expect(result.statusCode).toBe(200);
       expect(JSON.parse(result.body).message).toBe('购物车已更新');
-      expect(updateCartItem).toHaveBeenCalledWith('test-user-id', 'prod-1', 3, expect.anything(), '');
+      expect(updateCartItem).toHaveBeenCalledWith('test-user-id', 'prod-1', 3, expect.anything(), '', '');
+    });
+
+    it('passes PRODUCTS_TABLE to updateCartItem for stock validation', async () => {
+      vi.mocked(updateCartItem).mockResolvedValue({ success: true });
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/cart/items/prod-1',
+        body: JSON.stringify({ quantity: 2 }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(updateCartItem).toHaveBeenCalledWith('test-user-id', 'prod-1', 2, expect.anything(), '', '');
     });
 
     it('returns 400 when quantity is missing', async () => {
@@ -236,7 +272,7 @@ describe('Cart Lambda Handler - Routing', () => {
       });
       const result = await handler(event);
       expect(result.statusCode).toBe(200);
-      expect(updateCartItem).toHaveBeenCalledWith('test-user-id', 'prod-1', 0, expect.anything(), '');
+      expect(updateCartItem).toHaveBeenCalledWith('test-user-id', 'prod-1', 0, expect.anything(), '', '');
     });
 
     it('returns error when updateCartItem fails', async () => {

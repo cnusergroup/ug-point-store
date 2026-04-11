@@ -103,6 +103,29 @@
   --text-badge: 11px;
 }
 
+[data-theme="warm"] {
+  /* Warm theme: amber/gold accent instead of purple */
+  --bg-void: #0f0d09;
+  --bg-base: #1a1710;
+  --bg-surface: #252118;
+  --bg-elevated: #332d22;
+  --bg-hover: #3d3528;
+
+  --accent-primary: #e8a838;
+  --accent-hover: #d4952e;
+  --accent-active: #c08524;
+  --accent-glow: rgba(232, 168, 56, 0.3);
+
+  --card-border: rgba(255, 220, 150, 0.08);
+  --card-border-hover: rgba(255, 220, 150, 0.15);
+  --glass-bg: rgba(26, 23, 16, 0.85);
+  --glass-border: rgba(255, 220, 150, 0.1);
+
+  --shadow-glow: 0 0 20px rgba(232, 168, 56, 0.3);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 220, 150, 0.08);
+  --shadow-card-hover: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 220, 150, 0.15);
+}
+
 /* === 全局基础样式 === */
 page {
   font-family: var(--font-body);
@@ -117,6 +140,12 @@ page {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+/* Focus-visible for keyboard navigation */
+*:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
 }
 
 /* ============================================
@@ -204,6 +233,7 @@ page {
   transition: all var(--transition-fast);
   position: relative;
   overflow: hidden;
+  white-space: nowrap;
 
   &:hover {
     background: var(--accent-hover);
@@ -247,6 +277,7 @@ page {
   font-weight: 500;
   cursor: pointer;
   transition: all var(--transition-fast);
+  white-space: nowrap;
 
   &:hover {
     background: var(--bg-hover);
@@ -271,6 +302,7 @@ page {
   border-radius: var(--radius-full);
   font-size: var(--text-caption);
   font-weight: 600;
+  white-space: nowrap;
 
   &--active, &--success {
     color: var(--success);
@@ -335,4 +367,13 @@ page {
 @keyframes tabIndicator {
   from { width: 0; opacity: 0; }
   to { width: 60%; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

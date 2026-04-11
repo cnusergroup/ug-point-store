@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { registerUser, RegisterRequest } from './register';
 import { ErrorCodes } from '@points-mall/shared';
 
@@ -133,5 +133,51 @@ describe('registerUser', () => {
     expect(result.user!.nickname).toBe('TestUser');
     expect(result.user!.roles).toEqual(['Volunteer']);
     expect(result.user!.points).toBe(0);
+  });
+
+  it('should assign all roles from multi-role invite to registered user', async () => {
+    const multiRoleInvite = {
+      token: VALID_TOKEN,
+      role: 'Speaker',
+      roles: ['Speaker', 'Volunteer'],
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86400 * 1000).toISOString(),
+    };
+    const dynamoClient = createMockDynamoClient([], multiRoleInvite);
+
+    const result = await registerUser(validRequest, dynamoClient, tableName, INVITES_TABLE);
+
+    expect(result.success).toBe(true);
+    expect(result.user!.roles).toEqual(['Speaker', 'Volunteer']);
+
+    // Verify DynamoDB PutCommand stored all roles
+    const putCall = dynamoClient.send.mock.calls.find(
+      (c: any) => c[0].constructor.name === 'PutCommand',
+    );
+    expect(putCall![0].input.Item.roles).toEqual(['Speaker', 'Volunteer']);
+  });
+
+  it('should handle old format invite with only role field (backward compat)', async () => {
+    // Old invite record: only has `role`, no `roles` field
+    const oldFormatInvite = {
+      token: VALID_TOKEN,
+      role: 'Speaker',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86400 * 1000).toISOString(),
+    };
+    const dynamoClient = createMockDynamoClient([], oldFormatInvite);
+
+    const result = await registerUser(validRequest, dynamoClient, tableName, INVITES_TABLE);
+
+    expect(result.success).toBe(true);
+    expect(result.user!.roles).toEqual(['Speaker']);
+
+    // Verify DynamoDB PutCommand stored the single role as array
+    const putCall = dynamoClient.send.mock.calls.find(
+      (c: any) => c[0].constructor.name === 'PutCommand',
+    );
+    expect(putCall![0].input.Item.roles).toEqual(['Speaker']);
   });
 });

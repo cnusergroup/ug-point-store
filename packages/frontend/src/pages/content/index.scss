@@ -1,0 +1,344 @@
+/* ============================================
+   Content List Page
+   Uses design system CSS variables from app.scss
+   ============================================ */
+
+.content-page {
+  min-height: 100vh;
+  background-color: var(--bg-base);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Header ---- */
+.content-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+  background: var(--bg-void);
+  border-bottom: 1px solid var(--card-border);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+
+  &__left {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__back {
+    font-size: var(--text-body);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color var(--transition-fast);
+
+    &:hover {
+      color: var(--text-primary);
+    }
+  }
+
+  &__title {
+    font-family: var(--font-display);
+    font-size: var(--text-h3);
+    font-weight: 700;
+    color: var(--text-primary);
+    white-space: nowrap;
+  }
+
+  &__right {
+    flex: 1;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  &__upload-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    min-height: 44px;
+    padding: var(--space-2) var(--space-5);
+    background: var(--accent-primary);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+
+    &:hover {
+      background: var(--accent-hover);
+      box-shadow: var(--shadow-glow);
+    }
+
+    &:active {
+      background: var(--accent-active);
+      transform: scale(0.97);
+    }
+  }
+
+  &__upload-icon {
+    font-size: var(--text-body-lg);
+    color: #fff;
+    line-height: 1;
+  }
+
+  &__upload-text {
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    font-weight: 600;
+    color: #fff;
+  }
+}
+
+/* ---- Category Filter Bar ---- */
+.content-filter {
+  flex-shrink: 0;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--card-border);
+  white-space: nowrap;
+
+  &__inner {
+    display: inline-flex;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-5);
+  }
+
+  &__tab {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-full);
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+    flex-shrink: 0;
+
+    &:hover {
+      color: var(--text-primary);
+    }
+
+    &--active {
+      color: var(--text-primary);
+      background: rgba(124, 109, 240, 0.15);
+    }
+  }
+}
+
+/* ---- Content List ---- */
+.content-list {
+  flex: 1;
+  height: calc(100vh - 120px);
+  padding: var(--space-3) var(--space-4);
+}
+
+/* ---- Content Card ---- */
+.content-card {
+  display: flex;
+  align-items: center;
+  padding: var(--space-4);
+  margin-bottom: var(--space-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-base);
+
+  &:hover {
+    border-color: var(--card-border-hover);
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-2px);
+  }
+
+  &__body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__title {
+    display: block;
+    font-family: var(--font-body);
+    font-size: var(--text-body-lg);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--space-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+    flex-wrap: wrap;
+  }
+
+  &__category {
+    display: inline-block;
+    padding: 2px var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-caption);
+    font-weight: 600;
+    color: var(--accent-primary);
+    background: rgba(124, 109, 240, 0.12);
+    border: 1px solid rgba(124, 109, 240, 0.2);
+  }
+
+  &__uploader {
+    font-size: var(--text-caption);
+    color: var(--text-secondary);
+  }
+
+  &__time {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+  }
+
+  &__stats {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+  }
+
+  &__stat {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--text-body-sm);
+    color: var(--text-tertiary);
+  }
+
+  &__stat-icon {
+    font-size: var(--text-body-sm);
+    color: var(--text-tertiary);
+    line-height: 1;
+  }
+
+  &__stat-value {
+    font-family: var(--font-display);
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  &__arrow {
+    flex-shrink: 0;
+    margin-left: var(--space-3);
+  }
+
+  &__arrow-icon {
+    font-size: var(--text-h2);
+    color: var(--text-tertiary);
+    line-height: 1;
+  }
+}
+
+/* ---- Loading / Empty States ---- */
+.content-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 80px var(--space-5);
+
+  &__text {
+    color: var(--text-tertiary);
+    font-size: var(--text-body);
+  }
+}
+
+.content-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px var(--space-5);
+
+  &__icon {
+    font-size: 48px;
+    margin-bottom: var(--space-3);
+  }
+
+  &__text {
+    color: var(--text-tertiary);
+    font-size: var(--text-body);
+  }
+}
+
+.content-loading-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+
+  &__text {
+    color: var(--text-tertiary);
+    font-size: var(--text-body-sm);
+  }
+}
+
+.content-no-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+
+  &__text {
+    color: var(--text-tertiary);
+    font-size: var(--text-caption);
+  }
+}
+
+/* ---- Floating Action Button (FAB) ---- */
+.content-fab {
+  position: fixed;
+  bottom: calc(var(--space-8) + env(safe-area-inset-bottom, 0px));
+  right: var(--space-5);
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-primary);
+  border-radius: var(--radius-full);
+  box-shadow: 0 4px 16px rgba(124, 109, 240, 0.4);
+  cursor: pointer;
+  z-index: 30;
+  transition: all var(--transition-base);
+
+  &:hover {
+    background: var(--accent-hover);
+    box-shadow: 0 6px 24px rgba(124, 109, 240, 0.5);
+    transform: scale(1.05);
+  }
+
+  &:active {
+    background: var(--accent-active);
+    transform: scale(0.95);
+  }
+
+  &__icon {
+    font-size: 28px;
+    font-weight: 300;
+    color: #fff;
+    line-height: 1;
+  }
+}
+
+/* ---- Responsive ---- */
+@media (min-width: 768px) {
+  .content-list {
+    padding: var(--space-4) var(--space-6);
+    max-width: 800px;
+    margin: 0 auto;
+  }
+}
+
+@media (min-width: 1024px) {
+  .content-list {
+    padding: var(--space-5) var(--space-8);
+    max-width: 960px;
+  }
+}

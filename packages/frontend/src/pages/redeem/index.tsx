@@ -4,6 +4,8 @@ import Taro, { useRouter } from '@tarojs/taro';
 import { useAppStore } from '../../store';
 import { request, RequestError } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
+import { useTranslation } from '../../i18n';
+import { LocationIcon, TicketIcon, GiftIcon } from '../../components/icons';
 import './index.scss';
 
 /** Redemption page mode */
@@ -49,19 +51,19 @@ interface PointsCodeResponse {
   newBalance: number;
 }
 
-/** Error code to user-friendly message mapping */
-const ERROR_MESSAGES: Record<string, string> = {
-  INSUFFICIENT_POINTS: '积分不足，无法兑换此商品',
-  CODE_ALREADY_USED: '此兑换码已被使用',
-  CODE_EXHAUSTED: '此兑换码已达使用上限',
-  INVALID_CODE: '兑换码无效或不存在',
-  CODE_PRODUCT_MISMATCH: '兑换码与商品不匹配',
-  CODE_ONLY_PRODUCT: '该商品仅支持 Code 兑换',
-  OUT_OF_STOCK: '商品库存不足',
-  NO_REDEMPTION_PERMISSION: '您的身份不满足兑换条件',
-  NO_ADDRESS_SELECTED: '请选择收货地址',
-  ADDRESS_NOT_FOUND: '收货地址不存在',
-  PURCHASE_LIMIT_EXCEEDED: '超出限购数量，无法兑换',
+/** Error code to translation key mapping */
+const ERROR_CODE_KEYS: Record<string, string> = {
+  INSUFFICIENT_POINTS: 'redeem.errorInsufficientPoints',
+  CODE_ALREADY_USED: 'redeem.errorCodeAlreadyUsed',
+  CODE_EXHAUSTED: 'redeem.errorCodeExhausted',
+  INVALID_CODE: 'redeem.errorInvalidCode',
+  CODE_PRODUCT_MISMATCH: 'redeem.errorCodeProductMismatch',
+  CODE_ONLY_PRODUCT: 'redeem.errorCodeOnlyProduct',
+  OUT_OF_STOCK: 'redeem.errorOutOfStock',
+  NO_REDEMPTION_PERMISSION: 'redeem.errorNoPermission',
+  NO_ADDRESS_SELECTED: 'redeem.errorNoAddress',
+  ADDRESS_NOT_FOUND: 'redeem.errorAddressNotFound',
+  PURCHASE_LIMIT_EXCEEDED: 'redeem.errorPurchaseLimitExceeded',
 };
 
 export default function RedeemPage() {
@@ -71,6 +73,7 @@ export default function RedeemPage() {
 
   const user = useAppStore((s) => s.user);
   const updatePoints = useAppStore((s) => s.updatePoints);
+  const { t } = useTranslation();
 
   const [product, setProduct] = useState<ProductInfo | null>(null);
   const [pageLoading, setPageLoading] = useState(!!productId);
@@ -122,7 +125,7 @@ export default function RedeemPage() {
         const res = await request<ProductInfo>({ url: `/api/products/${productId}` });
         setProduct(res);
       } catch {
-        setError('商品信息加载失败');
+        setError(t('redeem.productLoadFailed'));
       } finally {
         setPageLoading(false);
       }
@@ -146,9 +149,10 @@ export default function RedeemPage() {
 
   const getErrorMessage = (err: unknown): string => {
     if (err instanceof RequestError) {
-      return ERROR_MESSAGES[err.code] || err.message;
+      const key = ERROR_CODE_KEYS[err.code];
+      return key ? t(key) : err.message;
     }
-    return '兑换失败，请稍后重试';
+    return t('redeem.redeemFailed');
   };
 
   /** Points redemption: POST /api/redemptions/points */
@@ -241,40 +245,40 @@ export default function RedeemPage() {
       <View className='redeem-page'>
         <View className='redeem-header'>
           <View className='redeem-header__spacer' />
-          <Text className='redeem-header__title'>兑换结果</Text>
+          <Text className='redeem-header__title'>{t('redeem.resultTitle')}</Text>
           <View className='redeem-header__spacer' />
         </View>
         <View className='redeem-content'>
           <View className='redeem-success'>
-            <Text className='redeem-success__icon'>🎉</Text>
-            <Text className='redeem-success__title'>兑换成功</Text>
+            <Text className='redeem-success__icon'>✓</Text>
+            <Text className='redeem-success__title'>{t('redeem.successTitle')}</Text>
             {successData.type === 'product' ? (
               <>
                 <Text className='redeem-success__message'>
-                  您已成功兑换「{successData.productName}」
-                  {successData.pointsSpent ? `，消耗 ${successData.pointsSpent.toLocaleString()} 积分` : ''}
+                  {t('redeem.successProductMessage', { name: successData.productName || '' })}
+                  {successData.pointsSpent ? t('redeem.successPointsSpent', { count: successData.pointsSpent.toLocaleString() }) : ''}
                 </Text>
               </>
             ) : (
               <>
-                <Text className='redeem-success__message'>积分码兑换成功</Text>
+                <Text className='redeem-success__message'>{t('redeem.successPointsCodeMessage')}</Text>
                 <View className='redeem-success__detail'>
-                  <Text className='redeem-success__detail-label'>获得积分</Text>
+                  <Text className='redeem-success__detail-label'>{t('redeem.earnedPoints')}</Text>
                   <Text className='redeem-success__detail-value'>+{successData.pointsEarned?.toLocaleString()}</Text>
                 </View>
                 <Text className='redeem-success__message'>
-                  当前余额: {successData.newBalance?.toLocaleString()} 积分
+                  {t('redeem.currentBalance', { count: successData.newBalance?.toLocaleString() || '0' })}
                 </Text>
               </>
             )}
             <View className='redeem-success__actions'>
               {successOrderId && (
                 <View className='redeem-success__order-btn' onClick={goToOrderDetail}>
-                  <Text>查看订单</Text>
+                  <Text>{t('redeem.viewOrder')}</Text>
                 </View>
               )}
               <View className='redeem-success__back-btn' onClick={goToProductList}>
-                <Text>返回商品列表</Text>
+                <Text>{t('redeem.backToProductList')}</Text>
               </View>
             </View>
           </View>
@@ -288,12 +292,12 @@ export default function RedeemPage() {
     return (
       <View className='redeem-page'>
         <View className='redeem-header'>
-          <Text className='redeem-header__back' onClick={handleBack}>← 返回</Text>
-          <Text className='redeem-header__title'>兑换</Text>
+          <Text className='redeem-header__back' onClick={handleBack}>{t('redeem.backButton')}</Text>
+          <Text className='redeem-header__title'>{t('redeem.redeemTitle')}</Text>
           <View className='redeem-header__spacer' />
         </View>
         <View className='redeem-loading'>
-          <Text className='redeem-loading__text'>加载中...</Text>
+          <Text className='redeem-loading__text'>{t('redeem.loadingText')}</Text>
         </View>
       </View>
     );
@@ -304,14 +308,14 @@ export default function RedeemPage() {
     return (
       <View className='redeem-page'>
         <View className='redeem-header'>
-          <Text className='redeem-header__back' onClick={handleBack}>← 返回</Text>
-          <Text className='redeem-header__title'>兑换</Text>
+          <Text className='redeem-header__back' onClick={handleBack}>{t('redeem.backButton')}</Text>
+          <Text className='redeem-header__title'>{t('redeem.redeemTitle')}</Text>
           <View className='redeem-header__spacer' />
         </View>
         <View className='redeem-error-page'>
-          <Text className='redeem-error-page__text'>缺少商品信息</Text>
+          <Text className='redeem-error-page__text'>{t('redeem.missingProduct')}</Text>
           <View className='redeem-error-page__back-btn' onClick={goToProductList}>
-            <Text>返回商品列表</Text>
+            <Text>{t('redeem.backToProductList')}</Text>
           </View>
         </View>
       </View>
@@ -325,7 +329,7 @@ export default function RedeemPage() {
   const needsAddress = mode === 'points' || mode === 'code';
   const selectedAddress = addresses.find((a) => a.addressId === selectedAddressId);
 
-  const headerTitle = mode === 'points' ? '积分兑换' : mode === 'code' ? 'Code 兑换' : '积分码兑换';
+  const headerTitle = mode === 'points' ? t('redeem.pointsRedeemTitle') : mode === 'code' ? t('redeem.codeRedeemTitle') : t('redeem.pointsCodeRedeemTitle');
 
   const goToAddressPage = () => {
     Taro.navigateTo({ url: '/pages/address/index' });
@@ -338,9 +342,9 @@ export default function RedeemPage() {
     if (addresses.length === 0) {
       return (
         <View className='redeem-address redeem-address--empty'>
-          <Text className='redeem-address__empty-icon'>📍</Text>
-          <Text className='redeem-address__empty-text'>请添加收货地址</Text>
-          <Text className='redeem-address__empty-link' onClick={goToAddressPage}>去添加 →</Text>
+          <Text className='redeem-address__empty-icon'><LocationIcon size={24} color='var(--text-tertiary)' /></Text>
+          <Text className='redeem-address__empty-text'>{t('redeem.addAddressEmpty')}</Text>
+          <Text className='redeem-address__empty-link' onClick={goToAddressPage}>{t('redeem.addAddressLink')}</Text>
         </View>
       );
     }
@@ -348,7 +352,7 @@ export default function RedeemPage() {
     return (
       <View className='redeem-address'>
         <View className='redeem-address__selected' onClick={() => setShowAddressList(!showAddressList)}>
-          <Text className='redeem-address__label'>📍 收货地址</Text>
+          <Text className='redeem-address__label'><LocationIcon size={14} color='currentColor' /> {t('redeem.shippingAddressLabel')}</Text>
           {selectedAddress ? (
             <View className='redeem-address__info'>
               <View className='redeem-address__name-row'>
@@ -358,7 +362,7 @@ export default function RedeemPage() {
               <Text className='redeem-address__detail'>{selectedAddress.detailAddress}</Text>
             </View>
           ) : (
-            <Text className='redeem-address__placeholder'>请选择收货地址</Text>
+            <Text className='redeem-address__placeholder'>{t('redeem.selectAddress')}</Text>
           )}
           <Text className='redeem-address__arrow'>{showAddressList ? '▲' : '▼'}</Text>
         </View>
@@ -378,7 +382,7 @@ export default function RedeemPage() {
                   <View className='redeem-address__name-row'>
                     <Text className='redeem-address__name'>{addr.recipientName}</Text>
                     <Text className='redeem-address__phone'>{addr.phone}</Text>
-                    {addr.isDefault && <Text className='redeem-address__badge'>默认</Text>}
+                    {addr.isDefault && <Text className='redeem-address__badge'>{t('redeem.defaultBadge')}</Text>}
                   </View>
                   <Text className='redeem-address__detail'>{addr.detailAddress}</Text>
                 </View>
@@ -393,7 +397,7 @@ export default function RedeemPage() {
   return (
     <View className='redeem-page'>
       <View className='redeem-header'>
-        <Text className='redeem-header__back' onClick={handleBack}>← 返回</Text>
+        <Text className='redeem-header__back' onClick={handleBack}>{t('redeem.backButton')}</Text>
         <Text className='redeem-header__title'>{headerTitle}</Text>
         <View className='redeem-header__spacer' />
       </View>
@@ -407,14 +411,14 @@ export default function RedeemPage() {
             ) : (
               <View className='redeem-product__image-placeholder'>
                 <Text className='redeem-product__image-placeholder-icon'>
-                  {product.type === 'code_exclusive' ? '🎫' : '🎁'}
+                  {product.type === 'code_exclusive' ? <TicketIcon size={32} color='var(--text-tertiary)' /> : <GiftIcon size={32} color='var(--text-tertiary)' />}
                 </Text>
               </View>
             )}
             <View className='redeem-product__info'>
               <Text className='redeem-product__name'>{product.name}</Text>
               <Text className={`redeem-product__type redeem-product__type--${product.type === 'code_exclusive' ? 'code' : 'points'}`}>
-                {product.type === 'code_exclusive' ? 'Code 专属' : '积分商品'}
+                {product.type === 'code_exclusive' ? t('redeem.productTypeCodeExclusive') : t('redeem.productTypePoints')}
               </Text>
             </View>
           </View>
@@ -432,24 +436,24 @@ export default function RedeemPage() {
           <>
             {renderAddressSelector()}
             <View className='redeem-confirm'>
-              <Text className='redeem-confirm__title'>确认兑换</Text>
+              <Text className='redeem-confirm__title'>{t('redeem.confirmRedeemTitle')}</Text>
               <View className='redeem-confirm__row'>
-                <Text className='redeem-confirm__label'>所需积分</Text>
+                <Text className='redeem-confirm__label'>{t('redeem.requiredPoints')}</Text>
                 <Text className='redeem-confirm__value redeem-confirm__value--cost'>
                   -{pointsCost.toLocaleString()}
                 </Text>
               </View>
               <View className='redeem-confirm__row'>
-                <Text className='redeem-confirm__label'>当前余额</Text>
+                <Text className='redeem-confirm__label'>{t('redeem.currentBalanceLabel')}</Text>
                 <Text className='redeem-confirm__value redeem-confirm__value--balance'>
                   {currentPoints.toLocaleString()}
                 </Text>
               </View>
               <View className='redeem-confirm__divider' />
               <View className='redeem-confirm__row'>
-                <Text className='redeem-confirm__label'>兑换后余额</Text>
+                <Text className='redeem-confirm__label'>{t('redeem.balanceAfterLabel')}</Text>
                 <Text className={`redeem-confirm__value ${canAfford ? 'redeem-confirm__value--after' : 'redeem-confirm__value--insufficient'}`}>
-                  {canAfford ? balanceAfter.toLocaleString() : '积分不足'}
+                  {canAfford ? balanceAfter.toLocaleString() : t('redeem.insufficientPoints')}
                 </Text>
               </View>
             </View>
@@ -457,10 +461,10 @@ export default function RedeemPage() {
               className={`redeem-btn ${!canAfford || !selectedAddressId || submitting ? 'redeem-btn--disabled' : ''} ${submitting ? 'redeem-btn--loading' : ''}`}
               onClick={canAfford && selectedAddressId && !submitting ? handlePointsRedeem : undefined}
             >
-              <Text>{submitting ? '兑换中...' : '确认兑换'}</Text>
+              <Text>{submitting ? t('redeem.redeeming') : t('redeem.confirmRedeem')}</Text>
             </View>
             <View className='redeem-cancel' onClick={handleBack}>
-              <Text>取消</Text>
+              <Text>{t('redeem.cancelButton')}</Text>
             </View>
           </>
         )}
@@ -470,28 +474,28 @@ export default function RedeemPage() {
           <>
             {renderAddressSelector()}
             <View className='redeem-code'>
-              <Text className='redeem-code__title'>输入兑换码</Text>
-              <Text className='redeem-code__subtitle'>请输入此商品的专属兑换码</Text>
+              <Text className='redeem-code__title'>{t('redeem.enterCodeTitle')}</Text>
+              <Text className='redeem-code__subtitle'>{t('redeem.enterCodeSubtitle')}</Text>
               <View className='redeem-code__input-wrap'>
                 <Input
                   className='redeem-code__input'
                   type='text'
-                  placeholder='请输入兑换码'
+                  placeholder={t('redeem.codePlaceholder')}
                   value={codeValue}
                   onInput={(e) => setCodeValue(e.detail.value)}
                   maxlength={32}
                 />
               </View>
-              <Text className='redeem-code__hint'>兑换码由活动方提供，不区分大小写</Text>
+              <Text className='redeem-code__hint'>{t('redeem.codeHint')}</Text>
             </View>
             <View
               className={`redeem-btn ${!codeValue.trim() || !selectedAddressId || submitting ? 'redeem-btn--disabled' : ''} ${submitting ? 'redeem-btn--loading' : ''}`}
               onClick={codeValue.trim() && selectedAddressId && !submitting ? handleCodeRedeem : undefined}
             >
-              <Text>{submitting ? '兑换中...' : '确认兑换'}</Text>
+              <Text>{submitting ? t('redeem.redeeming') : t('redeem.confirmRedeem')}</Text>
             </View>
             <View className='redeem-cancel' onClick={handleBack}>
-              <Text>取消</Text>
+              <Text>{t('redeem.cancelButton')}</Text>
             </View>
           </>
         )}
@@ -500,29 +504,29 @@ export default function RedeemPage() {
         {mode === 'points-code' && (
           <>
             <View className='redeem-code redeem-points-code'>
-              <Text className='redeem-points-code__icon'>🎟️</Text>
-              <Text className='redeem-code__title'>兑换积分码</Text>
-              <Text className='redeem-code__subtitle'>输入积分码获取积分</Text>
+              <Text className='redeem-points-code__icon'><TicketIcon size={32} color='var(--accent-primary)' /></Text>
+              <Text className='redeem-code__title'>{t('redeem.pointsCodeTitle')}</Text>
+              <Text className='redeem-code__subtitle'>{t('redeem.pointsCodeSubtitle')}</Text>
               <View className='redeem-code__input-wrap'>
                 <Input
                   className='redeem-code__input'
                   type='text'
-                  placeholder='请输入积分码'
+                  placeholder={t('redeem.pointsCodePlaceholder')}
                   value={codeValue}
                   onInput={(e) => setCodeValue(e.detail.value)}
                   maxlength={32}
                 />
               </View>
-              <Text className='redeem-code__hint'>积分码由管理员发放，每个码有使用次数限制</Text>
+              <Text className='redeem-code__hint'>{t('redeem.pointsCodeHint')}</Text>
             </View>
             <View
               className={`redeem-btn ${!codeValue.trim() || submitting ? 'redeem-btn--disabled' : ''} ${submitting ? 'redeem-btn--loading' : ''}`}
               onClick={codeValue.trim() && !submitting ? handlePointsCodeRedeem : undefined}
             >
-              <Text>{submitting ? '兑换中...' : '兑换积分'}</Text>
+              <Text>{submitting ? t('redeem.redeeming') : t('redeem.redeemPoints')}</Text>
             </View>
             <View className='redeem-cancel' onClick={handleBack}>
-              <Text>取消</Text>
+              <Text>{t('redeem.cancelButton')}</Text>
             </View>
           </>
         )}

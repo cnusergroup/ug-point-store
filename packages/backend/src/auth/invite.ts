@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { ErrorCodes, ErrorMessages, InviteRecord, InviteStatus, REGULAR_ROLES, UserRole } from '@points-mall/shared';
+import { ErrorCodes, ErrorMessages, getInviteRoles, InviteRecord, InviteStatus, REGULAR_ROLES, UserRole } from '@points-mall/shared';
 
 // ============================================================
 // Token 生成与链接构建
@@ -29,11 +29,11 @@ export type CreateInviteResult =
   | { success: false; error: { code: string; message: string } };
 
 export type BatchCreateInvitesResult =
-  | { success: true; invites: Array<{ token: string; link: string; role: UserRole; expiresAt: string }> }
+  | { success: true; invites: Array<{ token: string; link: string; roles: UserRole[]; expiresAt: string }> }
   | { success: false; error: { code: string; message: string } };
 
 export type ValidateInviteResult =
-  | { success: true; role: UserRole }
+  | { success: true; roles: UserRole[] }
   | { success: false; error: { code: string; message: string } };
 
 export type ConsumeInviteResult =
@@ -46,9 +46,10 @@ export type ConsumeInviteResult =
 
 /**
  * 创建单条邀请记录，写入 DynamoDB，返回记录和链接
+ * 同时写入 role（roles[0]）和 roles 字段以保持向后兼容
  */
 export async function createInviteRecord(
-  role: UserRole,
+  roles: UserRole[],
   dynamoClient: DynamoDBDocumentClient,
   invitesTable: string,
   registerBaseUrl: string,
@@ -60,7 +61,8 @@ export async function createInviteRecord(
 
   const record: InviteRecord = {
     token,
-    role,
+    role: roles[0],
+    roles,
     status: 'pending',
     createdAt,
     expiresAt,
@@ -79,11 +81,11 @@ export async function createInviteRecord(
 
 /**
  * 批量创建邀请记录
- * 校验 count ∈ [1, 100] 和 role ∈ REGULAR_ROLES
+ * 校验 count ∈ [1, 100]，roles 去重后长度 ∈ [1, 4]，每个角色 ∈ REGULAR_ROLES
  */
 export async function batchCreateInvites(
   count: number,
-  role: UserRole,
+  roles: UserRole[],
   dynamoClient: DynamoDBDocumentClient,
   invitesTable: string,
   registerBaseUrl: string,
@@ -95,24 +97,46 @@ export async function batchCreateInvites(
     };
   }
 
-  if (!REGULAR_ROLES.includes(role)) {
+  // 去重
+  const uniqueRoles = [...new Set(roles)] as UserRole[];
+
+  // 校验非空
+  if (uniqueRoles.length === 0) {
     return {
       success: false,
-      error: { code: 'INVALID_ROLE', message: '角色必须为普通角色之一（UserGroupLeader、CommunityBuilder、Speaker、Volunteer）' },
+      error: { code: ErrorCodes.INVALID_ROLES, message: ErrorMessages.INVALID_ROLES },
     };
   }
 
-  const results: Array<{ token: string; link: string; role: UserRole; expiresAt: string }> = [];
+  // 校验长度上限
+  if (uniqueRoles.length > 4) {
+    return {
+      success: false,
+      error: { code: ErrorCodes.INVALID_ROLES, message: '角色数量不能超过 4 个' },
+    };
+  }
+
+  // 校验每个角色属于 REGULAR_ROLES
+  for (const role of uniqueRoles) {
+    if (!REGULAR_ROLES.includes(role)) {
+      return {
+        success: false,
+        error: { code: 'INVALID_ROLE', message: '角色必须为普通角色之一（UserGroupLeader、CommunityBuilder、Speaker、Volunteer）' },
+      };
+    }
+  }
+
+  const results: Array<{ token: string; link: string; roles: UserRole[]; expiresAt: string }> = [];
 
   for (let i = 0; i < count; i++) {
-    const result = await createInviteRecord(role, dynamoClient, invitesTable, registerBaseUrl);
+    const result = await createInviteRecord(uniqueRoles, dynamoClient, invitesTable, registerBaseUrl);
     if (!result.success) {
       return result;
     }
     results.push({
       token: result.record.token,
       link: result.link,
-      role: result.record.role,
+      roles: result.record.roles ?? [result.record.role],
       expiresAt: result.record.expiresAt,
     });
   }
@@ -125,7 +149,7 @@ export async function batchCreateInvites(
  * - 不存在 → INVITE_TOKEN_INVALID
  * - status=used → INVITE_TOKEN_USED
  * - 过期 → 惰性更新 status 为 expired，返回 INVITE_TOKEN_EXPIRED
- * - 有效 → 返回 role
+ * - 有效 → 返回 roles[]
  */
 export async function validateInviteToken(
   token: string,
@@ -184,7 +208,7 @@ export async function validateInviteToken(
     };
   }
 
-  return { success: true, role: record.role };
+  return { success: true, roles: getInviteRoles(record) };
 }
 
 /**

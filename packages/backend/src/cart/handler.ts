@@ -155,9 +155,12 @@ async function handleAddToCart(event: AuthenticatedEvent): Promise<APIGatewayPro
     return errorResponse('INVALID_REQUEST', 'Missing required field: productId', 400);
   }
 
+  const quantity = body.quantity !== undefined ? (body.quantity as number) : 1;
+
   const result = await addToCart(
     event.user.userId,
     body.productId as string,
+    quantity,
     dynamoClient,
     CART_TABLE,
     PRODUCTS_TABLE,
@@ -186,6 +189,7 @@ async function handleUpdateCartItem(productId: string, event: AuthenticatedEvent
     body.quantity as number,
     dynamoClient,
     CART_TABLE,
+    PRODUCTS_TABLE,
   );
 
   if (!result.success) {

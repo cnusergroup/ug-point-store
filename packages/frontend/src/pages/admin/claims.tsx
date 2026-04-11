@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, Input, Textarea, Image } from '@tarojs/components';
+import { View, Text, Input, Image } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useAppStore } from '../../store';
 import { request, RequestError } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
+import { useTranslation } from '../../i18n';
+import { ClaimIcon } from '../../components/icons';
 import './claims.scss';
 
 /** Claim record returned by the admin API */
@@ -28,17 +30,10 @@ interface AdminClaimRecord {
 /** Status filter tab options */
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
 
-const STATUS_TABS: { key: StatusFilter; label: string }[] = [
-  { key: 'all', label: '全部' },
-  { key: 'pending', label: '待审批' },
-  { key: 'approved', label: '已批准' },
-  { key: 'rejected', label: '已驳回' },
-];
-
-const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  pending: { label: '待审批', className: 'claim-status--pending' },
-  approved: { label: '已批准', className: 'claim-status--approved' },
-  rejected: { label: '已驳回', className: 'claim-status--rejected' },
+const STATUS_CONFIG: Record<string, { labelKey: string; className: string }> = {
+  pending: { labelKey: 'admin.claims.statusPending', className: 'claim-status--pending' },
+  approved: { labelKey: 'admin.claims.statusApproved', className: 'claim-status--approved' },
+  rejected: { labelKey: 'admin.claims.statusRejected', className: 'claim-status--rejected' },
 };
 
 /** Role display config for badges */
@@ -53,6 +48,7 @@ const ROLE_CONFIG: Record<string, { label: string; className: string }> = {
 
 export default function AdminClaimsPage() {
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
+  const { t } = useTranslation();
 
   const [claims, setClaims] = useState<AdminClaimRecord[]>([]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending');
@@ -138,7 +134,7 @@ export default function AdminClaimsPage() {
   const handleApprove = async () => {
     const pts = Number(approvePoints);
     if (!pts || pts < 1 || pts > 10000 || !Number.isInteger(pts)) {
-      setApproveError('请输入 1~10000 之间的整数积分');
+      setApproveError(t('admin.claims.approvePointsError'));
       return;
     }
     if (!approveClaim) return;
@@ -150,11 +146,11 @@ export default function AdminClaimsPage() {
         method: 'PATCH',
         data: { action: 'approve', awardedPoints: pts },
       });
-      Taro.showToast({ title: '已批准', icon: 'none' });
+      Taro.showToast({ title: t('admin.claims.approved'), icon: 'none' });
       closeApprove();
       fetchClaims(statusFilter);
     } catch (err) {
-      setApproveError(err instanceof RequestError ? err.message : '操作失败');
+      setApproveError(err instanceof RequestError ? err.message : t('common.operationFailed'));
     } finally {
       setApproving(false);
     }
@@ -176,7 +172,7 @@ export default function AdminClaimsPage() {
   const handleReject = async () => {
     const reason = rejectReason.trim();
     if (!reason || reason.length > 500) {
-      setRejectError('请输入 1~500 字符的驳回原因');
+      setRejectError(t('admin.claims.rejectReasonError'));
       return;
     }
     if (!rejectClaim) return;
@@ -188,11 +184,11 @@ export default function AdminClaimsPage() {
         method: 'PATCH',
         data: { action: 'reject', rejectReason: reason },
       });
-      Taro.showToast({ title: '已驳回', icon: 'none' });
+      Taro.showToast({ title: t('admin.claims.rejected'), icon: 'none' });
       closeReject();
       fetchClaims(statusFilter);
     } catch (err) {
-      setRejectError(err instanceof RequestError ? err.message : '操作失败');
+      setRejectError(err instanceof RequestError ? err.message : t('common.operationFailed'));
     } finally {
       setRejecting(false);
     }
@@ -211,15 +207,20 @@ export default function AdminClaimsPage() {
       {/* Toolbar */}
       <View className='admin-claims__toolbar'>
         <View className='admin-claims__back' onClick={handleBack}>
-          <Text>‹ 返回</Text>
+          <Text>{t('admin.claims.backButton')}</Text>
         </View>
-        <Text className='admin-claims__title'>积分审批</Text>
+        <Text className='admin-claims__title'>{t('admin.claims.title')}</Text>
         <View style={{ width: '60px' }} />
       </View>
 
       {/* Status Filter Tabs */}
       <View className='claim-tabs'>
-        {STATUS_TABS.map((tab) => (
+        {([
+          { key: 'all' as StatusFilter, label: t('admin.claims.filterAll') },
+          { key: 'pending' as StatusFilter, label: t('admin.claims.filterPending') },
+          { key: 'approved' as StatusFilter, label: t('admin.claims.filterApproved') },
+          { key: 'rejected' as StatusFilter, label: t('admin.claims.filterRejected') },
+        ]).map((tab) => (
           <View
             key={tab.key}
             className={`claim-tabs__item ${statusFilter === tab.key ? 'claim-tabs__item--active' : ''}`}
@@ -232,11 +233,11 @@ export default function AdminClaimsPage() {
 
       {/* Claim List */}
       {loading ? (
-        <View className='admin-loading'><Text>加载中...</Text></View>
+        <View className='admin-loading'><Text>{t('admin.claims.loading')}</Text></View>
       ) : claims.length === 0 ? (
         <View className='admin-empty'>
-          <Text className='admin-empty__icon'>📋</Text>
-          <Text className='admin-empty__text'>暂无申请记录</Text>
+          <Text className='admin-empty__icon'><ClaimIcon size={48} color='var(--text-tertiary)' /></Text>
+          <Text className='admin-empty__text'>{t('admin.claims.noRecords')}</Text>
         </View>
       ) : (
         <View className='claim-list'>
@@ -254,7 +255,7 @@ export default function AdminClaimsPage() {
                           {roleConfig.label}
                         </Text>
                       )}
-                      <Text className={`claim-status ${st.className}`}>{st.label}</Text>
+                      <Text className={`claim-status ${st.className}`}>{t(st.labelKey)}</Text>
                     </View>
                     <Text className='claim-row__title'>{claim.title}</Text>
                     <Text className='claim-row__time'>{formatTime(claim.createdAt)}</Text>
@@ -268,7 +269,7 @@ export default function AdminClaimsPage() {
           {/* Load More */}
           {lastKey && (
             <View className='claim-list__load-more' onClick={handleLoadMore}>
-              <Text>加载更多</Text>
+              <Text>{t('admin.claims.loadMore')}</Text>
             </View>
           )}
         </View>
@@ -279,12 +280,12 @@ export default function AdminClaimsPage() {
         <View className='form-overlay'>
           <View className='form-modal'>
             <View className='form-modal__header'>
-              <Text className='form-modal__title'>申请详情</Text>
+              <Text className='form-modal__title'>{t('admin.claims.detailTitle')}</Text>
               <View className='form-modal__close' onClick={closeDetail}><Text>✕</Text></View>
             </View>
             <View className='form-modal__body'>
               <View className='detail-section'>
-                <Text className='detail-section__label'>申请人</Text>
+                <Text className='detail-section__label'>{t('admin.claims.applicantLabel')}</Text>
                 <View className='detail-section__applicant'>
                   <Text className='detail-section__value'>{detailClaim.applicantNickname}</Text>
                   {ROLE_CONFIG[detailClaim.applicantRole] && (
@@ -295,16 +296,16 @@ export default function AdminClaimsPage() {
                 </View>
               </View>
               <View className='detail-section'>
-                <Text className='detail-section__label'>标题</Text>
+                <Text className='detail-section__label'>{t('admin.claims.titleLabel')}</Text>
                 <Text className='detail-section__value'>{detailClaim.title}</Text>
               </View>
               <View className='detail-section'>
-                <Text className='detail-section__label'>描述</Text>
+                <Text className='detail-section__label'>{t('admin.claims.descriptionLabel')}</Text>
                 <Text className='detail-section__value detail-section__value--desc'>{detailClaim.description}</Text>
               </View>
               {detailClaim.imageUrls && detailClaim.imageUrls.length > 0 && (
                 <View className='detail-section'>
-                  <Text className='detail-section__label'>图片</Text>
+                  <Text className='detail-section__label'>{t('admin.claims.imagesLabel')}</Text>
                   <View className='detail-images'>
                     {detailClaim.imageUrls.map((url, i) => (
                       <View key={i} className='detail-images__item' onClick={() => { if (url) Taro.previewImage({ current: url, urls: detailClaim.imageUrls }); }}>
@@ -316,42 +317,42 @@ export default function AdminClaimsPage() {
               )}
               {detailClaim.activityUrl && (
                 <View className='detail-section'>
-                  <Text className='detail-section__label'>活动链接</Text>
+                  <Text className='detail-section__label'>{t('admin.claims.activityLinkLabel')}</Text>
                   <Text className='detail-section__value detail-section__value--link'>{detailClaim.activityUrl}</Text>
                 </View>
               )}
               <View className='detail-section'>
-                <Text className='detail-section__label'>状态</Text>
+                <Text className='detail-section__label'>{t('admin.claims.statusLabel')}</Text>
                 <Text className={`claim-status ${STATUS_CONFIG[detailClaim.status]?.className || ''}`}>
-                  {STATUS_CONFIG[detailClaim.status]?.label || detailClaim.status}
+                  {t(STATUS_CONFIG[detailClaim.status]?.labelKey || 'admin.claims.statusPending')}
                 </Text>
               </View>
               {detailClaim.status === 'approved' && detailClaim.awardedPoints != null && (
                 <View className='detail-section'>
-                  <Text className='detail-section__label'>奖励积分</Text>
+                  <Text className='detail-section__label'>{t('admin.claims.awardedPointsLabel')}</Text>
                   <Text className='detail-section__value detail-section__value--points'>+{detailClaim.awardedPoints}</Text>
                 </View>
               )}
               {detailClaim.status === 'rejected' && detailClaim.rejectReason && (
                 <View className='detail-section'>
-                  <Text className='detail-section__label'>驳回原因</Text>
+                  <Text className='detail-section__label'>{t('admin.claims.rejectReasonLabel')}</Text>
                   <Text className='detail-section__value detail-section__value--reject'>{detailClaim.rejectReason}</Text>
                 </View>
               )}
               {detailClaim.reviewedAt && (
                 <View className='detail-section'>
-                  <Text className='detail-section__label'>审批人</Text>
+                  <Text className='detail-section__label'>{t('admin.claims.reviewerLabel')}</Text>
                   <Text className='detail-section__value'>{detailClaim.reviewerNickname || detailClaim.reviewerId || '-'}</Text>
                 </View>
               )}
               {detailClaim.reviewedAt && (
                 <View className='detail-section'>
-                  <Text className='detail-section__label'>审批时间</Text>
+                  <Text className='detail-section__label'>{t('admin.claims.reviewTimeLabel')}</Text>
                   <Text className='detail-section__value'>{formatTime(detailClaim.reviewedAt)}</Text>
                 </View>
               )}
               <View className='detail-section'>
-                <Text className='detail-section__label'>提交时间</Text>
+                <Text className='detail-section__label'>{t('admin.claims.submitTimeLabel')}</Text>
                 <Text className='detail-section__value'>{formatTime(detailClaim.createdAt)}</Text>
               </View>
             </View>
@@ -359,15 +360,15 @@ export default function AdminClaimsPage() {
               {detailClaim.status === 'pending' ? (
                 <>
                   <View className='form-modal__cancel' onClick={() => openReject(detailClaim)}>
-                    <Text>驳回</Text>
+                    <Text>{t('admin.claims.rejectButton')}</Text>
                   </View>
                   <View className='form-modal__submit' onClick={() => openApprove(detailClaim)}>
-                    <Text>批准</Text>
+                    <Text>{t('admin.claims.approveButton')}</Text>
                   </View>
                 </>
               ) : (
                 <View className='form-modal__cancel' onClick={closeDetail} style={{ flex: 'unset', width: '100%' }}>
-                  <Text>关闭</Text>
+                  <Text>{t('common.close')}</Text>
                 </View>
               )}
             </View>
@@ -380,7 +381,7 @@ export default function AdminClaimsPage() {
         <View className='form-overlay'>
           <View className='form-modal'>
             <View className='form-modal__header'>
-              <Text className='form-modal__title'>批准申请</Text>
+              <Text className='form-modal__title'>{t('admin.claims.approveTitle')}</Text>
               <View className='form-modal__close' onClick={closeApprove}><Text>✕</Text></View>
             </View>
             {approveError && (
@@ -388,28 +389,28 @@ export default function AdminClaimsPage() {
             )}
             <View className='form-modal__body'>
               <Text className='confirm-text'>
-                批准「{approveClaim.applicantNickname}」的申请「{approveClaim.title}」
+                {t('admin.claims.approveConfirmText', { applicant: approveClaim.applicantNickname, title: approveClaim.title })}
               </Text>
               <View className='form-field'>
-                <Text className='form-field__label'>奖励积分（1~10000）</Text>
+                <Text className='form-field__label'>{t('admin.claims.approvePointsLabel')}</Text>
                 <Input
                   className='form-field__input'
                   type='number'
                   value={approvePoints}
                   onInput={(e) => setApprovePoints(e.detail.value)}
-                  placeholder='请输入奖励积分数值'
+                  placeholder={t('admin.claims.approvePointsPlaceholder')}
                 />
               </View>
             </View>
             <View className='form-modal__actions'>
               <View className='form-modal__cancel' onClick={closeApprove}>
-                <Text>取消</Text>
+                <Text>{t('common.cancel')}</Text>
               </View>
               <View
                 className={`form-modal__submit ${approving ? 'form-modal__submit--loading' : ''}`}
                 onClick={handleApprove}
               >
-                <Text>{approving ? '提交中...' : '确认批准'}</Text>
+                <Text>{approving ? t('admin.claims.approving') : t('admin.claims.confirmApprove')}</Text>
               </View>
             </View>
           </View>
@@ -421,7 +422,7 @@ export default function AdminClaimsPage() {
         <View className='form-overlay'>
           <View className='form-modal'>
             <View className='form-modal__header'>
-              <Text className='form-modal__title'>驳回申请</Text>
+              <Text className='form-modal__title'>{t('admin.claims.rejectTitle')}</Text>
               <View className='form-modal__close' onClick={closeReject}><Text>✕</Text></View>
             </View>
             {rejectError && (
@@ -429,28 +430,28 @@ export default function AdminClaimsPage() {
             )}
             <View className='form-modal__body'>
               <Text className='confirm-text'>
-                驳回「{rejectClaim.applicantNickname}」的申请「{rejectClaim.title}」
+                {t('admin.claims.rejectConfirmText', { applicant: rejectClaim.applicantNickname, title: rejectClaim.title })}
               </Text>
               <View className='form-field'>
-                <Text className='form-field__label'>驳回原因（1~500 字符）</Text>
-                <Textarea
+                <Text className='form-field__label'>{t('admin.claims.rejectReasonInputLabel')}</Text>
+                <textarea
                   className='form-field__textarea'
                   value={rejectReason}
-                  onInput={(e) => setRejectReason(e.detail.value)}
-                  placeholder='请输入驳回原因'
-                  maxlength={500}
+                  onChange={(e) => setRejectReason((e.target as HTMLTextAreaElement).value)}
+                  placeholder={t('admin.claims.rejectReasonPlaceholder')}
+                  maxLength={500}
                 />
               </View>
             </View>
             <View className='form-modal__actions'>
               <View className='form-modal__cancel' onClick={closeReject}>
-                <Text>取消</Text>
+                <Text>{t('common.cancel')}</Text>
               </View>
               <View
                 className={`form-modal__submit form-modal__submit--danger ${rejecting ? 'form-modal__submit--loading' : ''}`}
                 onClick={handleReject}
               >
-                <Text>{rejecting ? '提交中...' : '确认驳回'}</Text>
+                <Text>{rejecting ? t('admin.claims.rejecting') : t('admin.claims.confirmReject')}</Text>
               </View>
             </View>
           </View>

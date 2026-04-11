@@ -115,6 +115,7 @@
 .detail-image {
   width: 100%;
   height: 280px;
+  cursor: pointer;
 }
 
 @media (min-width: 1024px) {
@@ -155,6 +156,7 @@
   &__image {
     width: 100%;
     height: 280px;
+    cursor: pointer;
   }
 
   &__indicator {
@@ -554,5 +556,94 @@
     &__actions {
       max-width: 500px;
     }
+  }
+}
+
+/* ---- Quantity Selector (Task 7.1) ---- */
+.detail-quantity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 400px;
+
+  &__label {
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  &__controls {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+
+  &__btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    background: var(--bg-elevated);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+
+    &:hover {
+      background: var(--bg-hover);
+    }
+
+    &:active {
+      background: var(--accent-active);
+    }
+
+    &--disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+
+      &:hover {
+        background: var(--bg-elevated);
+      }
+
+      &:active {
+        background: var(--bg-elevated);
+      }
+    }
+  }
+
+  &__btn-text {
+    font-family: var(--font-display);
+    font-size: var(--text-body-lg);
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1;
+  }
+
+  &__value {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    height: 36px;
+    background: var(--bg-surface);
+    border-left: 1px solid var(--card-border);
+    border-right: 1px solid var(--card-border);
+  }
+
+  &__value-text {
+    font-family: var(--font-display);
+    font-size: var(--text-body-lg);
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  &__hint {
+    font-size: var(--text-caption);
+    color: var(--warning);
+    white-space: nowrap;
   }
 }

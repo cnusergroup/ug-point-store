@@ -1,0 +1,110 @@
+/* ============================================
+   Skeleton 骨架屏组件
+   Uses --bg-elevated + shimmer animation from app.scss
+   ============================================ */
+
+/* --- Base skeleton block --- */
+.skeleton-block {
+  background: var(--bg-elevated);
+  background-image: linear-gradient(
+    90deg,
+    var(--bg-elevated) 0%,
+    var(--bg-hover) 50%,
+    var(--bg-elevated) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+/* --- ProductSkeleton: 2-column grid, 4 cards --- */
+.skeleton-product-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.skeleton-product-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+
+  &__image {
+    width: 100%;
+    padding-top: 62.5%; /* match product card 16:10 ratio */
+    border-radius: 0;
+  }
+
+  &__body {
+    padding: var(--space-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  &__title {
+    height: 14px;
+    width: 80%;
+  }
+
+  &__price {
+    height: 14px;
+    width: 50%;
+  }
+}
+
+/* --- ProfileSkeleton: user card + 2×2 actions --- */
+.skeleton-profile {
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.skeleton-profile__card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+}
+
+.skeleton-profile__avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.skeleton-profile__info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.skeleton-profile__name {
+  height: 16px;
+  width: 40%;
+}
+
+.skeleton-profile__points {
+  height: 14px;
+  width: 60%;
+}
+
+.skeleton-profile__actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-3);
+}
+
+.skeleton-profile__action-item {
+  height: 72px;
+  border-radius: var(--radius-md);
+}
+
+/* NOTE: @keyframes shimmer is defined globally in app.scss */

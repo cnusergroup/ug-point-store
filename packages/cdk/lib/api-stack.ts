@@ -19,6 +19,11 @@ export interface ApiStackProps extends cdk.StackProps {
   ordersTable: dynamodb.Table;
   invitesTable: dynamodb.Table;
   claimsTable: dynamodb.Table;
+  contentItemsTable: dynamodb.Table;
+  contentCategoriesTable: dynamodb.Table;
+  contentCommentsTable: dynamodb.Table;
+  contentLikesTable: dynamodb.Table;
+  contentReservationsTable: dynamodb.Table;
   jwtSecret: string;
   wechatAppId: string;
   wechatAppSecret: string;
@@ -33,11 +38,12 @@ export class ApiStack extends cdk.Stack {
   public readonly api: apigateway.RestApi;
   private readonly adminFn: NodejsFunction;
   private readonly pointsFn: NodejsFunction;
+  private readonly contentFn: NodejsFunction;
 
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
-    const { usersTable, productsTable, codesTable, redemptionsTable, pointsRecordsTable, cartTable, addressesTable, ordersTable, invitesTable, claimsTable } = props;
+    const { usersTable, productsTable, codesTable, redemptionsTable, pointsRecordsTable, cartTable, addressesTable, ordersTable, invitesTable, claimsTable, contentItemsTable, contentCategoriesTable, contentCommentsTable, contentLikesTable, contentReservationsTable } = props;
 
     // --- SSM Parameter for JWT Secret ---
     const jwtSecretParam = new ssm.StringParameter(this, 'JwtSecretParam', {
@@ -122,6 +128,12 @@ export class ApiStack extends cdk.Stack {
       handler: 'handler',
     } as NodejsFunctionProps);
     this.adminFn = adminFn;
+    // Add content table env vars to Admin Lambda
+    adminFn.addEnvironment('CONTENT_ITEMS_TABLE', contentItemsTable.tableName);
+    adminFn.addEnvironment('CONTENT_CATEGORIES_TABLE', contentCategoriesTable.tableName);
+    adminFn.addEnvironment('CONTENT_COMMENTS_TABLE', contentCommentsTable.tableName);
+    adminFn.addEnvironment('CONTENT_LIKES_TABLE', contentLikesTable.tableName);
+    adminFn.addEnvironment('CONTENT_RESERVATIONS_TABLE', contentReservationsTable.tableName);
 
     // Note: imagesBucket configuration is done post-construction via configureImagesBucket()
 
@@ -138,6 +150,23 @@ export class ApiStack extends cdk.Stack {
       entry: path.join(backendSrcPath, 'orders/handler.ts'),
       handler: 'handler',
     } as NodejsFunctionProps);
+
+    const contentFn = new NodejsFunction(this, 'ContentFunction', {
+      ...commonFnProps,
+      functionName: 'PointsMall-Content',
+      entry: path.join(backendSrcPath, 'content/handler.ts'),
+      handler: 'handler',
+      environment: {
+        ...tableEnv,
+        CONTENT_ITEMS_TABLE: contentItemsTable.tableName,
+        CONTENT_CATEGORIES_TABLE: contentCategoriesTable.tableName,
+        CONTENT_COMMENTS_TABLE: contentCommentsTable.tableName,
+        CONTENT_LIKES_TABLE: contentLikesTable.tableName,
+        CONTENT_RESERVATIONS_TABLE: contentReservationsTable.tableName,
+        CONTENT_REWARD_POINTS: '10',
+      },
+    } as NodejsFunctionProps);
+    this.contentFn = contentFn;
 
     // --- IAM Permissions ---
 
@@ -165,6 +194,11 @@ export class ApiStack extends cdk.Stack {
     invitesTable.grantReadWriteData(adminFn);
     claimsTable.grantReadWriteData(adminFn);
     pointsRecordsTable.grantReadWriteData(adminFn);
+    contentItemsTable.grantReadWriteData(adminFn);
+    contentCategoriesTable.grantReadWriteData(adminFn);
+    contentCommentsTable.grantReadWriteData(adminFn);
+    contentLikesTable.grantReadWriteData(adminFn);
+    contentReservationsTable.grantReadWriteData(adminFn);
 
     // Cart Lambda: Cart, Addresses, Products tables
     cartTable.grantReadWriteData(cartFn);
@@ -179,12 +213,21 @@ export class ApiStack extends cdk.Stack {
     pointsRecordsTable.grantReadWriteData(orderFn);
     addressesTable.grantReadData(orderFn);
 
+    // Content Lambda: ContentItems, ContentCategories, ContentComments, ContentLikes, ContentReservations, Users, PointsRecords tables
+    contentItemsTable.grantReadWriteData(contentFn);
+    contentCategoriesTable.grantReadWriteData(contentFn);
+    contentCommentsTable.grantReadWriteData(contentFn);
+    contentLikesTable.grantReadWriteData(contentFn);
+    contentReservationsTable.grantReadWriteData(contentFn);
+    usersTable.grantReadWriteData(contentFn);
+    pointsRecordsTable.grantReadWriteData(contentFn);
+
     // Grant all Lambdas permission to read the JWT secret from SSM
     const ssmReadPolicy = new iam.PolicyStatement({
       actions: ['ssm:GetParameter'],
       resources: [jwtSecretParam.parameterArn],
     });
-    [authFn, productFn, pointsFn, redemptionFn, adminFn, cartFn, orderFn].forEach(fn =>
+    [authFn, productFn, pointsFn, redemptionFn, adminFn, cartFn, orderFn, contentFn].forEach(fn =>
       fn.addToRolePolicy(ssmReadPolicy)
     );
 
@@ -267,6 +310,11 @@ export class ApiStack extends cdk.Stack {
     adminCodeById.addMethod('DELETE', adminInt);
     const adminProducts = admin.addResource('products');
     adminProducts.addMethod('POST', adminInt);
+
+    // Admin images upload-url (no productId needed — for product creation)
+    const adminImages = admin.addResource('images');
+    adminImages.addResource('upload-url').addMethod('POST', adminInt);
+
     const adminProductById = adminProducts.addResource('{id}');
     adminProductById.addMethod('PUT', adminInt);
     adminProductById.addResource('status').addMethod('PATCH', adminInt);
@@ -319,6 +367,31 @@ export class ApiStack extends cdk.Stack {
     adminOrderById.addMethod('GET', orderInt);
     adminOrderById.addResource('shipping').addMethod('PATCH', orderInt);
 
+    // Content routes (user-facing)
+    const contentInt = new apigateway.LambdaIntegration(contentFn);
+    const content = api.addResource('content');
+    content.addResource('upload-url').addMethod('POST', contentInt);
+    content.addMethod('POST', contentInt);
+    content.addMethod('GET', contentInt);
+    content.addResource('categories').addMethod('GET', contentInt);
+    const contentById = content.addResource('{id}');
+    contentById.addMethod('GET', contentInt);
+    contentById.addMethod('PUT', contentInt);
+    const contentComments = contentById.addResource('comments');
+    contentComments.addMethod('POST', contentInt);
+    contentComments.addMethod('GET', contentInt);
+    contentById.addResource('like').addMethod('POST', contentInt);
+    contentById.addResource('reserve').addMethod('POST', contentInt);
+    contentById.addResource('download').addMethod('GET', contentInt);
+
+    // Admin content routes — use proxy to avoid Lambda resource policy size limit
+    const adminContent = admin.addResource('content');
+    adminContent.addMethod('GET', adminInt);
+    adminContent.addProxy({
+      defaultIntegration: adminInt,
+      anyMethod: true,
+    });
+
     new cdk.CfnOutput(this, 'ApiUrl', {
       value: this.api.url,
       exportName: 'PointsMall-ApiUrl',
@@ -336,11 +409,22 @@ export class ApiStack extends cdk.Stack {
       actions: ['s3:PutObject', 's3:DeleteObject', 's3:GetObject'],
       resources: [`${imagesBucketArn}/products/*`],
     }));
+    // Admin Lambda: S3 delete permission for content files
+    this.adminFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['s3:DeleteObject'],
+      resources: [`${imagesBucketArn}/content/*`],
+    }));
     // Points Lambda needs S3 access for claim image uploads
     this.pointsFn.addEnvironment('IMAGES_BUCKET', imagesBucketName);
     this.pointsFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['s3:PutObject'],
       resources: [`${imagesBucketArn}/claims/*`],
+    }));
+    // Content Lambda: S3 read/write/delete for content files
+    this.contentFn.addEnvironment('IMAGES_BUCKET', imagesBucketName);
+    this.contentFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['s3:PutObject', 's3:GetObject', 's3:DeleteObject'],
+      resources: [`${imagesBucketArn}/content/*`],
     }));
   }
 }

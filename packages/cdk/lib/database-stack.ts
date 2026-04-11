@@ -13,6 +13,11 @@ export class DatabaseStack extends cdk.Stack {
   public readonly ordersTable: dynamodb.Table;
   public readonly invitesTable: dynamodb.Table;
   public readonly claimsTable: dynamodb.Table;
+  public readonly contentItemsTable: dynamodb.Table;
+  public readonly contentCategoriesTable: dynamodb.Table;
+  public readonly contentCommentsTable: dynamodb.Table;
+  public readonly contentLikesTable: dynamodb.Table;
+  public readonly contentReservationsTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -195,5 +200,94 @@ export class DatabaseStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'ClaimsTableName', { value: this.claimsTable.tableName, exportName: 'PointsMall-ClaimsTableName' });
     new cdk.CfnOutput(this, 'ClaimsTableArn', { value: this.claimsTable.tableArn, exportName: 'PointsMall-ClaimsTableArn' });
+
+    // ContentItems table: PK=contentId, GSIs: status-createdAt-index, categoryId-createdAt-index, uploaderId-createdAt-index
+    this.contentItemsTable = new dynamodb.Table(this, 'ContentItemsTable', {
+      tableName: 'PointsMall-ContentItems',
+      partitionKey: { name: 'contentId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.contentItemsTable.addGlobalSecondaryIndex({
+      indexName: 'status-createdAt-index',
+      partitionKey: { name: 'status', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+    });
+
+    this.contentItemsTable.addGlobalSecondaryIndex({
+      indexName: 'categoryId-createdAt-index',
+      partitionKey: { name: 'categoryId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+    });
+
+    this.contentItemsTable.addGlobalSecondaryIndex({
+      indexName: 'uploaderId-createdAt-index',
+      partitionKey: { name: 'uploaderId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+    });
+
+    new cdk.CfnOutput(this, 'ContentItemsTableName', { value: this.contentItemsTable.tableName, exportName: 'PointsMall-ContentItemsTableName' });
+    new cdk.CfnOutput(this, 'ContentItemsTableArn', { value: this.contentItemsTable.tableArn, exportName: 'PointsMall-ContentItemsTableArn' });
+
+    // ContentCategories table: PK=categoryId
+    this.contentCategoriesTable = new dynamodb.Table(this, 'ContentCategoriesTable', {
+      tableName: 'PointsMall-ContentCategories',
+      partitionKey: { name: 'categoryId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    new cdk.CfnOutput(this, 'ContentCategoriesTableName', { value: this.contentCategoriesTable.tableName, exportName: 'PointsMall-ContentCategoriesTableName' });
+    new cdk.CfnOutput(this, 'ContentCategoriesTableArn', { value: this.contentCategoriesTable.tableArn, exportName: 'PointsMall-ContentCategoriesTableArn' });
+
+    // ContentComments table: PK=commentId, GSI: contentId-createdAt-index
+    this.contentCommentsTable = new dynamodb.Table(this, 'ContentCommentsTable', {
+      tableName: 'PointsMall-ContentComments',
+      partitionKey: { name: 'commentId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.contentCommentsTable.addGlobalSecondaryIndex({
+      indexName: 'contentId-createdAt-index',
+      partitionKey: { name: 'contentId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+    });
+
+    new cdk.CfnOutput(this, 'ContentCommentsTableName', { value: this.contentCommentsTable.tableName, exportName: 'PointsMall-ContentCommentsTableName' });
+    new cdk.CfnOutput(this, 'ContentCommentsTableArn', { value: this.contentCommentsTable.tableArn, exportName: 'PointsMall-ContentCommentsTableArn' });
+
+    // ContentLikes table: PK=pk, GSI: contentId-index
+    this.contentLikesTable = new dynamodb.Table(this, 'ContentLikesTable', {
+      tableName: 'PointsMall-ContentLikes',
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.contentLikesTable.addGlobalSecondaryIndex({
+      indexName: 'contentId-index',
+      partitionKey: { name: 'contentId', type: dynamodb.AttributeType.STRING },
+    });
+
+    new cdk.CfnOutput(this, 'ContentLikesTableName', { value: this.contentLikesTable.tableName, exportName: 'PointsMall-ContentLikesTableName' });
+    new cdk.CfnOutput(this, 'ContentLikesTableArn', { value: this.contentLikesTable.tableArn, exportName: 'PointsMall-ContentLikesTableArn' });
+
+    // ContentReservations table: PK=pk, GSI: contentId-index
+    this.contentReservationsTable = new dynamodb.Table(this, 'ContentReservationsTable', {
+      tableName: 'PointsMall-ContentReservations',
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.contentReservationsTable.addGlobalSecondaryIndex({
+      indexName: 'contentId-index',
+      partitionKey: { name: 'contentId', type: dynamodb.AttributeType.STRING },
+    });
+
+    new cdk.CfnOutput(this, 'ContentReservationsTableName', { value: this.contentReservationsTable.tableName, exportName: 'PointsMall-ContentReservationsTableName' });
+    new cdk.CfnOutput(this, 'ContentReservationsTableArn', { value: this.contentReservationsTable.tableArn, exportName: 'PointsMall-ContentReservationsTableArn' });
   }
 }

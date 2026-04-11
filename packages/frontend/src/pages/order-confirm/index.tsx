@@ -3,6 +3,8 @@ import { View, Text, Image } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
 import { request } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
+import { useTranslation } from '../../i18n';
+import { GiftIcon } from '../../components/icons';
 import './index.scss';
 
 /** Address from API */
@@ -43,6 +45,7 @@ interface CartSelectedItem {
 }
 
 export default function OrderConfirmPage() {
+  const { t } = useTranslation();
   const router = useRouter();
   const fromCart = router.params.from === 'cart';
   const directProductId = router.params.productId || '';
@@ -89,7 +92,7 @@ export default function OrderConfirmPage() {
         const raw = Taro.getStorageSync('cart_selected_items');
         const cartItems: CartSelectedItem[] = raw ? JSON.parse(raw as string) : [];
         if (cartItems.length === 0) {
-          setError('未选择商品');
+          setError(t('orderConfirm.noItemsSelected'));
           return;
         }
         // Fetch product details for each item
@@ -126,10 +129,10 @@ export default function OrderConfirmPage() {
           },
         ]);
       } else {
-        setError('参数错误');
+        setError(t('orderConfirm.paramError'));
       }
     } catch {
-      setError('商品信息加载失败');
+      setError(t('orderConfirm.productLoadFailed'));
     } finally {
       setLoading(false);
     }
@@ -147,13 +150,13 @@ export default function OrderConfirmPage() {
   const validateAddressForm = (): boolean => {
     const errors: Record<string, string> = {};
     if (!formName.trim() || formName.length > 20) {
-      errors.name = '收件人姓名需为 1-20 个字符';
+      errors.name = t('orderConfirm.recipientNameError');
     }
     if (!/^1\d{10}$/.test(formPhone)) {
-      errors.phone = '请输入正确的 11 位手机号';
+      errors.phone = t('orderConfirm.phoneError');
     }
     if (!formAddress.trim() || formAddress.length > 200) {
-      errors.address = '详细地址需为 1-200 个字符';
+      errors.address = t('orderConfirm.detailAddressError');
     }
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
@@ -168,7 +171,7 @@ export default function OrderConfirmPage() {
         method: 'POST',
         data: { recipientName: formName, phone: formPhone, detailAddress: formAddress },
       });
-      Taro.showToast({ title: '地址已添加', icon: 'success' });
+      Taro.showToast({ title: t('orderConfirm.addressAdded'), icon: 'success' });
       setShowAddressForm(false);
       setFormName('');
       setFormPhone('');
@@ -176,7 +179,7 @@ export default function OrderConfirmPage() {
       setFormErrors({});
       await loadAddresses();
     } catch {
-      Taro.showToast({ title: '添加地址失败', icon: 'none' });
+      Taro.showToast({ title: t('orderConfirm.addressAddFailed'), icon: 'none' });
     } finally {
       setFormSubmitting(false);
     }
@@ -185,11 +188,11 @@ export default function OrderConfirmPage() {
   const handleSubmit = async () => {
     if (submitting) return;
     if (!selectedAddressId) {
-      Taro.showToast({ title: '请选择收货地址', icon: 'none' });
+      Taro.showToast({ title: t('orderConfirm.selectAddress'), icon: 'none' });
       return;
     }
     if (items.length === 0) {
-      Taro.showToast({ title: '未选择商品', icon: 'none' });
+      Taro.showToast({ title: t('orderConfirm.noItemsToast'), icon: 'none' });
       return;
     }
 
@@ -223,19 +226,31 @@ export default function OrderConfirmPage() {
         orderId = res.orderId;
       }
 
-      Taro.showToast({ title: '兑换成功', icon: 'success' });
+      Taro.showToast({ title: t('orderConfirm.redeemSuccess'), icon: 'success' });
       setTimeout(() => {
         Taro.redirectTo({ url: `/pages/order-detail/index?id=${orderId}` });
       }, 1000);
     } catch (err: any) {
       const code = err?.code || '';
-      const msg = err?.message || '兑换失败';
+      const msg = err?.message || t('orderConfirm.redeemFailed');
       if (code === 'INSUFFICIENT_POINTS') {
-        Taro.showToast({ title: '积分不足', icon: 'none', duration: 2000 });
-      } else if (code === 'OUT_OF_STOCK') {
-        Taro.showToast({ title: '商品库存不足', icon: 'none', duration: 2000 });
+        Taro.showToast({ title: t('orderConfirm.insufficientPoints'), icon: 'none', duration: 2000 });
+      } else if (code === 'OUT_OF_STOCK' || code === 'SIZE_OUT_OF_STOCK') {
+        const serverMsg = err?.data?.message || err?.message || '';
+        Taro.showModal({
+          title: t('orderConfirm.outOfStockTitle'),
+          content: t('orderConfirm.outOfStockMessage', { message: serverMsg }),
+          showCancel: true,
+          confirmText: t('orderConfirm.backToCart'),
+          cancelText: t('orderConfirm.stayHere'),
+          success: (res) => {
+            if (res.confirm) {
+              Taro.navigateBack();
+            }
+          },
+        });
       } else if (code === 'NO_ADDRESS_SELECTED') {
-        Taro.showToast({ title: '请选择收货地址', icon: 'none', duration: 2000 });
+        Taro.showToast({ title: t('orderConfirm.selectAddress'), icon: 'none', duration: 2000 });
       } else {
         Taro.showToast({ title: msg, icon: 'none', duration: 2000 });
       }
@@ -248,7 +263,7 @@ export default function OrderConfirmPage() {
     return (
       <View className='confirm-page'>
         <View className='confirm-loading'>
-          <Text className='confirm-loading__text'>加载中...</Text>
+          <Text className='confirm-loading__text'>{t('orderConfirm.loadingText')}</Text>
         </View>
       </View>
     );
@@ -258,8 +273,8 @@ export default function OrderConfirmPage() {
     return (
       <View className='confirm-page'>
         <View className='confirm-header'>
-          <Text className='confirm-header__back' onClick={handleBack}>← 返回</Text>
-          <Text className='confirm-header__title'>确认订单</Text>
+          <Text className='confirm-header__back' onClick={handleBack}>{t('orderConfirm.backButton')}</Text>
+          <Text className='confirm-header__title'>{t('orderConfirm.title')}</Text>
           <View className='confirm-header__placeholder' />
         </View>
         <View className='confirm-error'>
@@ -273,21 +288,21 @@ export default function OrderConfirmPage() {
     <View className='confirm-page'>
       {/* Header */}
       <View className='confirm-header'>
-        <Text className='confirm-header__back' onClick={handleBack}>← 返回</Text>
-        <Text className='confirm-header__title'>确认订单</Text>
+        <Text className='confirm-header__back' onClick={handleBack}>{t('orderConfirm.backButton')}</Text>
+        <Text className='confirm-header__title'>{t('orderConfirm.title')}</Text>
         <View className='confirm-header__placeholder' />
       </View>
 
       <View className='confirm-content'>
         {/* Address Section */}
         <View className='confirm-section'>
-          <Text className='confirm-section__title'>📍 收货地址</Text>
+          <Text className='confirm-section__title'>{t('orderConfirm.shippingAddressTitle')}</Text>
 
           {addresses.length === 0 ? (
             <View className='confirm-address-empty'>
-              <Text className='confirm-address-empty__text'>暂无收货地址</Text>
+              <Text className='confirm-address-empty__text'>{t('orderConfirm.noAddress')}</Text>
               <View className='btn-primary confirm-address-empty__btn' onClick={() => setShowAddressForm(true)}>
-                <Text>+ 添加地址</Text>
+                <Text>{t('orderConfirm.addAddress')}</Text>
               </View>
             </View>
           ) : (
@@ -305,20 +320,20 @@ export default function OrderConfirmPage() {
                     <View className='confirm-address-card__name-row'>
                       <Text className='confirm-address-card__name'>{addr.recipientName}</Text>
                       <Text className='confirm-address-card__phone'>{addr.phone}</Text>
-                      {addr.isDefault && <Text className='confirm-address-card__badge'>默认</Text>}
+                      {addr.isDefault && <Text className='confirm-address-card__badge'>{t('orderConfirm.defaultBadge')}</Text>}
                     </View>
                     <Text className='confirm-address-card__detail'>{addr.detailAddress}</Text>
                   </View>
                 </View>
               ))}
-              <Text className='confirm-address-add' onClick={() => setShowAddressForm(true)}>+ 添加新地址</Text>
+              <Text className='confirm-address-add' onClick={() => setShowAddressForm(true)}>{t('orderConfirm.addNewAddress')}</Text>
             </View>
           )}
         </View>
 
         {/* Items Section */}
         <View className='confirm-section'>
-          <Text className='confirm-section__title'>🛒 商品清单</Text>
+          <Text className='confirm-section__title'>{t('orderConfirm.productListTitle')}</Text>
           <View className='confirm-items'>
             {items.map((item) => (
               <View className='confirm-item' key={item.productId}>
@@ -327,20 +342,20 @@ export default function OrderConfirmPage() {
                     <Image className='confirm-item__image' src={item.imageUrl} mode='aspectFill' />
                   ) : (
                     <View className='confirm-item__image-placeholder'>
-                      <Text>🎁</Text>
+                      <Text><GiftIcon size={20} color='var(--text-tertiary)' /></Text>
                     </View>
                   )}
                 </View>
                 <View className='confirm-item__info'>
                   <Text className='confirm-item__name'>
                     {item.productName}
-                    {item.selectedSize ? ` - 尺码: ${item.selectedSize}` : ''}
+                    {item.selectedSize ? ` - ${t('common.size')}: ${item.selectedSize}` : ''}
                   </Text>
                   <View className='confirm-item__row'>
                     <Text className='confirm-item__price'>◆ {item.pointsCost.toLocaleString()}</Text>
                     <Text className='confirm-item__qty'>×{item.quantity}</Text>
                   </View>
-                  <Text className='confirm-item__subtotal'>小计: ◆ {item.subtotal.toLocaleString()}</Text>
+                  <Text className='confirm-item__subtotal'>{t('common.subtotal')}: ◆ {item.subtotal.toLocaleString()}</Text>
                 </View>
               </View>
             ))}
@@ -349,7 +364,7 @@ export default function OrderConfirmPage() {
 
         {/* Summary */}
         <View className='confirm-summary'>
-          <Text className='confirm-summary__label'>积分总计</Text>
+          <Text className='confirm-summary__label'>{t('orderConfirm.pointsTotal')}</Text>
           <View className='confirm-summary__value-wrap'>
             <Text className='confirm-summary__diamond'>◆</Text>
             <Text className='confirm-summary__value'>{totalPoints.toLocaleString()}</Text>
@@ -360,7 +375,7 @@ export default function OrderConfirmPage() {
       {/* Bottom Bar */}
       <View className='confirm-bottom'>
         <View className='confirm-bottom__info'>
-          <Text className='confirm-bottom__label'>合计: </Text>
+          <Text className='confirm-bottom__label'>{t('orderConfirm.totalLabel')}</Text>
           <Text className='confirm-bottom__diamond'>◆</Text>
           <Text className='confirm-bottom__total'>{totalPoints.toLocaleString()}</Text>
         </View>
@@ -368,7 +383,7 @@ export default function OrderConfirmPage() {
           className={`confirm-bottom__btn ${submitting || !selectedAddressId ? 'confirm-bottom__btn--disabled' : ''}`}
           onClick={!submitting && selectedAddressId ? handleSubmit : undefined}
         >
-          <Text>{submitting ? '提交中...' : '确认兑换'}</Text>
+          <Text>{submitting ? t('orderConfirm.submitting') : t('orderConfirm.confirmRedeem')}</Text>
         </View>
       </View>
 
@@ -376,14 +391,14 @@ export default function OrderConfirmPage() {
       {showAddressForm && (
         <View className='confirm-modal-overlay' onClick={() => setShowAddressForm(false)}>
           <View className='confirm-modal' onClick={(e) => e.stopPropagation()}>
-            <Text className='confirm-modal__title'>添加地址</Text>
+            <Text className='confirm-modal__title'>{t('orderConfirm.addAddressTitle')}</Text>
 
             <View className='confirm-modal__field'>
-              <Text className='confirm-modal__label'>收件人姓名</Text>
+              <Text className='confirm-modal__label'>{t('orderConfirm.recipientNameLabel')}</Text>
               <input
                 className='confirm-modal__input'
                 type='text'
-                placeholder='请输入收件人姓名'
+                placeholder={t('orderConfirm.recipientNamePlaceholder')}
                 value={formName}
                 maxLength={20}
                 onInput={(e: any) => setFormName(e.target.value || e.detail?.value || '')}
@@ -392,11 +407,11 @@ export default function OrderConfirmPage() {
             </View>
 
             <View className='confirm-modal__field'>
-              <Text className='confirm-modal__label'>手机号码</Text>
+              <Text className='confirm-modal__label'>{t('orderConfirm.phoneLabel')}</Text>
               <input
                 className='confirm-modal__input'
                 type='tel'
-                placeholder='请输入 11 位手机号'
+                placeholder={t('orderConfirm.phonePlaceholder')}
                 value={formPhone}
                 maxLength={11}
                 onInput={(e: any) => setFormPhone(e.target.value || e.detail?.value || '')}
@@ -405,10 +420,10 @@ export default function OrderConfirmPage() {
             </View>
 
             <View className='confirm-modal__field'>
-              <Text className='confirm-modal__label'>详细地址</Text>
+              <Text className='confirm-modal__label'>{t('orderConfirm.detailAddressLabel')}</Text>
               <textarea
                 className='confirm-modal__textarea'
-                placeholder='请输入详细地址'
+                placeholder={t('orderConfirm.detailAddressPlaceholder')}
                 value={formAddress}
                 maxLength={200}
                 onInput={(e: any) => setFormAddress(e.target.value || e.detail?.value || '')}
@@ -418,13 +433,13 @@ export default function OrderConfirmPage() {
 
             <View className='confirm-modal__actions'>
               <View className='btn-secondary confirm-modal__btn' onClick={() => setShowAddressForm(false)}>
-                <Text>取消</Text>
+                <Text>{t('common.cancel')}</Text>
               </View>
               <View
                 className={`btn-primary confirm-modal__btn ${formSubmitting ? 'btn-primary--disabled' : ''}`}
                 onClick={formSubmitting ? undefined : handleAddAddress}
               >
-                <Text>{formSubmitting ? '提交中...' : '确认'}</Text>
+                <Text>{formSubmitting ? t('common.submitting') : t('common.confirm')}</Text>
               </View>
             </View>
           </View>

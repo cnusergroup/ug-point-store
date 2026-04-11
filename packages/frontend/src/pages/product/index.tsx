@@ -3,7 +3,9 @@ import { View, Text, Image, Swiper, SwiperItem } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
 import { useAppStore, UserRole } from '../../store';
 import { request } from '../../utils/request';
+import { useTranslation } from '../../i18n';
 import { goBack } from '../../utils/navigation';
+import { TicketIcon, GiftIcon, WarningIcon, ShoppingBagIcon, CartIcon } from '../../components/icons';
 import './index.scss';
 
 /** Product image info */
@@ -38,15 +40,16 @@ interface ProductDetail {
 }
 
 const ROLE_CONFIG: Record<UserRole, { label: string; icon: string; className: string }> = {
-  UserGroupLeader: { label: 'UserGroupLeader', icon: '👑', className: 'role-item--leader' },
-  CommunityBuilder: { label: 'CommunityBuilder', icon: '🏗', className: 'role-item--builder' },
-  Speaker: { label: 'Speaker', icon: '🎤', className: 'role-item--speaker' },
-  Volunteer: { label: 'Volunteer', icon: '❤️', className: 'role-item--volunteer' },
-  Admin: { label: 'Admin', icon: '⚙️', className: 'role-item--admin' },
-  SuperAdmin: { label: 'SuperAdmin', icon: '🛡️', className: 'role-item--superadmin' },
+  UserGroupLeader: { label: 'UserGroupLeader', icon: '♛', className: 'role-item--leader' },
+  CommunityBuilder: { label: 'CommunityBuilder', icon: '▣', className: 'role-item--builder' },
+  Speaker: { label: 'Speaker', icon: '♪', className: 'role-item--speaker' },
+  Volunteer: { label: 'Volunteer', icon: '♥', className: 'role-item--volunteer' },
+  Admin: { label: 'Admin', icon: '⚙', className: 'role-item--admin' },
+  SuperAdmin: { label: 'SuperAdmin', icon: '◈', className: 'role-item--superadmin' },
 };
 
 export default function ProductDetailPage() {
+  const { t } = useTranslation();
   const router = useRouter();
   const productId = router.params.id || '';
 
@@ -56,10 +59,12 @@ export default function ProductDetailPage() {
   const [error, setError] = useState('');
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
+  const [quantity, setQuantity] = useState(1);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!productId) {
-      setError('商品不存在');
+      setError(t('product.notFound'));
       setLoading(false);
       return;
     }
@@ -69,7 +74,7 @@ export default function ProductDetailPage() {
         const res = await request<ProductDetail>({ url: `/api/products/${productId}` });
         setProduct(res);
       } catch {
-        setError('商品加载失败');
+        setError(t('product.loadFailed'));
       } finally {
         setLoading(false);
       }
@@ -95,10 +100,25 @@ export default function ProductDetailPage() {
     return product.stock;
   };
 
+  /** Compute max selectable quantity: min(effectiveStock, purchaseLimitRemaining) */
+  const getMaxQuantity = (): number => {
+    const stock = getEffectiveStock();
+    if (stock <= 0) return 0;
+    if (product?.purchaseLimitEnabled && product.purchaseLimitCount) {
+      return Math.min(stock, product.purchaseLimitCount);
+    }
+    return stock;
+  };
+
+  /** Reset quantity to 1 when size changes */
+  useEffect(() => {
+    setQuantity(1);
+  }, [selectedSize]);
+
   const handleRedeem = () => {
     if (!product) return;
     if (needsSizeSelection) {
-      Taro.showToast({ title: '请选择尺码', icon: 'none', duration: 1500 });
+      Taro.showToast({ title: t('product.selectSizeFirst'), icon: 'none', duration: 1500 });
       return;
     }
     if (product.type === 'points') {
@@ -112,7 +132,7 @@ export default function ProductDetailPage() {
   const handleAddToCart = async () => {
     if (!product || addingToCart) return;
     if (needsSizeSelection) {
-      Taro.showToast({ title: '请选择尺码', icon: 'none', duration: 1500 });
+      Taro.showToast({ title: t('product.selectSizeFirst'), icon: 'none', duration: 1500 });
       return;
     }
     setAddingToCart(true);
@@ -122,12 +142,22 @@ export default function ProductDetailPage() {
         method: 'POST',
         data: {
           productId: product.productId,
+          quantity,
           ...(selectedSize ? { selectedSize } : {}),
         },
       });
-      Taro.showToast({ title: '已加入购物车', icon: 'success', duration: 1500 });
+      Taro.showToast({ title: t('product.addedToCart'), icon: 'success', duration: 1500 });
     } catch (err: any) {
-      const msg = err?.data?.message || err?.message || '加入购物车失败';
+      const code = err?.data?.code || '';
+      const serverMsg = err?.data?.message || '';
+      let msg = t('product.addToCartFailed');
+      if (code === 'QUANTITY_EXCEEDS_STOCK' && serverMsg) {
+        msg = serverMsg;
+      } else if (code === 'OUT_OF_STOCK' || code === 'PRODUCT_UNAVAILABLE') {
+        msg = t('product.stockChanged');
+      } else if (serverMsg) {
+        msg = serverMsg;
+      }
       Taro.showToast({ title: msg, icon: 'none', duration: 2000 });
     } finally {
       setAddingToCart(false);
@@ -157,24 +187,24 @@ export default function ProductDetailPage() {
 
   const getRedeemButtonText = (): string => {
     if (!product) return '';
-    if (needsSizeSelection) return '请选择尺码';
+    if (needsSizeSelection) return t('product.selectSizeHint');
     const effectiveStock = getEffectiveStock();
-    if (effectiveStock <= 0) return '已售罄';
-    if (product.type === 'code_exclusive') return '输入 Code 兑换';
-    if (!user) return '请先登录';
+    if (effectiveStock <= 0) return t('product.soldOut');
+    if (product.type === 'code_exclusive') return t('product.enterCodeRedeem');
+    if (!user) return t('product.pleaseLogin');
     const allowed = product.allowedRoles;
     if (allowed && allowed !== 'all' && !allowed.some((r) => user.roles.includes(r))) {
-      return '身份不符';
+      return t('product.roleNotMatch');
     }
-    if (user.points < (product.pointsCost || 0)) return '积分不足';
-    return '立即兑换';
+    if (user.points < (product.pointsCost || 0)) return t('product.insufficientPoints');
+    return t('product.redeemNow');
   };
 
   if (loading) {
     return (
       <View className='detail-page'>
         <View className='detail-loading'>
-          <Text className='detail-loading__text'>加载中...</Text>
+          <Text className='detail-loading__text'>{t('product.loading')}</Text>
         </View>
       </View>
     );
@@ -184,10 +214,10 @@ export default function ProductDetailPage() {
     return (
       <View className='detail-page'>
         <View className='detail-header'>
-          <Text className='detail-header__back' onClick={handleBack}>← 返回</Text>
+          <Text className='detail-header__back' onClick={handleBack}>{t('product.backButton')}</Text>
         </View>
         <View className='detail-error'>
-          <Text className='detail-error__text'>{error || '商品不存在'}</Text>
+          <Text className='detail-error__text'>{error || t('product.notFound')}</Text>
         </View>
       </View>
     );
@@ -198,12 +228,15 @@ export default function ProductDetailPage() {
   const cartEnabled = canAddToCart();
   const buttonText = getRedeemButtonText();
   const hasImages = product.images && product.images.length > 0;
+  const effectiveStock = getEffectiveStock();
+  const maxQuantity = getMaxQuantity();
+  const isSoldOut = effectiveStock <= 0;
 
   return (
     <View className='detail-page'>
       {/* Top bar */}
       <View className='detail-header'>
-        <Text className='detail-header__back' onClick={handleBack}>← 返回</Text>
+        <Text className='detail-header__back' onClick={handleBack}>{t('product.backButton')}</Text>
         {user && (
           <View className='detail-header__points'>
             <Text className='detail-header__points-diamond'>◆</Text>
@@ -228,7 +261,12 @@ export default function ProductDetailPage() {
                 >
                   {product.images!.map((img) => (
                     <SwiperItem key={img.key}>
-                      <Image className='detail-carousel__image' src={img.url} mode='aspectFill' />
+                      <Image
+                        className='detail-carousel__image'
+                        src={img.url}
+                        mode='aspectFill'
+                        onClick={() => setPreviewUrl(img.url)}
+                      />
                     </SwiperItem>
                   ))}
                 </Swiper>
@@ -239,10 +277,15 @@ export default function ProductDetailPage() {
                 </View>
               </View>
             ) : product.imageUrl ? (
-              <Image className='detail-image' src={product.imageUrl} mode='aspectFill' />
+              <Image
+                className='detail-image'
+                src={product.imageUrl}
+                mode='aspectFill'
+                onClick={() => setPreviewUrl(product.imageUrl!)}
+              />
             ) : (
               <View className='detail-image-placeholder'>
-                <Text className='detail-image-placeholder__icon'>{isCode ? '🎫' : '🎁'}</Text>
+                <Text className='detail-image-placeholder__icon'>{isCode ? <TicketIcon size={48} color='var(--text-tertiary)' /> : <GiftIcon size={48} color='var(--text-tertiary)' />}</Text>
               </View>
             )}
           </View>
@@ -254,7 +297,7 @@ export default function ProductDetailPage() {
             {!isCode && product.allowedRoles && (
               <View className='detail-info__roles'>
                 {product.allowedRoles === 'all' ? (
-                  <Text className='role-badge role-badge--all'>所有人</Text>
+                  <Text className='role-badge role-badge--all'>{t('product.everyone')}</Text>
                 ) : (
                   product.allowedRoles.map((role) => (
                     <Text key={role} className={`role-badge role-badge--${role === 'UserGroupLeader' ? 'leader' : role === 'CommunityBuilder' ? 'builder' : role === 'Speaker' ? 'speaker' : 'volunteer'}`}>
@@ -267,25 +310,25 @@ export default function ProductDetailPage() {
 
             {/* Price */}
             {isCode ? (
-              <Text className='detail-info__code-label'>Code 专属商品</Text>
+              <Text className='detail-info__code-label'>{t('product.codeExclusiveLabel')}</Text>
             ) : (
               <View className='detail-info__price'>
                 <Text className='detail-info__price-diamond'>◆</Text>
                 <Text className='detail-info__price-value'>{product.pointsCost?.toLocaleString()}</Text>
-                <Text className='detail-info__price-unit'>积分</Text>
+                <Text className='detail-info__price-unit'>{t('product.pointsUnit')}</Text>
               </View>
             )}
 
             <Text className='detail-info__stock'>
-              库存: {hasSizeOptions && selectedSize
+              {t('product.stockLabel', { count: hasSizeOptions && selectedSize
                 ? getEffectiveStock()
-                : product.stock}
+                : product.stock })}
             </Text>
 
             {/* Task 10.3: Purchase limit hint */}
             {product.purchaseLimitEnabled && product.purchaseLimitCount && (
               <Text className='detail-info__limit-hint'>
-                每人限购 {product.purchaseLimitCount} 件
+                {t('product.purchaseLimit', { count: product.purchaseLimitCount })}
               </Text>
             )}
           </View>
@@ -294,7 +337,7 @@ export default function ProductDetailPage() {
         {/* Task 10.2: Size selector */}
         {hasSizeOptions && (
           <View className='detail-section detail-section--sizes'>
-            <Text className='detail-section__title'>选择尺码</Text>
+            <Text className='detail-section__title'>{t('product.selectSize')}</Text>
             <View className='detail-sizes'>
               {product.sizeOptions!.map((size) => {
                 const isSelected = selectedSize === size.name;
@@ -306,33 +349,33 @@ export default function ProductDetailPage() {
                     onClick={!isSoldOut ? () => setSelectedSize(size.name) : undefined}
                   >
                     <Text className='detail-sizes__tag-name'>{size.name}</Text>
-                    {isSoldOut && <Text className='detail-sizes__tag-sold-out'>已售罄</Text>}
+                    {isSoldOut && <Text className='detail-sizes__tag-sold-out'>{t('product.soldOut')}</Text>}
                   </View>
                 );
               })}
             </View>
             {selectedSize && (
               <Text className='detail-sizes__stock-hint'>
-                当前尺码库存: {getEffectiveStock()}
+                {t('product.currentSizeStock', { count: getEffectiveStock() })}
               </Text>
             )}
             {needsSizeSelection && (
-              <Text className='detail-sizes__select-hint'>请选择尺码后再操作</Text>
+              <Text className='detail-sizes__select-hint'>{t('product.selectSizeHint')}</Text>
             )}
           </View>
         )}
 
         {/* Description */}
         <View className='detail-section'>
-          <Text className='detail-section__title'>商品描述</Text>
+          <Text className='detail-section__title'>{t('product.descriptionTitle')}</Text>
           <Text className='detail-section__text'>{product.description}</Text>
         </View>
 
         {/* Role restriction info (points products) */}
         {!isCode && product.allowedRoles && product.allowedRoles !== 'all' && (
           <View className='detail-section detail-section--role-info'>
-            <Text className='detail-section__title'>⚠ 身份限定说明</Text>
-            <Text className='detail-section__subtitle'>此商品仅限以下身份兑换：</Text>
+            <Text className='detail-section__title'><WarningIcon size={16} color='var(--warning)' /> {t('product.roleRestrictionTitle')}</Text>
+            <Text className='detail-section__subtitle'>{t('product.roleRestrictionSubtitle')}</Text>
             <View className='detail-role-list'>
               {product.allowedRoles.map((role) => (
                 <View key={role} className={`detail-role-item ${ROLE_CONFIG[role]?.className || ''}`}>
@@ -347,9 +390,9 @@ export default function ProductDetailPage() {
         {/* Event info (code exclusive products) */}
         {isCode && product.eventInfo && (
           <View className='detail-section detail-section--event-info'>
-            <Text className='detail-section__title'>🎯 关联活动</Text>
+            <Text className='detail-section__title'><ShoppingBagIcon size={16} color='var(--role-leader)' /> {t('product.eventInfoTitle')}</Text>
             <Text className='detail-section__text'>{product.eventInfo}</Text>
-            <Text className='detail-section__hint'>此商品需要活动专属兑换码才能兑换</Text>
+            <Text className='detail-section__hint'>{t('product.eventInfoHint')}</Text>
           </View>
         )}
       </View>
@@ -358,21 +401,49 @@ export default function ProductDetailPage() {
       <View className='detail-bottom'>
         {!isCode && product.pointsCost != null && user && (
           <View className='detail-bottom__balance'>
-            <Text className='detail-bottom__balance-label'>当前余额: </Text>
+            <Text className='detail-bottom__balance-label'>{t('product.balanceLabel')}</Text>
             <Text className='detail-bottom__balance-value'>{user.points.toLocaleString()}</Text>
             <Text className='detail-bottom__balance-sep'> | </Text>
-            <Text className='detail-bottom__balance-label'>需要: </Text>
+            <Text className='detail-bottom__balance-label'>{t('product.needLabel')}</Text>
             <Text className='detail-bottom__balance-cost'>{product.pointsCost.toLocaleString()}</Text>
+          </View>
+        )}
+        {/* Quantity selector: only for points products with stock > 0 */}
+        {!isCode && !isSoldOut && !needsSizeSelection && (
+          <View className='detail-quantity'>
+            <Text className='detail-quantity__label'>{t('product.quantityLabel')}</Text>
+            <View className='detail-quantity__controls'>
+              <View
+                className={`detail-quantity__btn ${quantity <= 1 ? 'detail-quantity__btn--disabled' : ''}`}
+                onClick={quantity > 1 ? () => setQuantity((q) => q - 1) : undefined}
+              >
+                <Text className='detail-quantity__btn-text'>−</Text>
+              </View>
+              <View className='detail-quantity__value'>
+                <Text className='detail-quantity__value-text'>{quantity}</Text>
+              </View>
+              <View
+                className={`detail-quantity__btn ${quantity >= maxQuantity ? 'detail-quantity__btn--disabled' : ''}`}
+                onClick={quantity < maxQuantity ? () => setQuantity((q) => q + 1) : undefined}
+              >
+                <Text className='detail-quantity__btn-text'>+</Text>
+              </View>
+            </View>
+            {quantity >= maxQuantity && (
+              <Text className='detail-quantity__hint'>{t('product.maxQuantityHint')}</Text>
+            )}
           </View>
         )}
         {!isCode ? (
           <View className='detail-bottom__actions'>
-            <View
-              className={`detail-bottom__btn detail-bottom__btn--cart ${!cartEnabled ? 'detail-bottom__btn--disabled' : ''}`}
-              onClick={cartEnabled ? handleAddToCart : undefined}
-            >
-              <Text>{addingToCart ? '添加中...' : '🛒 加入购物车'}</Text>
-            </View>
+            {!isSoldOut && (
+              <View
+                className={`detail-bottom__btn detail-bottom__btn--cart ${!cartEnabled ? 'detail-bottom__btn--disabled' : ''}`}
+                onClick={cartEnabled ? handleAddToCart : undefined}
+              >
+                <Text>{addingToCart ? t('product.addingToCart') : <><CartIcon size={16} color='currentColor' /> {t('product.addToCart')}</>}</Text>
+              </View>
+            )}
             <View
               className={`detail-bottom__btn detail-bottom__btn--redeem ${!redeemable ? 'detail-bottom__btn--disabled' : ''}`}
               onClick={redeemable ? handleRedeem : undefined}
@@ -382,13 +453,57 @@ export default function ProductDetailPage() {
           </View>
         ) : (
           <View
-            className='detail-bottom__btn'
-            onClick={handleRedeem}
+            className={`detail-bottom__btn ${!redeemable ? 'detail-bottom__btn--disabled' : ''}`}
+            onClick={redeemable ? handleRedeem : undefined}
           >
             <Text>{buttonText}</Text>
           </View>
         )}
       </View>
+
+      {/* Image Preview Lightbox */}
+      {previewUrl && (
+        <View
+          style={{
+            position: 'fixed',
+            inset: '0',
+            background: 'rgba(0,0,0,0.88)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: '200',
+            cursor: 'pointer',
+          }}
+          onClick={() => setPreviewUrl(null)}
+        >
+          <img
+            src={previewUrl}
+            style={{ maxWidth: '90vw', maxHeight: '85vh', objectFit: 'contain', borderRadius: '8px', cursor: 'default', display: 'block' }}
+            onClick={(e) => e.stopPropagation()}
+            alt='preview'
+          />
+          <View
+            style={{
+              position: 'fixed',
+              top: '20px',
+              right: '20px',
+              width: '40px',
+              height: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(255,255,255,0.15)',
+              borderRadius: '50%',
+              cursor: 'pointer',
+              fontSize: '18px',
+              color: '#fff',
+            }}
+            onClick={() => setPreviewUrl(null)}
+          >
+            <Text style={{ color: '#fff', fontSize: '18px' }}>✕</Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }

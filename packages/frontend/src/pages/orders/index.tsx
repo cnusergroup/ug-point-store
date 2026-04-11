@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { request } from '../../utils/request';
-import { goBack } from '../../utils/navigation';
+import { useTranslation } from '../../i18n';
+import TabBar from '../../components/TabBar';
+import { PackageIcon, OrderIcon } from '../../components/icons';
 import type { ShippingStatus } from '@points-mall/shared';
 import './index.scss';
 
@@ -13,6 +15,7 @@ interface OrderListItem {
   totalPoints: number;
   shippingStatus: ShippingStatus;
   createdAt: string;
+  productNames: string[];
 }
 
 /** Orders list API response */
@@ -23,11 +26,35 @@ interface OrdersResponse {
   pageSize: number;
 }
 
-const STATUS_CONFIG: Record<ShippingStatus, { label: string; icon: string; className: string }> = {
-  pending: { label: '待发货', icon: '⏳', className: 'orders-status--pending' },
-  shipped: { label: '已发货', icon: '📦', className: 'orders-status--shipped' },
-  in_transit: { label: '运输中', icon: '🚚', className: 'orders-status--in-transit' },
-  delivered: { label: '已签收', icon: '✅', className: 'orders-status--delivered' },
+/** Small clock icon for pending status */
+function ClockIcon({ size = 14, color = 'currentColor', className }: { size?: number; color?: string; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  );
+}
+
+interface StatusConfig {
+  labelKey: string;
+  icon: (props: { size?: number; color?: string; className?: string }) => JSX.Element;
+  className: string;
+}
+
+const STATUS_CONFIG: Record<ShippingStatus, StatusConfig> = {
+  pending: { labelKey: 'orders.statusPending', icon: ClockIcon, className: 'orders-status--pending' },
+  shipped: { labelKey: 'orders.statusShipped', icon: PackageIcon, className: 'orders-status--shipped' },
 };
 
 const PAGE_SIZE = 10;
@@ -39,6 +66,7 @@ function formatTime(iso: string): string {
 }
 
 export default function OrdersPage() {
+  const { t } = useTranslation();
   const [orders, setOrders] = useState<OrderListItem[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -58,7 +86,7 @@ export default function OrdersPage() {
       setTotal(res.total);
       setPage(res.page);
     } catch {
-      setError('订单加载失败');
+      setError(t('orders.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -67,10 +95,6 @@ export default function OrdersPage() {
   useEffect(() => {
     loadOrders(1);
   }, [loadOrders]);
-
-  const handleBack = () => {
-    goBack('/pages/profile/index');
-  };
 
   const handleOrderClick = (orderId: string) => {
     Taro.navigateTo({ url: `/pages/order-detail/index?id=${orderId}` });
@@ -88,7 +112,7 @@ export default function OrdersPage() {
     return (
       <View className='orders-page'>
         <View className='orders-loading'>
-          <Text className='orders-loading__text'>加载中...</Text>
+          <Text className='orders-loading__text'>{t('common.loading')}</Text>
         </View>
       </View>
     );
@@ -98,13 +122,12 @@ export default function OrdersPage() {
     return (
       <View className='orders-page'>
         <View className='orders-header'>
-          <Text className='orders-header__back' onClick={handleBack}>← 返回</Text>
-          <Text className='orders-header__title'>我的订单</Text>
-          <View className='orders-header__placeholder' />
+          <Text className='orders-header__title'>{t('orders.title')}</Text>
         </View>
         <View className='orders-error'>
           <Text className='orders-error__text'>{error}</Text>
         </View>
+        <TabBar current="/pages/orders/index" />
       </View>
     );
   }
@@ -113,16 +136,14 @@ export default function OrdersPage() {
     <View className='orders-page'>
       {/* Header */}
       <View className='orders-header'>
-        <Text className='orders-header__back' onClick={handleBack}>← 返回</Text>
-        <Text className='orders-header__title'>我的订单</Text>
-        <View className='orders-header__placeholder' />
+        <Text className='orders-header__title'>{t('orders.title')}</Text>
       </View>
 
       {orders.length === 0 ? (
         <View className='orders-empty'>
-          <Text className='orders-empty__icon'>📋</Text>
-          <Text className='orders-empty__text'>暂无订单</Text>
-          <Text className='orders-empty__hint'>去商城逛逛吧</Text>
+          <OrderIcon size={64} color='var(--text-tertiary)' className='orders-empty__icon' />
+          <Text className='orders-empty__text'>{t('orders.noOrders')}</Text>
+          <Text className='orders-empty__hint'>{t('orders.noOrdersHint')}</Text>
         </View>
       ) : (
         <View className='orders-content'>
@@ -135,33 +156,37 @@ export default function OrdersPage() {
                 onClick={() => handleOrderClick(order.orderId)}
               >
                 <View className='orders-card__top'>
-                  <Text className='orders-card__id'>订单 {order.orderId.slice(-8).toUpperCase()}</Text>
+                  <Text className='orders-card__id'>{t('orders.orderPrefix')}{order.orderId.slice(-8).toUpperCase()}</Text>
                   <View className={`orders-status ${statusCfg.className}`}>
-                    <Text className='orders-status__icon'>{statusCfg.icon}</Text>
-                    <Text className='orders-status__label'>{statusCfg.label}</Text>
+                    <statusCfg.icon size={14} className='orders-status__icon' />
+                    <Text className='orders-status__label'>{t(statusCfg.labelKey)}</Text>
                   </View>
                 </View>
 
                 <View className='orders-card__body'>
                   <View className='orders-card__info-row'>
-                    <Text className='orders-card__info-label'>商品数量</Text>
-                    <Text className='orders-card__info-value'>{order.itemCount} 件</Text>
+                    <Text className='orders-card__info-label'>{t('orders.productLabel')}</Text>
+                    <Text className='orders-card__info-value orders-card__product-names'>
+                      {order.productNames.length > 0
+                        ? order.productNames.join('、')
+                        : t('orders.itemsCount', { count: order.itemCount })}
+                    </Text>
                   </View>
                   <View className='orders-card__info-row'>
-                    <Text className='orders-card__info-label'>积分总计</Text>
+                    <Text className='orders-card__info-label'>{t('orders.pointsTotal')}</Text>
                     <View className='orders-card__points'>
                       <Text className='orders-card__diamond'>◆</Text>
                       <Text className='orders-card__points-value'>{order.totalPoints.toLocaleString()}</Text>
                     </View>
                   </View>
                   <View className='orders-card__info-row'>
-                    <Text className='orders-card__info-label'>创建时间</Text>
+                    <Text className='orders-card__info-label'>{t('orders.createdTime')}</Text>
                     <Text className='orders-card__time'>{formatTime(order.createdAt)}</Text>
                   </View>
                 </View>
 
                 <View className='orders-card__footer'>
-                  <Text className='orders-card__detail-link'>查看详情 →</Text>
+                  <Text className='orders-card__detail-link'>{t('orders.viewDetail')}</Text>
                 </View>
               </View>
             );
@@ -174,19 +199,21 @@ export default function OrdersPage() {
                 className={`orders-pagination__btn ${page <= 1 ? 'orders-pagination__btn--disabled' : ''}`}
                 onClick={handlePrevPage}
               >
-                <Text>上一页</Text>
+                <Text>{t('orders.prevPage')}</Text>
               </View>
               <Text className='orders-pagination__info'>{page} / {totalPages}</Text>
               <View
                 className={`orders-pagination__btn ${page >= totalPages ? 'orders-pagination__btn--disabled' : ''}`}
                 onClick={handleNextPage}
               >
-                <Text>下一页</Text>
+                <Text>{t('orders.nextPage')}</Text>
               </View>
             </View>
           )}
         </View>
       )}
+
+      <TabBar current="/pages/orders/index" />
     </View>
   );
 }

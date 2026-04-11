@@ -3,7 +3,10 @@ import { View, Text, Image } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useAppStore, UserRole } from '../../store';
 import { request } from '../../utils/request';
-import type { CartResponse } from '@points-mall/shared';
+import { useTranslation } from '../../i18n';
+import TabBar from '../../components/TabBar';
+import { ProductSkeleton } from '../../components/Skeleton';
+import { TicketIcon, GiftIcon, PackageIcon, LockIcon, GlobeIcon } from '../../components/icons';
 import './index.scss';
 /** Product type filter options */
 type TypeFilter = 'all' | 'points' | 'code_exclusive';
@@ -43,6 +46,7 @@ const ROLE_CONFIG: Record<UserRole, { label: string; className: string }> = {
 const ALL_ROLES: UserRole[] = ['UserGroupLeader', 'CommunityBuilder', 'Speaker', 'Volunteer'];
 
 export default function IndexPage() {
+  const { t } = useTranslation();
   const user = useAppStore((s) => s.user);
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
 
@@ -51,12 +55,8 @@ export default function IndexPage() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [roleFilter, setRoleFilter] = useState<UserRole | ''>('');
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
-  const [showUserMenu, setShowUserMenu] = useState(false);
-  const [cartCount, setCartCount] = useState(0);
-  const logout = useAppStore((s) => s.logout);
   const fetchProfile = useAppStore((s) => s.fetchProfile);
   const roleWrapRef = useRef<HTMLDivElement>(null);
-  const userMenuRef = useRef<HTMLDivElement>(null);
 
   // Close role dropdown when clicking outside
   useEffect(() => {
@@ -69,18 +69,6 @@ export default function IndexPage() {
     document.addEventListener('click', handleClickOutside, true);
     return () => document.removeEventListener('click', handleClickOutside, true);
   }, [showRoleDropdown]);
-
-  // Close user menu when clicking outside
-  useEffect(() => {
-    if (!showUserMenu) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
-        setShowUserMenu(false);
-      }
-    };
-    document.addEventListener('click', handleClickOutside, true);
-    return () => document.removeEventListener('click', handleClickOutside, true);
-  }, [showUserMenu]);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -104,12 +92,6 @@ export default function IndexPage() {
     }
     fetchProfile();
     fetchProducts();
-    // Fetch cart item count
-    request<CartResponse>({ url: '/api/cart' })
-      .then((res) => {
-        setCartCount(res.items.filter((i) => i.available).length);
-      })
-      .catch(() => {});
   }, [isAuthenticated, fetchProfile, fetchProducts]);
 
   const handleCardClick = (product: ProductListItem) => {
@@ -122,7 +104,7 @@ export default function IndexPage() {
     if (allowedRoles === 'all') {
       return (
         <View className='product-card__roles'>
-          <Text className='role-badge role-badge--all'>所有人</Text>
+          <Text className='role-badge role-badge--all'>{t('mall.everyone')}</Text>
         </View>
       );
     }
@@ -157,15 +139,15 @@ export default function IndexPage() {
             <Image className='product-card__image' src={product.imageUrl} mode='aspectFill' />
           ) : (
             <View className='product-card__image-placeholder'>
-              <Text className='product-card__image-placeholder-icon'>{isCode ? '🎫' : '🎁'}</Text>
+              <Text className='product-card__image-placeholder-icon'>{isCode ? <TicketIcon size={32} color='var(--text-tertiary)' /> : <GiftIcon size={32} color='var(--text-tertiary)' />}</Text>
             </View>
           )}
           <View className={`product-card__type-tag ${isCode ? 'product-card__type-tag--code' : ''}`}>
-            <Text>{isCode ? 'CODE' : '积分'}</Text>
+            <Text>{isCode ? t('mall.productTypeCode') : t('mall.productTypePoints')}</Text>
           </View>
           {product.locked && (
             <View className='product-card__lock-overlay'>
-              <Text className='product-card__lock-icon'>🔒</Text>
+              <Text className='product-card__lock-icon'><LockIcon size={24} color='var(--text-primary)' /></Text>
             </View>
           )}
         </View>
@@ -178,7 +160,7 @@ export default function IndexPage() {
 
           <View className='product-card__footer'>
             {isCode ? (
-              <Text className='product-card__price product-card__price--code'>Code 兑换</Text>
+              <Text className='product-card__price product-card__price--code'>{t('mall.codeRedeem')}</Text>
             ) : (
               <View className='product-card__price'>
                 <Text className='product-card__price-diamond'>◆</Text>
@@ -188,7 +170,7 @@ export default function IndexPage() {
               </View>
             )}
             {product.stock <= 0 && (
-              <Text className='product-card__out-of-stock'>已售罄</Text>
+              <Text className='product-card__out-of-stock'>{t('mall.outOfStock')}</Text>
             )}
           </View>
         </View>
@@ -202,15 +184,18 @@ export default function IndexPage() {
       <View className='mall-header'>
         <View className='mall-header__info'>
           <Text className='mall-header__greeting'>
-            你好，{user?.nickname || '用户'} 👋
+            {t('mall.greeting', { nickname: user?.nickname || t('mall.userFallback') })}
           </Text>
           {user?.roles && user.roles.length > 0 && (
             <View className='mall-header__user-roles'>
-              {user.roles.map((role) => (
+              {user.roles.slice(0, 2).map((role) => (
                 <Text key={role} className={`role-badge ${ROLE_CONFIG[role]?.className || ''}`}>
                   {ROLE_CONFIG[role]?.label || role}
                 </Text>
               ))}
+              {user.roles.length > 2 && (
+                <Text className='mall-header__roles-overflow'>+{user.roles.length - 2}</Text>
+              )}
             </View>
           )}
         </View>
@@ -218,52 +203,30 @@ export default function IndexPage() {
           <View className='mall-header__points'>
             <Text className='mall-header__points-diamond'>◆</Text>
             <Text className='mall-header__points-value'>{user?.points?.toLocaleString() || '0'}</Text>
-            <Text className='mall-header__points-label'>积分</Text>
-          </View>
-          <View className='mall-header__cart-btn' onClick={() => Taro.navigateTo({ url: '/pages/cart/index' })}>
-            <Text className='mall-header__cart-icon'>🛒</Text>
-            {cartCount > 0 && (
-              <View className='mall-header__cart-badge'>
-                <Text className='mall-header__cart-badge-text'>{cartCount > 99 ? '99+' : cartCount}</Text>
-              </View>
-            )}
-          </View>
-          <View className='mall-header__user-wrap' ref={userMenuRef}>
-            <View className='mall-header__user-btn' onClick={() => setShowUserMenu(!showUserMenu)}>
-              <Text className='mall-header__user-avatar'>
-                {user?.nickname?.charAt(0)?.toUpperCase() || '?'}
-              </Text>
-            </View>
-            {showUserMenu && (
-              <View className='mall-header__user-menu'>
-                <View className='mall-header__menu-item' onClick={(e) => { e.stopPropagation(); setShowUserMenu(false); Taro.navigateTo({ url: '/pages/profile/index' }); }}>
-                  <Text>个人中心</Text>
-                </View>
-                {user?.roles?.some(r => r === 'Admin' || r === 'SuperAdmin') && (
-                  <>
-                    <View className='mall-header__menu-divider' />
-                    <View className='mall-header__menu-item' onClick={(e) => { e.stopPropagation(); setShowUserMenu(false); Taro.navigateTo({ url: '/pages/admin/index' }); }}>
-                      <Text>⚙️ 管理后台</Text>
-                    </View>
-                  </>
-                )}
-                <View className='mall-header__menu-divider' />
-                <View className='mall-header__menu-item mall-header__menu-item--danger' onClick={(e) => { e.stopPropagation(); setShowUserMenu(false); logout(); }}>
-                  <Text>退出登录</Text>
-                </View>
-              </View>
-            )}
+            <Text className='mall-header__points-label'>{t('mall.pointsLabel')}</Text>
           </View>
         </View>
+      </View>
+
+      {/* Content Hub Entry */}
+      <View
+        className='mall-content-hub-entry'
+        onClick={() => Taro.navigateTo({ url: '/pages/content/index' })}
+      >
+        <View className='mall-content-hub-entry__icon'>
+          <GlobeIcon size={20} color='var(--accent-primary)' />
+        </View>
+        <Text className='mall-content-hub-entry__label'>{t('mall.contentHub')}</Text>
+        <Text className='mall-content-hub-entry__arrow'>›</Text>
       </View>
 
       {/* Filter Bar */}
       <View className='filter-bar'>
         <View className='filter-bar__types'>
           {([
-            { key: 'all' as TypeFilter, label: '全部' },
-            { key: 'points' as TypeFilter, label: '积分商品' },
-            { key: 'code_exclusive' as TypeFilter, label: 'Code 专属' },
+            { key: 'all' as TypeFilter, label: t('mall.filterAll') },
+            { key: 'points' as TypeFilter, label: t('mall.filterPoints') },
+            { key: 'code_exclusive' as TypeFilter, label: t('mall.filterCodeExclusive') },
           ]).map((item) => (
             <View
               key={item.key}
@@ -280,7 +243,7 @@ export default function IndexPage() {
             className={`filter-bar__role-btn ${roleFilter ? 'filter-bar__role-btn--active' : ''}`}
             onClick={() => setShowRoleDropdown(!showRoleDropdown)}
           >
-            <Text>{roleFilter ? ROLE_CONFIG[roleFilter]?.label : '身份筛选'}</Text>
+            <Text>{roleFilter ? ROLE_CONFIG[roleFilter]?.label : t('mall.roleFilter')}</Text>
             <Text className='filter-bar__role-arrow'>▾</Text>
           </View>
 
@@ -290,7 +253,7 @@ export default function IndexPage() {
                 className={`filter-bar__role-option ${!roleFilter ? 'filter-bar__role-option--active' : ''}`}
                 onClick={(e) => { e.stopPropagation(); setRoleFilter(''); setShowRoleDropdown(false); }}
               >
-                <Text>全部身份</Text>
+                <Text>{t('mall.roleFilterAll')}</Text>
               </View>
               {ALL_ROLES.map((role) => (
                 <View
@@ -307,20 +270,20 @@ export default function IndexPage() {
       </View>
 
       {/* Product Grid */}
-      {loading ? (
-        <View className='mall-loading'>
-          <Text className='mall-loading__text'>加载中...</Text>
-        </View>
-      ) : products.length === 0 ? (
-        <View className='mall-empty'>
-          <Text className='mall-empty__icon'>📦</Text>
-          <Text className='mall-empty__text'>暂无商品</Text>
-        </View>
-      ) : (
-        <View className='product-grid'>
-          {products.map((product, index) => renderProductCard(product, index))}
-        </View>
-      )}
+        {loading ? (
+          <ProductSkeleton />
+        ) : products.length === 0 ? (
+          <View className='mall-empty mall-loading-fade'>
+            <Text className='mall-empty__icon'><PackageIcon size={48} color='var(--text-tertiary)' /></Text>
+            <Text className='mall-empty__text'>{t('mall.noProducts')}</Text>
+          </View>
+        ) : (
+          <View className='product-grid mall-loading-fade'>
+            {products.map((product, index) => renderProductCard(product, index))}
+          </View>
+        )}
+
+      <TabBar current='/pages/index/index' />
     </View>
   );
 }

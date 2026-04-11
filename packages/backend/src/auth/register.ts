@@ -32,7 +32,7 @@ export async function registerUser(
   if (!inviteValidation.success) {
     return { success: false, error: inviteValidation.error };
   }
-  const { role } = inviteValidation;
+  const { roles } = inviteValidation;
 
   // 2. Validate password format
   const passwordCheck = validatePassword(request.password);
@@ -81,7 +81,7 @@ export async function registerUser(
     email: request.email,
     passwordHash,
     nickname: request.nickname,
-    roles: [role],
+    roles: roles,
     points: 0,
     emailVerified: true,
     loginFailCount: 0,
@@ -110,7 +110,7 @@ export async function registerUser(
       userId,
       email: request.email,
       nickname: request.nickname,
-      roles: [role],
+      roles: roles,
       points: 0,
     },
   };

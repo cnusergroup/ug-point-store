@@ -22,16 +22,19 @@ export interface CartMutationResult {
  * Add a product to the user's cart.
  * - Rejects code_exclusive products (CODE_PRODUCT_NOT_CARTABLE)
  * - Rejects inactive or zero-stock products (PRODUCT_UNAVAILABLE)
+ * - Validates quantity is a positive integer (INVALID_QUANTITY)
+ * - Validates quantity + existing cart quantity <= effective stock (QUANTITY_EXCEEDS_STOCK)
  * - Rejects if cart already has 20 distinct items (CART_FULL)
- * - If product already in cart (same productId + selectedSize), increments quantity; otherwise adds with quantity=1
+ * - If product already in cart (same productId + selectedSize), increments quantity by N; otherwise adds with quantity=N
  * - Validates selectedSize for products with sizeOptions
- * - Validates purchase limit: historical + cart quantity + 1 <= purchaseLimitCount
+ * - Validates purchase limit: historical + cart quantity + N <= purchaseLimitCount
  *
- * Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 4.4, 4.6, 6.5, 6.6
+ * Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 2.2, 2.3, 3.1, 3.2, 3.3, 3.4, 4.4, 4.6, 6.5, 6.6
  */
 export async function addToCart(
   userId: string,
   productId: string,
+  quantity: number,
   dynamoClient: DynamoDBDocumentClient,
   cartTable: string,
   productsTable: string,
@@ -72,6 +75,7 @@ export async function addToCart(
 
   // 4. Size validation for products with sizeOptions
   const sizeOptions: SizeOption[] | undefined = product.sizeOptions;
+  let sizeOption: SizeOption | undefined;
   if (sizeOptions && sizeOptions.length > 0) {
     if (!selectedSize) {
       return {
@@ -79,7 +83,7 @@ export async function addToCart(
         error: { code: ErrorCodes.SIZE_REQUIRED, message: ErrorMessages.SIZE_REQUIRED },
       };
     }
-    const sizeOption = sizeOptions.find((s: SizeOption) => s.name === selectedSize);
+    sizeOption = sizeOptions.find((s: SizeOption) => s.name === selectedSize);
     if (!sizeOption) {
       return {
         success: false,
@@ -94,6 +98,17 @@ export async function addToCart(
     }
   }
 
+  // 4.5. Validate quantity is a positive integer
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    return {
+      success: false,
+      error: { code: ErrorCodes.INVALID_QUANTITY, message: ErrorMessages.INVALID_QUANTITY },
+    };
+  }
+
+  // 4.6. Compute effective stock
+  const effectiveStock = sizeOption ? sizeOption.stock : product.stock;
+
   // 5. Get current cart
   const cartResult = await dynamoClient.send(
     new GetCommand({
@@ -103,6 +118,23 @@ export async function addToCart(
   );
   const cart = cartResult.Item;
   const items: CartItem[] = cart?.items ?? [];
+
+  // 5.5. Compute existing quantity in cart for same productId + selectedSize
+  const cartExistingQty = items
+    .filter((item) => item.productId === productId && item.selectedSize === selectedSize)
+    .reduce((sum, item) => sum + item.quantity, 0);
+
+  // 5.6. Validate cartExistingQty + quantity <= effectiveStock
+  if (cartExistingQty + quantity > effectiveStock) {
+    const remaining = effectiveStock - cartExistingQty;
+    return {
+      success: false,
+      error: {
+        code: ErrorCodes.QUANTITY_EXCEEDS_STOCK,
+        message: `加购数量超过库存，当前库存剩余 ${remaining >= 0 ? remaining : 0} 件，购物车已有 ${cartExistingQty} 件`,
+      },
+    };
+  }
 
   // 6. Purchase limit validation
   if (product.purchaseLimitEnabled && ordersTable) {
@@ -117,7 +149,7 @@ export async function addToCart(
     const cartQuantity = items
       .filter((item) => item.productId === productId)
       .reduce((sum, item) => sum + item.quantity, 0);
-    if (historicalCount + cartQuantity + 1 > purchaseLimitCount) {
+    if (historicalCount + cartQuantity + quantity > purchaseLimitCount) {
       return {
         success: false,
         error: { code: ErrorCodes.PURCHASE_LIMIT_EXCEEDED, message: ErrorMessages.PURCHASE_LIMIT_EXCEEDED },
@@ -132,7 +164,7 @@ export async function addToCart(
 
   if (existingIndex >= 0) {
     // Increment quantity
-    items[existingIndex].quantity += 1;
+    items[existingIndex].quantity += quantity;
   } else {
     // Check cart limit (max 20 distinct items)
     if (items.length >= 20) {
@@ -144,7 +176,7 @@ export async function addToCart(
     // Add new item
     items.push({
       productId,
-      quantity: 1,
+      quantity,
       addedAt: new Date().toISOString(),
       selectedSize,
     });
@@ -266,9 +298,11 @@ export async function getCart(
 /**
  * Update the quantity of a cart item.
  * - If quantity=0, deletes the item
+ * - When productsTable is provided and quantity > 0, validates quantity <= effectiveStock
  * - Returns CART_ITEM_NOT_FOUND if item doesn't exist
+ * - Returns QUANTITY_EXCEEDS_STOCK if quantity exceeds available stock
  *
- * Requirements: 2.3, 2.4
+ * Requirements: 2.3, 2.4, 6.1, 6.2
  */
 export async function updateCartItem(
   userId: string,
@@ -276,6 +310,7 @@ export async function updateCartItem(
   quantity: number,
   dynamoClient: DynamoDBDocumentClient,
   cartTable: string,
+  productsTable?: string,
 ): Promise<CartMutationResult> {
   // 1. Get current cart
   const cartResult = await dynamoClient.send(
@@ -296,7 +331,41 @@ export async function updateCartItem(
     };
   }
 
-  // 3. Update or remove
+  // 3. Stock validation when productsTable is provided and quantity > 0
+  if (productsTable && quantity > 0) {
+    const productResult = await dynamoClient.send(
+      new GetCommand({
+        TableName: productsTable,
+        Key: { productId },
+      }),
+    );
+    const product = productResult.Item;
+
+    if (product) {
+      const selectedSize = items[existingIndex].selectedSize;
+      const sizeOptions: SizeOption[] | undefined = product.sizeOptions;
+      let effectiveStock = product.stock ?? 0;
+
+      if (sizeOptions && sizeOptions.length > 0 && selectedSize) {
+        const sizeOption = sizeOptions.find((s: SizeOption) => s.name === selectedSize);
+        if (sizeOption) {
+          effectiveStock = sizeOption.stock;
+        }
+      }
+
+      if (quantity > effectiveStock) {
+        return {
+          success: false,
+          error: {
+            code: ErrorCodes.QUANTITY_EXCEEDS_STOCK,
+            message: `数量超过库存，当前库存 ${effectiveStock} 件`,
+          },
+        };
+      }
+    }
+  }
+
+  // 4. Update or remove
   if (quantity <= 0) {
     items.splice(existingIndex, 1);
   } else {
@@ -305,7 +374,7 @@ export async function updateCartItem(
 
   const now = new Date().toISOString();
 
-  // 4. Write updated cart
+  // 5. Write updated cart
   await dynamoClient.send(
     new PutCommand({
       TableName: cartTable,

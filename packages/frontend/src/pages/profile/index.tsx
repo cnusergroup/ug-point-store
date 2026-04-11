@@ -2,7 +2,11 @@ import { useState, useEffect, useCallback, Component, type ReactNode } from 'rea
 import { View, Text } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useAppStore, UserRole } from '../../store';
-import { request, RequestError } from '../../utils/request';
+import { request } from '../../utils/request';
+import { useTranslation } from '../../i18n';
+import { TicketIcon, LocationIcon, ClaimIcon, SettingsIcon, VoucherIcon, ShoppingBagIcon } from '../../components/icons';
+import { ProfileSkeleton } from '../../components/Skeleton';
+import TabBar from '../../components/TabBar';
 import './index.scss';
 
 /** Error boundary to prevent white screen */
@@ -20,17 +24,24 @@ class ProfileErrorBoundary extends Component<{ children: ReactNode }, { hasError
   render() {
     if (this.state.hasError) {
       return (
-        <View className='profile-page' style={{ padding: '40px 20px', textAlign: 'center' }}>
-          <Text style={{ color: '#ef4444', fontSize: '16px' }}>页面加载出错</Text>
-          <View style={{ marginTop: '16px', cursor: 'pointer', color: '#7c6df0' }}
-            onClick={() => { window.location.hash = '#/pages/login/index'; window.location.reload(); }}>
-            <Text>返回登录</Text>
-          </View>
-        </View>
+        <ProfileErrorContent />
       );
     }
     return this.props.children;
   }
+}
+
+function ProfileErrorContent() {
+  const { t } = useTranslation();
+  return (
+    <View className='profile-page' style={{ padding: '40px 20px', textAlign: 'center' }}>
+      <Text style={{ color: '#ef4444', fontSize: '16px' }}>{t('profile.pageError')}</Text>
+      <View style={{ marginTop: '16px', cursor: 'pointer', color: '#7c6df0' }}
+        onClick={() => { window.location.hash = '#/pages/login/index'; window.location.reload(); }}>
+        <Text>{t('profile.backToLogin')}</Text>
+      </View>
+    </View>
+  );
 }
 
 /** Points record from API */
@@ -46,6 +57,7 @@ interface PointsRecord {
 /** Redemption record from API */
 interface RedemptionRecord {
   redemptionId: string;
+  productId: string;
   productName: string;
   method: 'points' | 'code';
   pointsSpent?: number;
@@ -72,6 +84,14 @@ const ROLE_CONFIG: Record<UserRole, { label: string; className: string }> = {
   SuperAdmin: { label: 'SuperAdmin', className: 'role-badge--superadmin' },
 };
 
+/** Quick action items for 2×2 grid */
+const QUICK_ACTIONS = [
+  { key: 'redeem', labelKey: 'profile.quickActionRedeem', icon: TicketIcon, url: '/pages/redeem/index?type=points-code' },
+  { key: 'address', labelKey: 'profile.quickActionAddress', icon: LocationIcon, url: '/pages/address/index' },
+  { key: 'claims', labelKey: 'profile.quickActionClaims', icon: ClaimIcon, url: '/pages/claims/index' },
+  { key: 'settings', labelKey: 'profile.quickActionSettings', icon: SettingsIcon, url: '/pages/settings/index' },
+] as const;
+
 type ActiveTab = 'points' | 'redemptions';
 
 const PAGE_SIZE = 20;
@@ -85,22 +105,12 @@ export default function ProfilePageWrapper() {
 }
 
 function ProfilePage() {
+  const { t } = useTranslation();
   const user = useAppStore((s) => s.user);
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
-  const logout = useAppStore((s) => s.logout);
-  const changePassword = useAppStore((s) => s.changePassword);
   const fetchProfile = useAppStore((s) => s.fetchProfile);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('points');
-
-  // Change password modal state
-  const [showChangePwd, setShowChangePwd] = useState(false);
-  const [currentPwd, setCurrentPwd] = useState('');
-  const [newPwd, setNewPwd] = useState('');
-  const [confirmPwd, setConfirmPwd] = useState('');
-  const [pwdError, setPwdError] = useState('');
-  const [pwdSuccess, setPwdSuccess] = useState('');
-  const [pwdSubmitting, setPwdSubmitting] = useState(false);
 
   // Points records state
   const [pointsRecords, setPointsRecords] = useState<PointsRecord[]>([]);
@@ -113,9 +123,6 @@ function ProfilePage() {
   const [redemptionsPage, setRedemptionsPage] = useState(1);
   const [redemptionsTotal, setRedemptionsTotal] = useState(0);
   const [redemptionsLoading, setRedemptionsLoading] = useState(false);
-
-  // Refresh state
-  const [refreshing, setRefreshing] = useState(false);
 
   const fetchPointsRecords = useCallback(async (page: number, reset = false) => {
     setPointsLoading(true);
@@ -163,15 +170,6 @@ function ProfilePage() {
     fetchRedemptionRecords(1, true);
   }, [isAuthenticated, fetchProfile, fetchPointsRecords, fetchRedemptionRecords]);
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await Promise.all([
-      fetchPointsRecords(1, true),
-      fetchRedemptionRecords(1, true),
-    ]);
-    setRefreshing(false);
-  };
-
   const handleLoadMore = () => {
     if (activeTab === 'points') {
       if (pointsLoading || pointsRecords.length >= pointsTotal) return;
@@ -186,111 +184,45 @@ function ProfilePage() {
     setActiveTab(tab);
   };
 
-  const handleLogout = () => {
-    logout();
-  };
-
-  const goToRedeemCode = () => {
-    Taro.navigateTo({ url: '/pages/redeem/index?type=points-code' });
-  };
-
-  const goToHome = () => {
-    Taro.redirectTo({ url: '/pages/index/index' });
-  };
-
-  const openChangePwd = () => {
-    setCurrentPwd('');
-    setNewPwd('');
-    setConfirmPwd('');
-    setPwdError('');
-    setPwdSuccess('');
-    setShowChangePwd(true);
-  };
-
-  const closeChangePwd = () => {
-    setShowChangePwd(false);
-  };
-
-  const validateNewPassword = (pwd: string): string => {
-    if (pwd.length < 8) return '新密码至少需要 8 个字符';
-    if (!/[a-zA-Z]/.test(pwd)) return '新密码需要包含字母';
-    if (!/[0-9]/.test(pwd)) return '新密码需要包含数字';
-    return '';
-  };
-
-  const handleChangePwd = async () => {
-    setPwdError('');
-    setPwdSuccess('');
-
-    if (!currentPwd) {
-      setPwdError('请输入当前密码');
-      return;
-    }
-    const validationErr = validateNewPassword(newPwd);
-    if (validationErr) {
-      setPwdError(validationErr);
-      return;
-    }
-    if (newPwd !== confirmPwd) {
-      setPwdError('两次输入的新密码不一致');
-      return;
-    }
-
-    setPwdSubmitting(true);
-    try {
-      await changePassword(currentPwd, newPwd);
-      setPwdSuccess('密码修改成功');
-      setCurrentPwd('');
-      setNewPwd('');
-      setConfirmPwd('');
-    } catch (err: any) {
-      const msg = err?.data?.message || err?.message || '密码修改失败，请重试';
-      setPwdError(msg);
-    } finally {
-      setPwdSubmitting(false);
-    }
-  };
-
   const formatTime = (iso: string) => {
     const d = new Date(iso);
     const pad = (n: number) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
 
-  /** Format points record source to user-friendly Chinese */
+  /** Format points record source to user-friendly text */
   const formatSource = (source: string, type: 'earn' | 'spend'): string => {
-    if (!source) return type === 'earn' ? '积分获取' : '积分消费';
-    // Claim approval: "积分申请审批:claimId"
+    if (!source) return type === 'earn' ? t('profile.sourceEarn') : t('profile.sourceSpend');
     if (source.startsWith('积分申请审批:')) {
-      return '积分申请审批';
+      return t('profile.sourceClaimApproval');
     }
-    // Earn from code: source is the code value (e.g. "EARN-500")
     if (type === 'earn' && /^[A-Z0-9_-]+$/i.test(source)) {
-      return `兑换积分码 ${source}`;
+      return t('profile.sourceRedeemCode', { code: source });
     }
-    // Spend on product: source is the product name (already Chinese)
     if (type === 'spend') {
-      return `兑换商品「${source}」`;
+      return t('profile.sourceRedeemProduct', { name: source });
     }
     return source;
   };
 
   const statusLabel: Record<string, { text: string; className: string }> = {
-    success: { text: '成功', className: 'status--success' },
-    pending: { text: '处理中', className: 'status--pending' },
-    failed: { text: '失败', className: 'status--failed' },
+    success: { text: t('profile.statusSuccess'), className: 'status--success' },
+    pending: { text: t('profile.statusPending'), className: 'status--pending' },
+    failed: { text: t('profile.statusFailed'), className: 'status--failed' },
   };
 
   const shippingLabel: Record<string, { text: string; className: string }> = {
-    pending: { text: '待发货', className: 'shipping-tag--pending' },
-    shipped: { text: '已发货', className: 'shipping-tag--shipped' },
-    in_transit: { text: '运输中', className: 'shipping-tag--in-transit' },
-    delivered: { text: '已签收', className: 'shipping-tag--delivered' },
+    pending: { text: t('profile.shippingPending'), className: 'shipping-tag--pending' },
+    shipped: { text: t('profile.shippingShipped'), className: 'shipping-tag--shipped' },
+    in_transit: { text: t('profile.shippingInTransit'), className: 'shipping-tag--in-transit' },
+    delivered: { text: t('profile.shippingDelivered'), className: 'shipping-tag--delivered' },
   };
 
   const handleRedemptionClick = (record: RedemptionRecord) => {
     if (record.orderId) {
       Taro.navigateTo({ url: `/pages/order-detail/index?id=${record.orderId}` });
+    } else if (record.productId) {
+      Taro.navigateTo({ url: `/pages/product/index?id=${record.productId}` });
     }
   };
 
@@ -300,70 +232,63 @@ function ProfilePage() {
   // Safely access user roles (may be undefined from API)
   const userRoles = user?.roles ?? [];
 
+  const profileLoading = !user;
+
   return (
     <View className='profile-page'>
-      {/* User Info Card */}
-      <View className='profile-card'>
-        <View className='profile-card__avatar'>
-          <Text className='profile-card__avatar-text'>
-            {user?.nickname?.charAt(0)?.toUpperCase() || '?'}
-          </Text>
-        </View>
-        <View className='profile-card__info'>
-          <Text className='profile-card__nickname'>{user?.nickname || '用户'}</Text>
-          {user?.email && (
-            <Text className='profile-card__email'>{user.email}</Text>
-          )}
-          {userRoles.length > 0 && (
-            <View className='profile-card__roles'>
-              {userRoles.map((role) => (
-                <Text key={role} className={`role-badge ${ROLE_CONFIG[role]?.className || ''}`}>
-                  {ROLE_CONFIG[role]?.label || role}
-                </Text>
-              ))}
+      {/* Skeleton while user data is loading */}
+      {profileLoading ? (
+        <ProfileSkeleton />
+      ) : (
+        <View className='profile-content profile-content--loaded'>
+          {/* User Card */}
+          <View className='profile-card'>
+            <View className='profile-card__avatar'>
+              <Text className='profile-card__avatar-text'>
+                {user.nickname?.charAt(0)?.toUpperCase() || '?'}
+              </Text>
             </View>
-          )}
-        </View>
-        <View className='profile-card__points'>
-          <Text className='profile-card__points-diamond'>◆</Text>
-          <Text className='profile-card__points-value'>
-            {user?.points?.toLocaleString() || '0'}
-          </Text>
-          <Text className='profile-card__points-label'>积分</Text>
-        </View>
-      </View>
+            <View className='profile-card__info'>
+              <Text className='profile-card__nickname'>{user.nickname || t('profile.userFallback')}</Text>
+              {userRoles.length > 0 && (
+                <View className='profile-card__roles'>
+                  {userRoles.map((role) => (
+                    <Text key={role} className={`role-badge ${ROLE_CONFIG[role]?.className || ''}`}>
+                      {ROLE_CONFIG[role]?.label || role}
+                    </Text>
+                  ))}
+                </View>
+              )}
+            </View>
+            <View className='profile-card__points'>
+              <Text className='profile-card__points-diamond'>◆</Text>
+              <Text className='profile-card__points-value'>
+                {user.points?.toLocaleString() || '0'}
+              </Text>
+              <Text className='profile-card__points-label'>{t('profile.pointsLabel')}</Text>
+            </View>
+          </View>
 
-      {/* Quick Actions */}
-      <View className='profile-actions'>
-        <View className='profile-actions__btn' onClick={goToRedeemCode}>
-          <Text className='profile-actions__btn-icon'>🎟️</Text>
-          <Text className='profile-actions__btn-text'>兑换积分码</Text>
+          {/* Quick Actions Grid (2×2) */}
+          <View className='profile-actions-grid'>
+            {QUICK_ACTIONS.map((action) => {
+              const IconComponent = action.icon;
+              return (
+                <View
+                  key={action.key}
+                  className='profile-actions-grid__item'
+                  onClick={() => Taro.navigateTo({ url: action.url })}
+                >
+                  <View className='profile-actions-grid__icon'>
+                    <IconComponent size={24} color='var(--accent-primary)' />
+                  </View>
+                  <Text className='profile-actions-grid__label'>{t(action.labelKey)}</Text>
+                </View>
+              );
+            })}
+          </View>
         </View>
-        <View className='profile-actions__btn' onClick={goToHome}>
-          <Text className='profile-actions__btn-icon'>🏪</Text>
-          <Text className='profile-actions__btn-text'>商品列表</Text>
-        </View>
-        <View className='profile-actions__btn' onClick={() => Taro.navigateTo({ url: '/pages/address/index' })}>
-          <Text className='profile-actions__btn-icon'>📍</Text>
-          <Text className='profile-actions__btn-text'>收货地址</Text>
-        </View>
-        <View className='profile-actions__btn' onClick={() => Taro.navigateTo({ url: '/pages/orders/index' })}>
-          <Text className='profile-actions__btn-icon'>📋</Text>
-          <Text className='profile-actions__btn-text'>我的订单</Text>
-        </View>
-        <View className='profile-actions__btn' onClick={() => Taro.navigateTo({ url: '/pages/claims/index' })}>
-          <Text className='profile-actions__btn-icon'>📝</Text>
-          <Text className='profile-actions__btn-text'>积分申请</Text>
-        </View>
-        <View className='profile-actions__btn profile-actions__btn--refresh' onClick={handleRefresh}>
-          <Text className='profile-actions__btn-icon'>{refreshing ? '⏳' : '🔄'}</Text>
-          <Text className='profile-actions__btn-text'>刷新</Text>
-        </View>
-        <View className='profile-actions__btn' onClick={openChangePwd}>
-          <Text className='profile-actions__btn-icon'>🔑</Text>
-          <Text className='profile-actions__btn-text'>修改密码</Text>
-        </View>
-      </View>
+      )}
 
       {/* Tab Switcher */}
       <View className='profile-tabs'>
@@ -371,13 +296,13 @@ function ProfilePage() {
           className={`profile-tabs__item ${activeTab === 'points' ? 'profile-tabs__item--active' : ''}`}
           onClick={() => handleTabSwitch('points')}
         >
-          <Text>积分记录</Text>
+          <Text>{t('profile.tabPoints')}</Text>
         </View>
         <View
           className={`profile-tabs__item ${activeTab === 'redemptions' ? 'profile-tabs__item--active' : ''}`}
           onClick={() => handleTabSwitch('redemptions')}
         >
-          <Text>兑换记录</Text>
+          <Text>{t('profile.tabRedemptions')}</Text>
         </View>
       </View>
 
@@ -386,8 +311,10 @@ function ProfilePage() {
         <View className='record-list'>
           {pointsRecords.length === 0 && !pointsLoading ? (
             <View className='record-list__empty'>
-              <Text className='record-list__empty-icon'>📋</Text>
-              <Text className='record-list__empty-text'>暂无积分记录</Text>
+              <View className='record-list__empty-icon'>
+                <VoucherIcon size={40} color='var(--text-tertiary)' />
+              </View>
+              <Text className='record-list__empty-text'>{t('profile.noPointsRecords')}</Text>
             </View>
           ) : (
             <>
@@ -409,14 +336,14 @@ function ProfilePage() {
               ))}
               {hasMorePoints && (
                 <View className='record-list__load-more' onClick={handleLoadMore}>
-                  <Text>{pointsLoading ? '加载中...' : '加载更多'}</Text>
+                  <Text>{pointsLoading ? t('profile.loading') : t('profile.loadMore')}</Text>
                 </View>
               )}
             </>
           )}
           {pointsLoading && pointsRecords.length === 0 && (
             <View className='record-list__loading'>
-              <Text>加载中...</Text>
+              <Text>{t('profile.loading')}</Text>
             </View>
           )}
         </View>
@@ -427,8 +354,10 @@ function ProfilePage() {
         <View className='record-list'>
           {redemptionRecords.length === 0 && !redemptionsLoading ? (
             <View className='record-list__empty'>
-              <Text className='record-list__empty-icon'>🛍️</Text>
-              <Text className='record-list__empty-text'>暂无兑换记录</Text>
+              <View className='record-list__empty-icon'>
+                <ShoppingBagIcon size={40} color='var(--text-tertiary)' />
+              </View>
+              <Text className='record-list__empty-text'>{t('profile.noRedemptionRecords')}</Text>
             </View>
           ) : (
             <>
@@ -438,19 +367,19 @@ function ProfilePage() {
                 return (
                   <View
                     key={record.redemptionId}
-                    className={`record-item ${record.orderId ? 'record-item--clickable' : ''}`}
+                    className={`record-item ${record.orderId || record.productId ? 'record-item--clickable' : ''}`}
                     onClick={() => handleRedemptionClick(record)}
                   >
                     <View className='record-item__left'>
-                      <Text className={`record-item__icon ${record.method === 'points' ? 'record-item__icon--spend' : 'record-item__icon--code'}`}>
-                        {record.method === 'points' ? '◆' : '🎫'}
-                      </Text>
+                      <View className={`record-item__icon ${record.method === 'points' ? 'record-item__icon--spend' : 'record-item__icon--code'}`}>
+                        {record.method === 'points' ? '◆' : <VoucherIcon size={18} />}
+                      </View>
                       <View className='record-item__info'>
                         <Text className='record-item__source'>{record.productName}</Text>
                         <View className='record-item__meta'>
                           <Text className='record-item__time'>{formatTime(record.createdAt)}</Text>
                           <Text className='record-item__method'>
-                            {record.method === 'points' ? '积分兑换' : 'Code 兑换'}
+                            {record.method === 'points' ? t('profile.methodPoints') : t('profile.methodCode')}
                           </Text>
                         </View>
                       </View>
@@ -465,88 +394,20 @@ function ProfilePage() {
               })}
               {hasMoreRedemptions && (
                 <View className='record-list__load-more' onClick={handleLoadMore}>
-                  <Text>{redemptionsLoading ? '加载中...' : '加载更多'}</Text>
+                  <Text>{redemptionsLoading ? t('profile.loading') : t('profile.loadMore')}</Text>
                 </View>
               )}
             </>
           )}
           {redemptionsLoading && redemptionRecords.length === 0 && (
             <View className='record-list__loading'>
-              <Text>加载中...</Text>
+              <Text>{t('profile.loading')}</Text>
             </View>
           )}
         </View>
       )}
 
-      {/* Logout */}
-      <View className='profile-logout' onClick={handleLogout}>
-        <Text>退出登录</Text>
-      </View>
-
-      {/* Change Password Modal */}
-      {showChangePwd && (
-        <View className='pwd-modal-overlay' onClick={closeChangePwd}>
-          <View className='pwd-modal' onClick={(e) => e.stopPropagation()}>
-            <Text className='pwd-modal__title'>修改密码</Text>
-
-            {pwdSuccess && (
-              <View className='pwd-modal__feedback pwd-modal__feedback--success'>
-                <Text>{pwdSuccess}</Text>
-              </View>
-            )}
-            {pwdError && (
-              <View className='pwd-modal__feedback pwd-modal__feedback--error'>
-                <Text>{pwdError}</Text>
-              </View>
-            )}
-
-            <View className='pwd-modal__field'>
-              <Text className='pwd-modal__label'>当前密码</Text>
-              <input
-                className='pwd-modal__input'
-                type='password'
-                placeholder='请输入当前密码'
-                value={currentPwd}
-                onInput={(e: any) => setCurrentPwd(e.target.value || e.detail?.value || '')}
-              />
-            </View>
-
-            <View className='pwd-modal__field'>
-              <Text className='pwd-modal__label'>新密码</Text>
-              <input
-                className='pwd-modal__input'
-                type='password'
-                placeholder='至少 8 位，包含字母和数字'
-                value={newPwd}
-                onInput={(e: any) => setNewPwd(e.target.value || e.detail?.value || '')}
-              />
-            </View>
-
-            <View className='pwd-modal__field'>
-              <Text className='pwd-modal__label'>确认新密码</Text>
-              <input
-                className='pwd-modal__input'
-                type='password'
-                placeholder='再次输入新密码'
-                value={confirmPwd}
-                onInput={(e: any) => setConfirmPwd(e.target.value || e.detail?.value || '')}
-              />
-            </View>
-
-            <View className='pwd-modal__actions'>
-              <View className='btn-secondary pwd-modal__btn' onClick={closeChangePwd}>
-                <Text>取消</Text>
-              </View>
-              <View
-                className={`btn-primary pwd-modal__btn ${pwdSubmitting ? 'btn-primary--disabled' : ''}`}
-                onClick={pwdSubmitting ? undefined : handleChangePwd}
-              >
-                <Text>{pwdSubmitting ? '提交中...' : '确认修改'}</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-      )}
+      <TabBar current='/pages/profile/index' />
     </View>
   );
 }

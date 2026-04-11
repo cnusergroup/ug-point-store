@@ -3,6 +3,8 @@ import { View, Text, Image } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useAppStore } from '../../store';
 import { request, RequestError } from '../../utils/request';
+import { useTranslation } from '../../i18n';
+import { LockIcon } from '../../components/icons';
 import mascotImg from '../../assets/mascot.png';
 import './index.scss';
 
@@ -27,10 +29,11 @@ const ROLE_CONFIG: Record<string, { label: string; className: string }> = {
 /** 邀请验证状态 */
 type InviteState =
   | { status: 'loading' }
-  | { status: 'valid'; role: string }
+  | { status: 'valid'; roles: string[] }
   | { status: 'invalid'; reason: 'INVITE_TOKEN_INVALID' | 'INVITE_TOKEN_USED' | 'INVITE_TOKEN_EXPIRED' | 'MISSING' };
 
 export default function RegisterPage() {
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -58,14 +61,14 @@ export default function RegisterPage() {
 
     setInviteToken(token);
 
-    request<{ valid: boolean; role: string }>({
+    request<{ valid: boolean; roles: string[] }>({
       url: '/api/auth/validate-invite',
       method: 'POST',
       data: { token },
       skipAuth: true,
     })
       .then((result) => {
-        setInviteState({ status: 'valid', role: result.role });
+        setInviteState({ status: 'valid', roles: result.roles });
       })
       .catch((err) => {
         if (err instanceof RequestError) {
@@ -90,31 +93,31 @@ export default function RegisterPage() {
     setError('');
 
     if (!nickname.trim()) {
-      setNicknameError('请输入昵称');
+      setNicknameError(t('register.errorNicknameRequired'));
       valid = false;
     }
 
     if (!email.trim()) {
-      setEmailError('请输入邮箱地址');
+      setEmailError(t('register.errorEmailRequired'));
       valid = false;
     } else if (!isValidEmail(email)) {
-      setEmailError('邮箱格式不正确');
+      setEmailError(t('register.errorEmailInvalid'));
       valid = false;
     }
 
     if (!password) {
-      setPasswordError('请输入密码');
+      setPasswordError(t('register.errorPasswordRequired'));
       valid = false;
     } else if (!isValidPassword(password)) {
-      setPasswordError('密码需至少 8 位，包含字母和数字');
+      setPasswordError(t('register.errorPasswordInvalid'));
       valid = false;
     }
 
     if (!confirmPassword) {
-      setConfirmPasswordError('请再次输入密码');
+      setConfirmPasswordError(t('register.errorConfirmRequired'));
       valid = false;
     } else if (confirmPassword !== password) {
-      setConfirmPasswordError('两次输入的密码不一致');
+      setConfirmPasswordError(t('register.errorConfirmMismatch'));
       valid = false;
     }
 
@@ -128,27 +131,27 @@ export default function RegisterPage() {
     try {
       await register(email, password, nickname, inviteToken);
       // Registration auto-logs in — redirect to home
-      Taro.showToast({ title: '注册成功', icon: 'success', duration: 1500 });
+      Taro.showToast({ title: t('register.registerSuccess'), icon: 'success', duration: 1500 });
       setTimeout(() => {
         Taro.reLaunch({ url: '/pages/index/index' });
       }, 1000);
     } catch (err) {
       if (err instanceof RequestError) {
         if (err.code === 'EMAIL_ALREADY_EXISTS') {
-          setError('该邮箱已被注册');
+          setError(t('register.errorEmailExists'));
         } else if (err.code === 'INVALID_PASSWORD_FORMAT') {
-          setError('密码格式不符合要求');
+          setError(t('register.errorInvalidPasswordFormat'));
         } else if (err.code === 'INVITE_TOKEN_INVALID') {
-          setError('邀请链接无效');
+          setError(t('register.errorInviteInvalid'));
         } else if (err.code === 'INVITE_TOKEN_USED') {
-          setError('邀请链接已被使用');
+          setError(t('register.errorInviteUsed'));
         } else if (err.code === 'INVITE_TOKEN_EXPIRED') {
-          setError('邀请链接已过期');
+          setError(t('register.errorInviteExpired'));
         } else {
           setError(err.message);
         }
       } else {
-        setError('注册失败，请稍后重试');
+        setError(t('register.errorDefault'));
       }
     } finally {
       setLoading(false);
@@ -156,9 +159,7 @@ export default function RegisterPage() {
   }, [email, password, nickname, inviteToken, register, validateForm]);
 
   const goToLogin = useCallback(() => {
-    Taro.navigateBack({ delta: 1 }).catch(() => {
-      Taro.redirectTo({ url: '/pages/login/index' });
-    });
+    Taro.redirectTo({ url: '/pages/login/index' });
   }, []);
 
   // Password strength hints
@@ -174,7 +175,7 @@ export default function RegisterPage() {
         <View className='register-page__bg-glow register-page__bg-glow--right' />
         <View className='register-card'>
           <View className='register-card__loading'>
-            <Text className='register-card__loading-text'>验证邀请链接中...</Text>
+            <Text className='register-card__loading-text'>{t('register.validatingInvite')}</Text>
           </View>
         </View>
       </View>
@@ -189,17 +190,17 @@ export default function RegisterPage() {
         <View className='register-page__bg-glow register-page__bg-glow--right' />
         <View className='register-card'>
           <View className='register-card__invalid'>
-            <Text className='register-card__invalid-icon'>🔒</Text>
-            <Text className='register-card__invalid-title'>邀请链接无效</Text>
+            <Text className='register-card__invalid-icon'><LockIcon size={32} color='var(--error)' /></Text>
+            <Text className='register-card__invalid-title'>{t('register.inviteInvalidTitle')}</Text>
             <Text className='register-card__invalid-desc'>
               {inviteState.reason === 'INVITE_TOKEN_USED'
-                ? '该邀请链接已被使用，每个邀请链接只能使用一次。'
+                ? t('register.inviteUsedDesc')
                 : inviteState.reason === 'INVITE_TOKEN_EXPIRED'
-                ? '该邀请链接已过期，邀请链接有效期为 24 小时。'
-                : '该邀请链接不存在或已失效，请联系管理员获取新的邀请链接。'}
+                ? t('register.inviteExpiredDesc')
+                : t('register.inviteInvalidDesc')}
             </Text>
             <View className='register-card__invalid-action btn-primary' onClick={goToLogin}>
-              <Text>返回登录</Text>
+              <Text>{t('common.backToLogin')}</Text>
             </View>
           </View>
         </View>
@@ -208,8 +209,6 @@ export default function RegisterPage() {
   }
 
   // Valid invite — show registration form
-  const roleConfig = ROLE_CONFIG[inviteState.role];
-
   return (
     <View className='register-page'>
       <View className='register-page__bg-glow register-page__bg-glow--left' />
@@ -218,16 +217,21 @@ export default function RegisterPage() {
       <View className='register-card'>
         <View className='register-card__logo'>
           <Image className='register-card__logo-mascot' src={mascotImg} mode='aspectFit' />
-          <Text className='register-card__logo-text'>创建账号</Text>
-          <Text className='register-card__logo-sub'>加入积分商城</Text>
+          <Text className='register-card__logo-text'>{t('register.title')}</Text>
+          <Text className='register-card__logo-sub'>{t('register.subtitle')}</Text>
         </View>
 
-        {/* Role badge */}
+        {/* Role badges */}
         <View className='register-card__role-row'>
-          <Text className='register-card__role-label'>邀请身份</Text>
-          <Text className={`role-badge ${roleConfig?.className || ''}`}>
-            {roleConfig?.label || inviteState.role}
-          </Text>
+          <Text className='register-card__role-label'>{t('register.inviteRoleLabel')}</Text>
+          {inviteState.roles.map((role) => {
+            const config = ROLE_CONFIG[role];
+            return (
+              <Text key={role} className={`role-badge ${config?.className || ''}`}>
+                {config?.label || role}
+              </Text>
+            );
+          })}
         </View>
 
         {error && (
@@ -238,11 +242,11 @@ export default function RegisterPage() {
 
         <View className='register-card__form'>
           <View className='register-card__field'>
-            <Text className='register-card__label'>昵称</Text>
+            <Text className='register-card__label'>{t('register.nicknameLabel')}</Text>
             <input
               className='register-card__input'
               type='text'
-              placeholder='请输入昵称'
+              placeholder={t('register.nicknamePlaceholder')}
               value={nickname}
               onInput={(e: any) => setNickname(e.target.value || e.detail?.value || '')}
             />
@@ -250,11 +254,11 @@ export default function RegisterPage() {
           </View>
 
           <View className='register-card__field'>
-            <Text className='register-card__label'>邮箱</Text>
+            <Text className='register-card__label'>{t('register.emailLabel')}</Text>
             <input
               className='register-card__input'
               type='text'
-              placeholder='请输入邮箱地址'
+              placeholder={t('register.emailPlaceholder')}
               value={email}
               onInput={(e: any) => setEmail(e.target.value || e.detail?.value || '')}
             />
@@ -262,11 +266,11 @@ export default function RegisterPage() {
           </View>
 
           <View className='register-card__field'>
-            <Text className='register-card__label'>密码</Text>
+            <Text className='register-card__label'>{t('register.passwordLabel')}</Text>
             <input
               className='register-card__input'
               type='password'
-              placeholder='请输入密码'
+              placeholder={t('register.passwordPlaceholder')}
               value={password}
               onInput={(e: any) => setPassword(e.target.value || e.detail?.value || '')}
             />
@@ -274,24 +278,24 @@ export default function RegisterPage() {
             {password.length > 0 && (
               <View className='register-card__hints'>
                 <Text className={`register-card__hint ${hasMinLength ? 'register-card__hint--pass' : ''}`}>
-                  {hasMinLength ? '✓' : '○'} 至少 8 个字符
+                  {hasMinLength ? '✓' : '○'} {t('register.hintMinLength')}
                 </Text>
                 <Text className={`register-card__hint ${hasLetter ? 'register-card__hint--pass' : ''}`}>
-                  {hasLetter ? '✓' : '○'} 包含字母
+                  {hasLetter ? '✓' : '○'} {t('register.hintHasLetter')}
                 </Text>
                 <Text className={`register-card__hint ${hasDigit ? 'register-card__hint--pass' : ''}`}>
-                  {hasDigit ? '✓' : '○'} 包含数字
+                  {hasDigit ? '✓' : '○'} {t('register.hintHasDigit')}
                 </Text>
               </View>
             )}
           </View>
 
           <View className='register-card__field'>
-            <Text className='register-card__label'>确认密码</Text>
+            <Text className='register-card__label'>{t('register.confirmPasswordLabel')}</Text>
             <input
               className='register-card__input'
               type='password'
-              placeholder='请再次输入密码'
+              placeholder={t('register.confirmPasswordPlaceholder')}
               value={confirmPassword}
               onInput={(e: any) => setConfirmPassword(e.target.value || e.detail?.value || '')}
             />
@@ -302,12 +306,12 @@ export default function RegisterPage() {
             className={`register-card__submit ${loading ? 'register-card__submit--loading' : ''}`}
             onClick={handleRegister}
           >
-            <Text>{loading ? '注册中...' : '注 册'}</Text>
+            <Text>{loading ? t('register.registering') : t('register.registerButton')}</Text>
           </View>
 
           <View className='register-card__footer'>
-            <Text className='register-card__footer-text'>已有账号？</Text>
-            <Text className='register-card__footer-link' onClick={goToLogin}>登录</Text>
+            <Text className='register-card__footer-text'>{t('register.hasAccount')}</Text>
+            <Text className='register-card__footer-link' onClick={goToLogin}>{t('register.loginLink')}</Text>
           </View>
         </View>
       </View>

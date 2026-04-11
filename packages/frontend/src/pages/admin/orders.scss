@@ -35,7 +35,7 @@
 /* Stats Cards */
 .order-stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: var(--space-3);
   padding: var(--space-4) var(--space-5);
 

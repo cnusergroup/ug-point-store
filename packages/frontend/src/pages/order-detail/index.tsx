@@ -3,7 +3,9 @@ import { View, Text, Image } from '@tarojs/components';
 import { useRouter } from '@tarojs/taro';
 import { request } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
+import { useTranslation } from '../../i18n';
 import { maskPhone } from '@points-mall/shared';
+import { GiftIcon, ClockIcon, PackageIcon } from '../../components/icons';
 import type { ShippingStatus, ShippingEvent, OrderItem } from '@points-mall/shared';
 import './index.scss';
 
@@ -25,25 +27,19 @@ interface OrderDetail {
   updatedAt: string;
 }
 
-const STATUS_LABEL: Record<ShippingStatus, string> = {
-  pending: '待发货',
-  shipped: '已发货',
-  in_transit: '运输中',
-  delivered: '已签收',
+const STATUS_LABEL_KEY: Record<ShippingStatus, string> = {
+  pending: 'orders.statusPending',
+  shipped: 'orders.statusShipped',
 };
 
-const STATUS_ICON: Record<ShippingStatus, string> = {
-  pending: '⏳',
-  shipped: '📦',
-  in_transit: '🚚',
-  delivered: '✅',
+const STATUS_ICON: Record<ShippingStatus, JSX.Element> = {
+  pending: <ClockIcon size={20} color='currentColor' />,
+  shipped: <PackageIcon size={20} color='currentColor' />,
 };
 
 const STATUS_CLASS: Record<ShippingStatus, string> = {
   pending: 'detail-timeline__dot--pending',
   shipped: 'detail-timeline__dot--shipped',
-  in_transit: 'detail-timeline__dot--in-transit',
-  delivered: 'detail-timeline__dot--delivered',
 };
 
 function formatTime(iso: string): string {
@@ -53,6 +49,7 @@ function formatTime(iso: string): string {
 }
 
 export default function OrderDetailPage() {
+  const { t } = useTranslation();
   const router = useRouter();
   const orderId = router.params.id || '';
 
@@ -62,7 +59,7 @@ export default function OrderDetailPage() {
 
   const loadOrder = useCallback(async () => {
     if (!orderId) {
-      setError('订单 ID 缺失');
+      setError(t('orderDetail.orderIdMissing'));
       setLoading(false);
       return;
     }
@@ -72,7 +69,7 @@ export default function OrderDetailPage() {
       const res = await request<OrderDetail>({ url: `/api/orders/${orderId}` });
       setOrder(res);
     } catch {
-      setError('订单加载失败');
+      setError(t('orderDetail.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -90,7 +87,7 @@ export default function OrderDetailPage() {
     return (
       <View className='detail-page'>
         <View className='detail-loading'>
-          <Text className='detail-loading__text'>加载中...</Text>
+          <Text className='detail-loading__text'>{t('orderDetail.loadingText')}</Text>
         </View>
       </View>
     );
@@ -100,26 +97,26 @@ export default function OrderDetailPage() {
     return (
       <View className='detail-page'>
         <View className='detail-header'>
-          <Text className='detail-header__back' onClick={handleBack}>← 返回</Text>
-          <Text className='detail-header__title'>订单详情</Text>
+          <Text className='detail-header__back' onClick={handleBack}>{t('orderDetail.backButton')}</Text>
+          <Text className='detail-header__title'>{t('orderDetail.title')}</Text>
           <View className='detail-header__placeholder' />
         </View>
         <View className='detail-error'>
-          <Text className='detail-error__text'>{error || '订单不存在'}</Text>
+          <Text className='detail-error__text'>{error || t('orderDetail.notFound')}</Text>
         </View>
       </View>
     );
   }
 
-  const statusLabel = STATUS_LABEL[order.shippingStatus] || '未知';
+  const statusLabel = t(STATUS_LABEL_KEY[order.shippingStatus] || 'orderDetail.statusUnknown');
   const statusIcon = STATUS_ICON[order.shippingStatus] || '❓';
 
   return (
     <View className='detail-page'>
       {/* Header */}
       <View className='detail-header'>
-        <Text className='detail-header__back' onClick={handleBack}>← 返回</Text>
-        <Text className='detail-header__title'>订单详情</Text>
+        <Text className='detail-header__back' onClick={handleBack}>{t('orderDetail.backButton')}</Text>
+        <Text className='detail-header__title'>{t('orderDetail.title')}</Text>
         <View className='detail-header__placeholder' />
       </View>
 
@@ -129,13 +126,13 @@ export default function OrderDetailPage() {
           <Text className='detail-banner__icon'>{statusIcon}</Text>
           <Text className='detail-banner__label'>{statusLabel}</Text>
           {order.trackingNumber && (
-            <Text className='detail-banner__tracking'>物流单号: {order.trackingNumber}</Text>
+            <Text className='detail-banner__tracking'>{t('orderDetail.trackingNumber', { number: order.trackingNumber })}</Text>
           )}
         </View>
 
         {/* Shipping Address */}
         <View className='detail-section'>
-          <Text className='detail-section__title'>📍 收货信息</Text>
+          <Text className='detail-section__title'>{t('orderDetail.shippingInfoTitle')}</Text>
           <View className='detail-address'>
             <View className='detail-address__row'>
               <Text className='detail-address__name'>{order.shippingAddress.recipientName}</Text>
@@ -147,7 +144,7 @@ export default function OrderDetailPage() {
 
         {/* Items */}
         <View className='detail-section'>
-          <Text className='detail-section__title'>🛒 商品列表</Text>
+          <Text className='detail-section__title'>{t('orderDetail.productListTitle')}</Text>
           <View className='detail-items'>
             {order.items.map((item, idx) => (
               <View className='detail-item' key={`${item.productId}-${idx}`}>
@@ -156,7 +153,7 @@ export default function OrderDetailPage() {
                     <Image className='detail-item__image' src={item.imageUrl} mode='aspectFill' />
                   ) : (
                     <View className='detail-item__image-placeholder'>
-                      <Text>🎁</Text>
+                      <Text><GiftIcon size={20} color='var(--text-tertiary)' /></Text>
                     </View>
                   )}
                 </View>
@@ -166,7 +163,7 @@ export default function OrderDetailPage() {
                     <Text className='detail-item__price'>◆ {item.pointsCost.toLocaleString()}</Text>
                     <Text className='detail-item__qty'>×{item.quantity}</Text>
                   </View>
-                  <Text className='detail-item__subtotal'>小计: ◆ {item.subtotal.toLocaleString()}</Text>
+                  <Text className='detail-item__subtotal'>{t('common.subtotal')}: ◆ {item.subtotal.toLocaleString()}</Text>
                 </View>
               </View>
             ))}
@@ -175,7 +172,7 @@ export default function OrderDetailPage() {
 
         {/* Total */}
         <View className='detail-summary'>
-          <Text className='detail-summary__label'>积分总计</Text>
+          <Text className='detail-summary__label'>{t('orderDetail.pointsTotal')}</Text>
           <View className='detail-summary__value-wrap'>
             <Text className='detail-summary__diamond'>◆</Text>
             <Text className='detail-summary__value'>{order.totalPoints.toLocaleString()}</Text>
@@ -185,7 +182,7 @@ export default function OrderDetailPage() {
         {/* Shipping Timeline */}
         {order.shippingEvents.length > 0 && (
           <View className='detail-section'>
-            <Text className='detail-section__title'>📋 物流时间线</Text>
+            <Text className='detail-section__title'>{t('orderDetail.shippingTimelineTitle')}</Text>
             <View className='detail-timeline'>
               {[...order.shippingEvents].reverse().map((evt, idx) => (
                 <View className='detail-timeline__item' key={`${evt.status}-${idx}`}>
@@ -196,7 +193,7 @@ export default function OrderDetailPage() {
                   <View className='detail-timeline__body'>
                     <View className='detail-timeline__head'>
                       <Text className={`detail-timeline__status detail-timeline__status--${evt.status.replace('_', '-')}`}>
-                        {STATUS_ICON[evt.status]} {STATUS_LABEL[evt.status]}
+                        {STATUS_ICON[evt.status]} {t(STATUS_LABEL_KEY[evt.status])}
                       </Text>
                       <Text className='detail-timeline__time'>{formatTime(evt.timestamp)}</Text>
                     </View>

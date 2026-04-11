@@ -3,6 +3,8 @@ import { View, Text } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { request } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
+import { useTranslation } from '../../i18n';
+import { LocationIcon } from '../../components/icons';
 import './index.scss';
 
 /** Address response from API */
@@ -35,21 +37,22 @@ const PHONE_REGEX = /^1\d{10}$/;
 const MAX_NAME_LENGTH = 20;
 const MAX_ADDRESS_LENGTH = 200;
 
-function validateForm(form: AddressForm): FormErrors {
+function validateForm(form: AddressForm, t: (key: string) => string): FormErrors {
   const errors: FormErrors = {};
   if (!form.recipientName.trim() || form.recipientName.length > MAX_NAME_LENGTH) {
-    errors.recipientName = `收件人姓名需为 1-${MAX_NAME_LENGTH} 个字符`;
+    errors.recipientName = t('address.recipientNameError');
   }
   if (!PHONE_REGEX.test(form.phone)) {
-    errors.phone = '请输入正确的 11 位手机号';
+    errors.phone = t('address.phoneError');
   }
   if (!form.detailAddress.trim() || form.detailAddress.length > MAX_ADDRESS_LENGTH) {
-    errors.detailAddress = `详细地址需为 1-${MAX_ADDRESS_LENGTH} 个字符`;
+    errors.detailAddress = t('address.detailAddressError');
   }
   return errors;
 }
 
 export default function AddressPage() {
+  const { t } = useTranslation();
   const [addresses, setAddresses] = useState<AddressResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -68,7 +71,7 @@ export default function AddressPage() {
       const res = await request<AddressResponse[]>({ url: '/api/addresses' });
       setAddresses(res);
     } catch {
-      setError('地址加载失败');
+      setError(t('address.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -106,7 +109,7 @@ export default function AddressPage() {
   };
 
   const handleSubmit = async () => {
-    const errors = validateForm(form);
+    const errors = validateForm(form, t);
     setFormErrors(errors);
     if (Object.keys(errors).length > 0) return;
 
@@ -118,19 +121,19 @@ export default function AddressPage() {
           method: 'PUT',
           data: { recipientName: form.recipientName, phone: form.phone, detailAddress: form.detailAddress },
         });
-        Taro.showToast({ title: '地址已更新', icon: 'success' });
+        Taro.showToast({ title: t('address.addressUpdated'), icon: 'success' });
       } else {
         await request({
           url: '/api/addresses',
           method: 'POST',
           data: { recipientName: form.recipientName, phone: form.phone, detailAddress: form.detailAddress },
         });
-        Taro.showToast({ title: '地址已添加', icon: 'success' });
+        Taro.showToast({ title: t('address.addressAdded'), icon: 'success' });
       }
       closeForm();
       await loadAddresses();
     } catch {
-      Taro.showToast({ title: editingId ? '更新失败' : '添加失败', icon: 'none' });
+      Taro.showToast({ title: editingId ? t('address.updateFailed') : t('address.addFailed'), icon: 'none' });
     } finally {
       setSubmitting(false);
     }
@@ -140,9 +143,9 @@ export default function AddressPage() {
     try {
       await request({ url: `/api/addresses/${addressId}`, method: 'DELETE' });
       setAddresses((prev) => prev.filter((a) => a.addressId !== addressId));
-      Taro.showToast({ title: '已删除', icon: 'success' });
+      Taro.showToast({ title: t('address.deleted'), icon: 'success' });
     } catch {
-      Taro.showToast({ title: '删除失败', icon: 'none' });
+      Taro.showToast({ title: t('address.deleteFailed'), icon: 'none' });
     }
   };
 
@@ -150,9 +153,9 @@ export default function AddressPage() {
     try {
       await request({ url: `/api/addresses/${addressId}/default`, method: 'PATCH' });
       await loadAddresses();
-      Taro.showToast({ title: '已设为默认', icon: 'success' });
+      Taro.showToast({ title: t('address.setDefaultSuccess'), icon: 'success' });
     } catch {
-      Taro.showToast({ title: '设置失败', icon: 'none' });
+      Taro.showToast({ title: t('address.setDefaultFailed'), icon: 'none' });
     }
   };
 
@@ -160,12 +163,12 @@ export default function AddressPage() {
     return (
       <View className='address-page'>
         <View className='address-header'>
-          <Text className='address-header__back' onClick={handleBack}>← 返回</Text>
-          <Text className='address-header__title'>收货地址</Text>
+          <Text className='address-header__back' onClick={handleBack}>{t('address.backButton')}</Text>
+          <Text className='address-header__title'>{t('address.title')}</Text>
           <View className='address-header__placeholder' />
         </View>
         <View className='address-loading'>
-          <Text className='address-loading__text'>加载中...</Text>
+          <Text className='address-loading__text'>{t('address.loadingText')}</Text>
         </View>
       </View>
     );
@@ -175,8 +178,8 @@ export default function AddressPage() {
     return (
       <View className='address-page'>
         <View className='address-header'>
-          <Text className='address-header__back' onClick={handleBack}>← 返回</Text>
-          <Text className='address-header__title'>收货地址</Text>
+          <Text className='address-header__back' onClick={handleBack}>{t('address.backButton')}</Text>
+          <Text className='address-header__title'>{t('address.title')}</Text>
           <View className='address-header__placeholder' />
         </View>
         <View className='address-error'>
@@ -190,8 +193,8 @@ export default function AddressPage() {
     <View className='address-page'>
       {/* Header */}
       <View className='address-header'>
-        <Text className='address-header__back' onClick={handleBack}>← 返回</Text>
-        <Text className='address-header__title'>收货地址</Text>
+        <Text className='address-header__back' onClick={handleBack}>{t('address.backButton')}</Text>
+        <Text className='address-header__title'>{t('address.title')}</Text>
         <View className='address-header__placeholder' />
       </View>
 
@@ -199,9 +202,9 @@ export default function AddressPage() {
       <View className='address-content'>
         {addresses.length === 0 ? (
           <View className='address-empty'>
-            <Text className='address-empty__icon'>📍</Text>
-            <Text className='address-empty__text'>暂无收货地址</Text>
-            <Text className='address-empty__hint'>添加一个地址以便下单时使用</Text>
+            <Text className='address-empty__icon'><LocationIcon size={48} color='var(--text-tertiary)' /></Text>
+            <Text className='address-empty__text'>{t('address.noAddress')}</Text>
+            <Text className='address-empty__hint'>{t('address.noAddressHint')}</Text>
           </View>
         ) : (
           <View className='address-list'>
@@ -213,7 +216,7 @@ export default function AddressPage() {
                       <Text className='address-card__name'>{addr.recipientName}</Text>
                       <Text className='address-card__phone'>{addr.phone}</Text>
                       {addr.isDefault && (
-                        <Text className='address-card__badge'>默认</Text>
+                        <Text className='address-card__badge'>{t('address.defaultBadge')}</Text>
                       )}
                     </View>
                     <Text className='address-card__detail'>{addr.detailAddress}</Text>
@@ -222,14 +225,14 @@ export default function AddressPage() {
                 <View className='address-card__actions'>
                   {!addr.isDefault && (
                     <Text className='address-card__action address-card__action--default' onClick={() => handleSetDefault(addr.addressId)}>
-                      设为默认
+                      {t('address.setDefault')}
                     </Text>
                   )}
                   <Text className='address-card__action address-card__action--edit' onClick={() => openEditForm(addr)}>
-                    编辑
+                    {t('address.editButton')}
                   </Text>
                   <Text className='address-card__action address-card__action--delete' onClick={() => handleDelete(addr.addressId)}>
-                    删除
+                    {t('address.deleteButton')}
                   </Text>
                 </View>
               </View>
@@ -241,7 +244,7 @@ export default function AddressPage() {
       {/* Add button */}
       <View className='address-bottom'>
         <View className='btn-primary address-bottom__btn' onClick={openAddForm}>
-          <Text>+ 添加新地址</Text>
+          <Text>{t('address.addNewAddress')}</Text>
         </View>
       </View>
 
@@ -250,15 +253,15 @@ export default function AddressPage() {
         <View className='address-modal-overlay' onClick={closeForm}>
           <View className='address-modal' onClick={(e) => e.stopPropagation()}>
             <Text className='address-modal__title'>
-              {editingId ? '编辑地址' : '添加地址'}
+              {editingId ? t('address.editAddressTitle') : t('address.addAddressTitle')}
             </Text>
 
             <View className='address-modal__field'>
-              <Text className='address-modal__label'>收件人姓名</Text>
+              <Text className='address-modal__label'>{t('address.recipientNameLabel')}</Text>
               <input
                 className='address-modal__input'
                 type='text'
-                placeholder='请输入收件人姓名'
+                placeholder={t('address.recipientNamePlaceholder')}
                 value={form.recipientName}
                 maxLength={MAX_NAME_LENGTH}
                 onInput={(e: any) => setForm((f) => ({ ...f, recipientName: e.target.value || e.detail?.value || '' }))}
@@ -269,11 +272,11 @@ export default function AddressPage() {
             </View>
 
             <View className='address-modal__field'>
-              <Text className='address-modal__label'>手机号码</Text>
+              <Text className='address-modal__label'>{t('address.phoneLabel')}</Text>
               <input
                 className='address-modal__input'
                 type='tel'
-                placeholder='请输入 11 位手机号'
+                placeholder={t('address.phonePlaceholder')}
                 value={form.phone}
                 maxLength={11}
                 onInput={(e: any) => setForm((f) => ({ ...f, phone: e.target.value || e.detail?.value || '' }))}
@@ -284,10 +287,10 @@ export default function AddressPage() {
             </View>
 
             <View className='address-modal__field'>
-              <Text className='address-modal__label'>详细地址</Text>
+              <Text className='address-modal__label'>{t('address.detailAddressLabel')}</Text>
               <textarea
                 className='address-modal__textarea'
-                placeholder='请输入详细地址'
+                placeholder={t('address.detailAddressPlaceholder')}
                 value={form.detailAddress}
                 maxLength={MAX_ADDRESS_LENGTH}
                 onInput={(e: any) => setForm((f) => ({ ...f, detailAddress: e.target.value || e.detail?.value || '' }))}
@@ -299,13 +302,13 @@ export default function AddressPage() {
 
             <View className='address-modal__actions'>
               <View className='btn-secondary address-modal__btn' onClick={closeForm}>
-                <Text>取消</Text>
+                <Text>{t('common.cancel')}</Text>
               </View>
               <View
                 className={`btn-primary address-modal__btn ${submitting ? 'btn-primary--disabled' : ''}`}
                 onClick={submitting ? undefined : handleSubmit}
               >
-                <Text>{submitting ? '提交中...' : '确认'}</Text>
+                <Text>{submitting ? t('common.submitting') : t('common.confirm')}</Text>
               </View>
             </View>
           </View>

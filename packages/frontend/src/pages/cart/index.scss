@@ -6,14 +6,14 @@
 .cart-page {
   min-height: 100vh;
   background-color: var(--bg-base);
-  padding-bottom: 80px;
+  padding-bottom: calc(56px + 56px + env(safe-area-inset-bottom));
 }
 
 /* ---- Header ---- */
 .cart-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   padding: var(--space-4) var(--space-5);
   background: rgba(26, 27, 37, 0.95);
   border-bottom: 1px solid var(--card-border);
@@ -21,26 +21,11 @@
   top: 0;
   z-index: 10;
 
-  &__back {
-    font-size: 15px;
-    color: var(--text-secondary);
-    cursor: pointer;
-    min-width: 60px;
-
-    &:hover {
-      color: var(--text-primary);
-    }
-  }
-
   &__title {
     font-family: var(--font-display);
     font-size: var(--text-h4);
     font-weight: 700;
     color: var(--text-primary);
-  }
-
-  &__placeholder {
-    min-width: 60px;
   }
 }
 
@@ -79,7 +64,6 @@
   gap: var(--space-3);
 
   &__icon {
-    font-size: 64px;
     opacity: 0.5;
   }
 
@@ -330,14 +314,13 @@
 /* ---- Bottom Bar ---- */
 .cart-bottom {
   position: fixed;
-  bottom: 0;
+  bottom: calc(56px + env(safe-area-inset-bottom));
   left: 0;
   right: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: var(--space-3) var(--space-4);
-  padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
   background: rgba(18, 19, 26, 0.95);
   border-top: 1px solid var(--card-border);
   z-index: 20;

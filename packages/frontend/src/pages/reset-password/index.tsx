@@ -3,6 +3,8 @@ import { View, Text } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useAppStore } from '../../store';
 import { RequestError } from '../../utils/request';
+import { useTranslation } from '../../i18n';
+import { WarningIcon, LockIcon } from '../../components/icons';
 import './index.scss';
 
 /** 密码规则：至少 8 位，同时包含字母和数字 */
@@ -11,20 +13,21 @@ function isValidPassword(pw: string): boolean {
 }
 
 /** 错误码 → 用户友好提示 */
-function mapErrorMessage(code: string): string {
+function mapErrorMessage(code: string, t: (key: string) => string): string {
   switch (code) {
     case 'RESET_TOKEN_EXPIRED':
-      return '重置链接已过期，请重新申请';
+      return t('resetPassword.errorTokenExpired');
     case 'RESET_TOKEN_INVALID':
-      return '重置链接无效或已被使用';
+      return t('resetPassword.errorTokenInvalid');
     case 'INVALID_PASSWORD_FORMAT':
-      return '密码格式不正确，需至少 8 位且包含字母和数字';
+      return t('resetPassword.errorInvalidPasswordFormat');
     default:
-      return '请求失败，请稍后重试';
+      return t('resetPassword.errorDefault');
   }
 }
 
 export default function ResetPasswordPage() {
+  const { t } = useTranslation();
   const token = Taro.getCurrentInstance().router?.params?.token || '';
 
   const [newPassword, setNewPassword] = useState('');
@@ -43,19 +46,19 @@ export default function ResetPasswordPage() {
     setError('');
 
     if (!newPassword) {
-      setPwError('请输入新密码');
+      setPwError(t('resetPassword.errorPasswordRequired'));
       return false;
     }
     if (!isValidPassword(newPassword)) {
-      setPwError('密码需至少 8 位，且同时包含字母和数字');
+      setPwError(t('resetPassword.errorPasswordInvalid'));
       return false;
     }
     if (!confirmPassword) {
-      setConfirmError('请确认新密码');
+      setConfirmError(t('resetPassword.errorConfirmRequired'));
       return false;
     }
     if (newPassword !== confirmPassword) {
-      setConfirmError('两次输入的密码不一致');
+      setConfirmError(t('resetPassword.errorConfirmMismatch'));
       return false;
     }
     return true;
@@ -70,9 +73,9 @@ export default function ResetPasswordPage() {
       setSuccess(true);
     } catch (err) {
       if (err instanceof RequestError) {
-        setError(mapErrorMessage(err.code));
+        setError(mapErrorMessage(err.code, t));
       } else {
-        setError('请求失败，请稍后重试');
+        setError(t('resetPassword.errorDefault'));
       }
     } finally {
       setLoading(false);
@@ -91,13 +94,13 @@ export default function ResetPasswordPage() {
         <View className='reset-page__bg-glow reset-page__bg-glow--right' />
         <View className='reset-card'>
           <View className='reset-card__error-state'>
-            <Text className='reset-card__error-state-icon'>⚠️</Text>
-            <Text className='reset-card__error-state-title'>链接无效</Text>
+            <Text className='reset-card__error-state-icon'><WarningIcon size={32} color='var(--warning)' /></Text>
+            <Text className='reset-card__error-state-title'>{t('resetPassword.invalidLinkTitle')}</Text>
             <Text className='reset-card__error-state-msg'>
-              缺少重置令牌，请通过邮件中的链接访问此页面
+              {t('resetPassword.invalidLinkMessage')}
             </Text>
             <View className='reset-card__submit' onClick={goToLogin}>
-              <Text>返回登录</Text>
+              <Text>{t('common.backToLogin')}</Text>
             </View>
           </View>
         </View>
@@ -113,13 +116,13 @@ export default function ResetPasswordPage() {
         <View className='reset-page__bg-glow reset-page__bg-glow--right' />
         <View className='reset-card'>
           <View className='reset-card__success'>
-            <Text className='reset-card__success-icon'>✅</Text>
-            <Text className='reset-card__success-title'>密码重置成功</Text>
+            <Text className='reset-card__success-icon'>✓</Text>
+            <Text className='reset-card__success-title'>{t('resetPassword.successTitle')}</Text>
             <Text className='reset-card__success-msg'>
-              您的密码已更新，请使用新密码登录
+              {t('resetPassword.successMessage')}
             </Text>
             <View className='reset-card__submit' onClick={goToLogin}>
-              <Text>返回登录</Text>
+              <Text>{t('common.backToLogin')}</Text>
             </View>
           </View>
         </View>
@@ -135,9 +138,9 @@ export default function ResetPasswordPage() {
 
       <View className='reset-card'>
         <View className='reset-card__logo'>
-          <Text className='reset-card__logo-icon'>🔐</Text>
-          <Text className='reset-card__logo-text'>重置密码</Text>
-          <Text className='reset-card__logo-sub'>请输入您的新密码</Text>
+          <Text className='reset-card__logo-icon'><LockIcon size={32} color='var(--accent-primary)' /></Text>
+          <Text className='reset-card__logo-text'>{t('resetPassword.title')}</Text>
+          <Text className='reset-card__logo-sub'>{t('resetPassword.subtitle')}</Text>
         </View>
 
         {error && (
@@ -148,11 +151,11 @@ export default function ResetPasswordPage() {
 
         <View className='reset-card__form'>
           <View className='reset-card__field'>
-            <Text className='reset-card__label'>新密码</Text>
+            <Text className='reset-card__label'>{t('resetPassword.newPasswordLabel')}</Text>
             <input
               className='reset-card__input'
               type='password'
-              placeholder='至少 8 位，包含字母和数字'
+              placeholder={t('resetPassword.newPasswordPlaceholder')}
               value={newPassword}
               onInput={(e: any) => setNewPassword(e.target.value || e.detail?.value || '')}
             />
@@ -160,11 +163,11 @@ export default function ResetPasswordPage() {
           </View>
 
           <View className='reset-card__field'>
-            <Text className='reset-card__label'>确认新密码</Text>
+            <Text className='reset-card__label'>{t('resetPassword.confirmPasswordLabel')}</Text>
             <input
               className='reset-card__input'
               type='password'
-              placeholder='再次输入新密码'
+              placeholder={t('resetPassword.confirmPasswordPlaceholder')}
               value={confirmPassword}
               onInput={(e: any) => setConfirmPassword(e.target.value || e.detail?.value || '')}
             />
@@ -175,11 +178,11 @@ export default function ResetPasswordPage() {
             className={`reset-card__submit ${loading ? 'reset-card__submit--loading' : ''}`}
             onClick={handleSubmit}
           >
-            <Text>{loading ? '提交中...' : '重置密码'}</Text>
+            <Text>{loading ? t('resetPassword.submitting') : t('resetPassword.submitButton')}</Text>
           </View>
 
           <View className='reset-card__footer'>
-            <Text className='reset-card__footer-link' onClick={goToLogin}>返回登录</Text>
+            <Text className='reset-card__footer-link' onClick={goToLogin}>{t('common.backToLogin')}</Text>
           </View>
         </View>
       </View>

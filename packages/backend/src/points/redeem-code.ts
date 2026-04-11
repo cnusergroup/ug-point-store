@@ -150,5 +150,5 @@ export async function redeemCode(
     }),
   );
 
-  return { success: true, earnedPoints: pointsValue };
+  return { success: true, pointsEarned: pointsValue, newBalance };
 }

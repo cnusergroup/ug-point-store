@@ -8,7 +8,7 @@ import { batchCreateInvites } from '../auth/invite';
 // ============================================================
 
 export type BatchGenerateInvitesResult =
-  | { success: true; invites: Array<{ token: string; link: string; role: UserRole; expiresAt: string }> }
+  | { success: true; invites: Array<{ token: string; link: string; roles: UserRole[]; expiresAt: string }> }
   | { success: false; error: { code: string; message: string } };
 
 export type ListInvitesResult = {
@@ -26,16 +26,16 @@ export type RevokeInviteResult =
 
 /**
  * 批量生成邀请链接
- * 调用 batchCreateInvites，返回 invites 数组（含 token、link、role、expiresAt）
+ * 调用 batchCreateInvites，返回 invites 数组（含 token、link、roles、expiresAt）
  */
 export async function batchGenerateInvites(
   count: number,
-  role: UserRole,
+  roles: UserRole[],
   dynamoClient: DynamoDBDocumentClient,
   invitesTable: string,
   registerBaseUrl: string,
 ): Promise<BatchGenerateInvitesResult> {
-  return batchCreateInvites(count, role, dynamoClient, invitesTable, registerBaseUrl);
+  return batchCreateInvites(count, roles, dynamoClient, invitesTable, registerBaseUrl);
 }
 
 /**

@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, Input, Textarea, Image } from '@tarojs/components';
+import { View, Text, Input, Image } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useAppStore } from '../../store';
 import { request, RequestError } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
+import { useTranslation } from '../../i18n';
+import { ClaimIcon } from '../../components/icons';
 import './index.scss';
 
 /** Claim record returned by the API */
@@ -25,17 +27,17 @@ interface ClaimRecord {
 /** Status filter tab options */
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
 
-const STATUS_TABS: { key: StatusFilter; label: string }[] = [
-  { key: 'all', label: '全部' },
-  { key: 'pending', label: '待审批' },
-  { key: 'approved', label: '已批准' },
-  { key: 'rejected', label: '已驳回' },
+const STATUS_TABS: { key: StatusFilter; labelKey: string }[] = [
+  { key: 'all', labelKey: 'claims.filterAll' },
+  { key: 'pending', labelKey: 'claims.filterPending' },
+  { key: 'approved', labelKey: 'claims.filterApproved' },
+  { key: 'rejected', labelKey: 'claims.filterRejected' },
 ];
 
-const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  pending: { label: '待审批', className: 'claim-status--pending' },
-  approved: { label: '已批准', className: 'claim-status--approved' },
-  rejected: { label: '已驳回', className: 'claim-status--rejected' },
+const STATUS_CONFIG: Record<string, { labelKey: string; className: string }> = {
+  pending: { labelKey: 'claims.statusPending', className: 'claim-status--pending' },
+  approved: { labelKey: 'claims.statusApproved', className: 'claim-status--approved' },
+  rejected: { labelKey: 'claims.statusRejected', className: 'claim-status--rejected' },
 };
 
 /** Roles allowed to submit claims */
@@ -49,6 +51,7 @@ const ROLE_CONFIG: Record<string, { label: string; className: string }> = {
 };
 
 export default function ClaimsPage() {
+  const { t } = useTranslation();
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
   const userRoles = useAppStore((s) => s.user?.roles || []);
 
@@ -139,7 +142,7 @@ export default function ClaimsPage() {
 
   const handleChooseImage = async () => {
     if (formImages.length >= 5) {
-      Taro.showToast({ title: '最多上传 5 张图片', icon: 'none' });
+      Taro.showToast({ title: t('claims.maxImagesReached'), icon: 'none' });
       return;
     }
     try {
@@ -207,7 +210,7 @@ export default function ClaimsPage() {
             if (idx !== -1) return prev.filter((_, i) => i !== idx);
             return prev;
           });
-          Taro.showToast({ title: '图片上传失败', icon: 'none' });
+          Taro.showToast({ title: t('claims.imageUploadFailed'), icon: 'none' });
         }
       }
     } catch {
@@ -221,19 +224,19 @@ export default function ClaimsPage() {
 
   const handleSubmitClaim = async () => {
     if (!formTitle.trim()) {
-      setFormError('请输入申请标题');
+      setFormError(t('claims.errorTitleRequired'));
       return;
     }
     if (!formDesc.trim()) {
-      setFormError('请输入申请描述');
+      setFormError(t('claims.errorDescRequired'));
       return;
     }
     if (eligibleRoles.length > 1 && !formSelectedRole) {
-      setFormError('请选择提交身份');
+      setFormError(t('claims.errorSelectRole'));
       return;
     }
     if (formImages.some((img) => img.uploading)) {
-      setFormError('请等待图片上传完成');
+      setFormError(t('claims.errorWaitUpload'));
       return;
     }
     setSubmitting(true);
@@ -249,11 +252,11 @@ export default function ClaimsPage() {
       if (formSelectedRole) data.selectedRole = formSelectedRole;
 
       await request({ url: '/api/claims', method: 'POST', data });
-      Taro.showToast({ title: '申请已提交', icon: 'none' });
+      Taro.showToast({ title: t('claims.claimSubmitted'), icon: 'none' });
       closeForm();
       fetchClaims(statusFilter);
     } catch (err) {
-      setFormError(err instanceof RequestError ? err.message : '提交失败');
+      setFormError(err instanceof RequestError ? err.message : t('claims.submitFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -272,11 +275,11 @@ export default function ClaimsPage() {
       {/* Toolbar */}
       <View className='claims-page__toolbar'>
         <View className='claims-page__back' onClick={handleBack}>
-          <Text>‹ 返回</Text>
+          <Text>{t('claims.backButton')}</Text>
         </View>
-        <Text className='claims-page__title'>积分申请</Text>
+        <Text className='claims-page__title'>{t('claims.title')}</Text>
         <View className='claims-page__new-btn' onClick={openForm}>
-          <Text>+ 新建申请</Text>
+          <Text>{t('claims.newClaim')}</Text>
         </View>
       </View>
 
@@ -288,18 +291,18 @@ export default function ClaimsPage() {
             className={`claim-tabs__item ${statusFilter === tab.key ? 'claim-tabs__item--active' : ''}`}
             onClick={() => handleTabChange(tab.key)}
           >
-            <Text>{tab.label}</Text>
+            <Text>{t(tab.labelKey)}</Text>
           </View>
         ))}
       </View>
 
       {/* Claim List */}
       {loading ? (
-        <View className='admin-loading'><Text>加载中...</Text></View>
+        <View className='admin-loading'><Text>{t('claims.loading')}</Text></View>
       ) : claims.length === 0 ? (
         <View className='admin-empty'>
-          <Text className='admin-empty__icon'>📋</Text>
-          <Text className='admin-empty__text'>暂无申请记录</Text>
+          <Text className='admin-empty__icon'><ClaimIcon size={48} color='var(--text-tertiary)' /></Text>
+          <Text className='admin-empty__text'>{t('claims.noRecords')}</Text>
         </View>
       ) : (
         <View className='claim-list'>
@@ -311,7 +314,7 @@ export default function ClaimsPage() {
                   <View className='claim-row__info'>
                     <View className='claim-row__top'>
                       <Text className='claim-row__title'>{claim.title}</Text>
-                      <Text className={`claim-status ${st.className}`}>{st.label}</Text>
+                      <Text className={`claim-status ${st.className}`}>{t(st.labelKey)}</Text>
                     </View>
                     <Text className='claim-row__time'>{formatTime(claim.createdAt)}</Text>
                   </View>
@@ -324,7 +327,7 @@ export default function ClaimsPage() {
           {/* Load More */}
           {lastKey && (
             <View className='claim-list__load-more' onClick={handleLoadMore}>
-              <Text>加载更多</Text>
+              <Text>{t('claims.loadMore')}</Text>
             </View>
           )}
         </View>
@@ -332,77 +335,81 @@ export default function ClaimsPage() {
 
       {/* Detail Modal */}
       {detailClaim && (
-        <View className='form-overlay'>
-          <View className='form-modal'>
-            <View className='form-modal__header'>
-              <Text className='form-modal__title'>申请详情</Text>
-              <View className='form-modal__close' onClick={closeDetail}><Text>✕</Text></View>
-            </View>
-            <View className='form-modal__body'>
-              <View className='detail-section'>
-                <Text className='detail-section__label'>标题</Text>
-                <Text className='detail-section__value'>{detailClaim.title}</Text>
-              </View>
-              <View className='detail-section'>
-                <Text className='detail-section__label'>描述</Text>
-                <Text className='detail-section__value detail-section__value--desc'>{detailClaim.description}</Text>
-              </View>
-              {detailClaim.imageUrls && detailClaim.imageUrls.length > 0 && (
-                <View className='detail-section'>
-                  <Text className='detail-section__label'>图片</Text>
-                  <View className='detail-images'>
-                    {detailClaim.imageUrls.map((url, i) => (
-                      <View key={i} className='detail-images__item' onClick={() => { if (url) Taro.previewImage({ current: url, urls: detailClaim.imageUrls }); }}>
-                        <Image src={url} className='detail-images__img' mode='aspectFill' />
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              )}
-              {detailClaim.activityUrl && (
-                <View className='detail-section'>
-                  <Text className='detail-section__label'>活动链接</Text>
-                  <Text className='detail-section__value detail-section__value--link'>{detailClaim.activityUrl}</Text>
-                </View>
-              )}
-              <View className='detail-section'>
-                <Text className='detail-section__label'>状态</Text>
-                <Text className={`claim-status ${STATUS_CONFIG[detailClaim.status]?.className || ''}`}>
-                  {STATUS_CONFIG[detailClaim.status]?.label || detailClaim.status}
+        <View className='form-overlay' onClick={closeDetail}>
+          <View className='claim-detail' onClick={(e) => e.stopPropagation()}>
+            {/* Header with status banner */}
+            <View className={`claim-detail__banner claim-detail__banner--${detailClaim.status}`}>
+              <View className='claim-detail__banner-top'>
+                <Text className='claim-detail__banner-status'>
+                  {detailClaim.status === 'pending' && '○'}
+                  {detailClaim.status === 'approved' && '✓'}
+                  {detailClaim.status === 'rejected' && '✗'}
+                  {' '}{STATUS_CONFIG[detailClaim.status]?.labelKey ? t(STATUS_CONFIG[detailClaim.status].labelKey) : detailClaim.status}
                 </Text>
+                <View className='claim-detail__close' onClick={closeDetail}><Text>✕</Text></View>
               </View>
               {detailClaim.status === 'approved' && detailClaim.awardedPoints != null && (
-                <View className='detail-section'>
-                  <Text className='detail-section__label'>奖励积分</Text>
-                  <Text className='detail-section__value detail-section__value--points'>+{detailClaim.awardedPoints}</Text>
-                </View>
+                <Text className='claim-detail__banner-points'>{t('claims.awardedPoints', { count: detailClaim.awardedPoints })}</Text>
               )}
               {detailClaim.status === 'rejected' && detailClaim.rejectReason && (
-                <View className='detail-section'>
-                  <Text className='detail-section__label'>驳回原因</Text>
-                  <Text className='detail-section__value detail-section__value--reject'>{detailClaim.rejectReason}</Text>
+                <Text className='claim-detail__banner-reason'>{detailClaim.rejectReason}</Text>
+              )}
+            </View>
+
+            {/* Content */}
+            <View className='claim-detail__body'>
+              {/* Title */}
+              <Text className='claim-detail__title'>{detailClaim.title}</Text>
+
+              {/* Description */}
+              <View className='claim-detail__desc-wrap'>
+                <Text className='claim-detail__desc'>{detailClaim.description}</Text>
+              </View>
+
+              {/* Images */}
+              {detailClaim.imageUrls && detailClaim.imageUrls.length > 0 && (
+                <View className='claim-detail__images'>
+                  {detailClaim.imageUrls.map((url, i) => (
+                    <View key={i} className='claim-detail__img-item' onClick={() => { if (url) Taro.previewImage({ current: url, urls: detailClaim.imageUrls }); }}>
+                      <Image src={url} className='claim-detail__img' mode='aspectFill' />
+                    </View>
+                  ))}
                 </View>
               )}
-              {detailClaim.reviewedAt && (
-                <View className='detail-section'>
-                  <Text className='detail-section__label'>审批人</Text>
-                  <Text className='detail-section__value'>{detailClaim.reviewerNickname || detailClaim.reviewerId || '-'}</Text>
+
+              {/* Activity URL */}
+              {detailClaim.activityUrl && (
+                <View className='claim-detail__link-wrap'>
+                  <Text className='claim-detail__link-label'>{t('claims.activityLinkLabel')}</Text>
+                  <Text className='claim-detail__link'>{detailClaim.activityUrl}</Text>
                 </View>
               )}
-              {detailClaim.reviewedAt && (
-                <View className='detail-section'>
-                  <Text className='detail-section__label'>审批时间</Text>
-                  <Text className='detail-section__value'>{formatTime(detailClaim.reviewedAt)}</Text>
+
+              {/* Meta info */}
+              <View className='claim-detail__meta'>
+                <View className='claim-detail__meta-row'>
+                  <Text className='claim-detail__meta-label'>{t('claims.submitTimeLabel')}</Text>
+                  <Text className='claim-detail__meta-value'>{formatTime(detailClaim.createdAt)}</Text>
                 </View>
-              )}
-              <View className='detail-section'>
-                <Text className='detail-section__label'>提交时间</Text>
-                <Text className='detail-section__value'>{formatTime(detailClaim.createdAt)}</Text>
+                {detailClaim.reviewedAt && (
+                  <>
+                    <View className='claim-detail__meta-row'>
+                      <Text className='claim-detail__meta-label'>{t('claims.reviewerLabel')}</Text>
+                      <Text className='claim-detail__meta-value'>{detailClaim.reviewerNickname || detailClaim.reviewerId || '-'}</Text>
+                    </View>
+                    <View className='claim-detail__meta-row'>
+                      <Text className='claim-detail__meta-label'>{t('claims.reviewTimeLabel')}</Text>
+                      <Text className='claim-detail__meta-value'>{formatTime(detailClaim.reviewedAt)}</Text>
+                    </View>
+                  </>
+                )}
               </View>
             </View>
-            <View className='form-modal__actions'>
-              <View className='form-modal__cancel' onClick={closeDetail} style={{ flex: 'unset', width: '100%' }}>
-                <Text>关闭</Text>
+
+            {/* Footer */}
+            <View className='claim-detail__footer'>
+              <View className='claim-detail__close-btn' onClick={closeDetail}>
+                <Text>{t('claims.closeButton')}</Text>
               </View>
             </View>
           </View>
@@ -414,7 +421,7 @@ export default function ClaimsPage() {
         <View className='form-overlay'>
           <View className='form-modal'>
             <View className='form-modal__header'>
-              <Text className='form-modal__title'>新建积分申请</Text>
+              <Text className='form-modal__title'>{t('claims.newClaimTitle')}</Text>
               <View className='form-modal__close' onClick={closeForm}><Text>✕</Text></View>
             </View>
             {formError && (
@@ -424,7 +431,7 @@ export default function ClaimsPage() {
               {/* Role selector - only show if user has multiple eligible roles */}
               {eligibleRoles.length > 1 && (
                 <View className='form-field'>
-                  <Text className='form-field__label'>提交身份</Text>
+                  <Text className='form-field__label'>{t('claims.roleLabel')}</Text>
                   <View className='role-selector'>
                     {eligibleRoles.map((role) => {
                       const rc = ROLE_CONFIG[role];
@@ -443,7 +450,7 @@ export default function ClaimsPage() {
               )}
               {eligibleRoles.length === 1 && (
                 <View className='form-field'>
-                  <Text className='form-field__label'>提交身份</Text>
+                  <Text className='form-field__label'>{t('claims.roleLabel')}</Text>
                   <View className='role-selector'>
                     <View className='role-selector__item role-selector__item--active'>
                       <Text className={`role-badge ${ROLE_CONFIG[eligibleRoles[0]]?.className || ''}`}>
@@ -454,32 +461,33 @@ export default function ClaimsPage() {
                 </View>
               )}
               <View className='form-field'>
-                <Text className='form-field__label'>申请标题（1~100 字符）</Text>
+                <Text className='form-field__label'>{t('claims.titleLabel')}</Text>
                 <Input
                   className='form-field__input'
                   value={formTitle}
                   onInput={(e) => setFormTitle(e.detail.value)}
-                  placeholder='请输入申请标题'
+                  placeholder={t('claims.titlePlaceholder')}
                   maxlength={100}
                 />
               </View>
               <View className='form-field'>
-                <Text className='form-field__label'>申请描述（1~1000 字符）</Text>
-                <Textarea
+                <Text className='form-field__label'>{t('claims.descriptionLabel')}</Text>
+                <textarea
                   className='form-field__textarea'
                   value={formDesc}
-                  onInput={(e) => setFormDesc(e.detail.value)}
-                  placeholder='请描述您的社区贡献...'
-                  maxlength={1000}
+                  onChange={(e) => setFormDesc((e.target as HTMLTextAreaElement).value)}
+                  placeholder={t('claims.descriptionPlaceholder')}
+                  maxLength={1000}
+                  rows={4}
                 />
               </View>
               <View className='form-field'>
-                <Text className='form-field__label'>活动图片（最多 5 张，可选）</Text>
+                <Text className='form-field__label'>{t('claims.imagesLabel')}</Text>
                 <View className='image-upload-grid'>
                   {formImages.map((img, i) => (
                     <View key={i} className='image-upload-item'>
                       {img.uploading ? (
-                        <View className='image-upload-item__loading'><Text>上传中...</Text></View>
+                        <View className='image-upload-item__loading'><Text>{t('claims.uploading')}</Text></View>
                       ) : (
                         <>
                           <Image src={img.url} className='image-upload-item__img' mode='aspectFill' />
@@ -491,30 +499,30 @@ export default function ClaimsPage() {
                   {formImages.length < 5 && (
                     <View className='image-upload-add' onClick={handleChooseImage}>
                       <Text className='image-upload-add__icon'>+</Text>
-                      <Text className='image-upload-add__text'>上传图片</Text>
+                      <Text className='image-upload-add__text'>{t('claims.uploadImage')}</Text>
                     </View>
                   )}
                 </View>
               </View>
               <View className='form-field'>
-                <Text className='form-field__label'>活动链接（可选）</Text>
+                <Text className='form-field__label'>{t('claims.activityUrlLabel')}</Text>
                 <Input
                   className='form-field__input'
                   value={formActivityUrl}
                   onInput={(e) => setFormActivityUrl(e.detail.value)}
-                  placeholder='https://...'
+                  placeholder={t('claims.activityUrlPlaceholder')}
                 />
               </View>
             </View>
             <View className='form-modal__actions'>
               <View className='form-modal__cancel' onClick={closeForm}>
-                <Text>取消</Text>
+                <Text>{t('common.cancel')}</Text>
               </View>
               <View
                 className={`form-modal__submit ${submitting ? 'form-modal__submit--loading' : ''}`}
                 onClick={handleSubmitClaim}
               >
-                <Text>{submitting ? '提交中...' : '提交申请'}</Text>
+                <Text>{submitting ? t('claims.submitting') : t('claims.submitClaim')}</Text>
               </View>
             </View>
           </View>

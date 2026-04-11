@@ -460,6 +460,9 @@ export async function getOrders(
     totalPoints: (item.totalPoints as number) ?? 0,
     shippingStatus: item.shippingStatus as OrderListItem['shippingStatus'],
     createdAt: item.createdAt as string,
+    productNames: Array.isArray(item.items)
+      ? item.items.map((i: any) => i.productName as string).filter(Boolean)
+      : [],
   }));
 
   return {

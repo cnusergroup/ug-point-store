@@ -364,5 +364,5 @@ async function handleValidateInvite(event: APIGatewayProxyEvent): Promise<APIGat
     return jsonResponse(status, result.error);
   }
 
-  return jsonResponse(200, { valid: true, role: result.role });
+  return jsonResponse(200, { valid: true, roles: result.roles });
 }

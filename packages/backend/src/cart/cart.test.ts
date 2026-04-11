@@ -49,7 +49,7 @@ describe('addToCart', () => {
   it('should reject when product does not exist', async () => {
     client.send.mockResolvedValueOnce({ Item: undefined });
 
-    const result = await addToCart('user-001', 'prod-001', client, CART_TABLE, PRODUCTS_TABLE);
+    const result = await addToCart('user-001', 'prod-001', 1, client, CART_TABLE, PRODUCTS_TABLE);
 
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe(ErrorCodes.PRODUCT_UNAVAILABLE);
@@ -58,7 +58,7 @@ describe('addToCart', () => {
   it('should reject code_exclusive products', async () => {
     client.send.mockResolvedValueOnce({ Item: makeProduct({ type: 'code_exclusive' }) });
 
-    const result = await addToCart('user-001', 'prod-001', client, CART_TABLE, PRODUCTS_TABLE);
+    const result = await addToCart('user-001', 'prod-001', 1, client, CART_TABLE, PRODUCTS_TABLE);
 
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe(ErrorCodes.CODE_PRODUCT_NOT_CARTABLE);
@@ -67,7 +67,7 @@ describe('addToCart', () => {
   it('should reject inactive products', async () => {
     client.send.mockResolvedValueOnce({ Item: makeProduct({ status: 'inactive' }) });
 
-    const result = await addToCart('user-001', 'prod-001', client, CART_TABLE, PRODUCTS_TABLE);
+    const result = await addToCart('user-001', 'prod-001', 1, client, CART_TABLE, PRODUCTS_TABLE);
 
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe(ErrorCodes.PRODUCT_UNAVAILABLE);
@@ -76,7 +76,7 @@ describe('addToCart', () => {
   it('should reject zero-stock products', async () => {
     client.send.mockResolvedValueOnce({ Item: makeProduct({ stock: 0 }) });
 
-    const result = await addToCart('user-001', 'prod-001', client, CART_TABLE, PRODUCTS_TABLE);
+    const result = await addToCart('user-001', 'prod-001', 1, client, CART_TABLE, PRODUCTS_TABLE);
 
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe(ErrorCodes.PRODUCT_UNAVAILABLE);
@@ -87,7 +87,7 @@ describe('addToCart', () => {
     client.send.mockResolvedValueOnce({ Item: undefined }); // empty cart
     client.send.mockResolvedValueOnce({}); // PutCommand
 
-    const result = await addToCart('user-001', 'prod-001', client, CART_TABLE, PRODUCTS_TABLE);
+    const result = await addToCart('user-001', 'prod-001', 1, client, CART_TABLE, PRODUCTS_TABLE);
 
     expect(result.success).toBe(true);
     const putCmd = client.send.mock.calls[2][0];
@@ -103,7 +103,7 @@ describe('addToCart', () => {
     client.send.mockResolvedValueOnce({ Item: makeCartRecord(existingItems) });
     client.send.mockResolvedValueOnce({});
 
-    const result = await addToCart('user-001', 'prod-001', client, CART_TABLE, PRODUCTS_TABLE);
+    const result = await addToCart('user-001', 'prod-001', 1, client, CART_TABLE, PRODUCTS_TABLE);
 
     expect(result.success).toBe(true);
     const putCmd = client.send.mock.calls[2][0];
@@ -121,7 +121,7 @@ describe('addToCart', () => {
     client.send.mockResolvedValueOnce({ Item: makeProduct({ productId: 'prod-new' }) });
     client.send.mockResolvedValueOnce({ Item: makeCartRecord(existingItems) });
 
-    const result = await addToCart('user-001', 'prod-new', client, CART_TABLE, PRODUCTS_TABLE);
+    const result = await addToCart('user-001', 'prod-new', 1, client, CART_TABLE, PRODUCTS_TABLE);
 
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe(ErrorCodes.CART_FULL);
@@ -137,7 +137,7 @@ describe('addToCart', () => {
     client.send.mockResolvedValueOnce({ Item: makeCartRecord(existingItems) });
     client.send.mockResolvedValueOnce({});
 
-    const result = await addToCart('user-001', 'prod-5', client, CART_TABLE, PRODUCTS_TABLE);
+    const result = await addToCart('user-001', 'prod-5', 1, client, CART_TABLE, PRODUCTS_TABLE);
 
     expect(result.success).toBe(true);
     const putCmd = client.send.mock.calls[2][0];
@@ -150,7 +150,7 @@ describe('addToCart', () => {
     const product = makeProduct({ sizeOptions: [{ name: 'M', stock: 5 }, { name: 'L', stock: 3 }] });
     client.send.mockResolvedValueOnce({ Item: product });
 
-    const result = await addToCart('user-001', 'prod-001', client, CART_TABLE, PRODUCTS_TABLE);
+    const result = await addToCart('user-001', 'prod-001', 1, client, CART_TABLE, PRODUCTS_TABLE);
 
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe(ErrorCodes.SIZE_REQUIRED);
@@ -160,7 +160,7 @@ describe('addToCart', () => {
     const product = makeProduct({ sizeOptions: [{ name: 'M', stock: 5 }, { name: 'L', stock: 3 }] });
     client.send.mockResolvedValueOnce({ Item: product });
 
-    const result = await addToCart('user-001', 'prod-001', client, CART_TABLE, PRODUCTS_TABLE, 'XXL');
+    const result = await addToCart('user-001', 'prod-001', 1, client, CART_TABLE, PRODUCTS_TABLE, 'XXL');
 
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe(ErrorCodes.SIZE_NOT_FOUND);
@@ -170,7 +170,7 @@ describe('addToCart', () => {
     const product = makeProduct({ sizeOptions: [{ name: 'M', stock: 0 }, { name: 'L', stock: 3 }] });
     client.send.mockResolvedValueOnce({ Item: product });
 
-    const result = await addToCart('user-001', 'prod-001', client, CART_TABLE, PRODUCTS_TABLE, 'M');
+    const result = await addToCart('user-001', 'prod-001', 1, client, CART_TABLE, PRODUCTS_TABLE, 'M');
 
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe(ErrorCodes.SIZE_OUT_OF_STOCK);
@@ -182,10 +182,10 @@ describe('addToCart', () => {
     client.send.mockResolvedValueOnce({ Item: undefined }); // empty cart
     client.send.mockResolvedValueOnce({}); // PutCommand
 
-    const result = await addToCart('user-001', 'prod-001', client, CART_TABLE, PRODUCTS_TABLE, 'M', ORDERS_TABLE);
+    const result = await addToCart('user-001', 'prod-001', 1, client, CART_TABLE, PRODUCTS_TABLE, 'M', ORDERS_TABLE);
 
     expect(result.success).toBe(true);
-    const putCmd = client.send.mock.calls[2][0]; // product, cart, put (getUserProductPurchaseCount is mocked at module level)
+    const putCmd = client.send.mock.calls[2][0];
     const items = putCmd.input.Item.items;
     expect(items).toHaveLength(1);
     expect(items[0].productId).toBe('prod-001');
@@ -200,7 +200,7 @@ describe('addToCart', () => {
     client.send.mockResolvedValueOnce({ Item: makeCartRecord(existingItems) }); // cart with M
     client.send.mockResolvedValueOnce({}); // PutCommand
 
-    const result = await addToCart('user-001', 'prod-001', client, CART_TABLE, PRODUCTS_TABLE, 'L', ORDERS_TABLE);
+    const result = await addToCart('user-001', 'prod-001', 1, client, CART_TABLE, PRODUCTS_TABLE, 'L', ORDERS_TABLE);
 
     expect(result.success).toBe(true);
     const putCmd = client.send.mock.calls[2][0];
@@ -219,7 +219,7 @@ describe('addToCart', () => {
     client.send.mockResolvedValueOnce({ Item: makeCartRecord(existingItems) });
     client.send.mockResolvedValueOnce({}); // PutCommand
 
-    const result = await addToCart('user-001', 'prod-001', client, CART_TABLE, PRODUCTS_TABLE, 'M', ORDERS_TABLE);
+    const result = await addToCart('user-001', 'prod-001', 1, client, CART_TABLE, PRODUCTS_TABLE, 'M', ORDERS_TABLE);
 
     expect(result.success).toBe(true);
     const putCmd = client.send.mock.calls[2][0];
@@ -238,7 +238,7 @@ describe('addToCart', () => {
     vi.mocked(getUserProductPurchaseCount).mockResolvedValueOnce(2); // historical: 2
 
     // historical(2) + cart(1) + 1 = 4 > 3
-    const result = await addToCart('user-001', 'prod-001', client, CART_TABLE, PRODUCTS_TABLE, undefined, ORDERS_TABLE);
+    const result = await addToCart('user-001', 'prod-001', 1, client, CART_TABLE, PRODUCTS_TABLE, undefined, ORDERS_TABLE);
 
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe(ErrorCodes.PURCHASE_LIMIT_EXCEEDED);
@@ -252,7 +252,7 @@ describe('addToCart', () => {
     client.send.mockResolvedValueOnce({}); // PutCommand
 
     // historical(2) + cart(0) + 1 = 3 <= 5
-    const result = await addToCart('user-001', 'prod-001', client, CART_TABLE, PRODUCTS_TABLE, undefined, ORDERS_TABLE);
+    const result = await addToCart('user-001', 'prod-001', 1, client, CART_TABLE, PRODUCTS_TABLE, undefined, ORDERS_TABLE);
 
     expect(result.success).toBe(true);
   });
@@ -272,7 +272,7 @@ describe('addToCart', () => {
     vi.mocked(getUserProductPurchaseCount).mockResolvedValueOnce(0); // historical: 0
 
     // historical(0) + cart(1+1=2) + 1 = 3 <= 3, should pass
-    const result = await addToCart('user-001', 'prod-001', client, CART_TABLE, PRODUCTS_TABLE, 'M', ORDERS_TABLE);
+    const result = await addToCart('user-001', 'prod-001', 1, client, CART_TABLE, PRODUCTS_TABLE, 'M', ORDERS_TABLE);
 
     expect(result.success).toBe(true);
   });
@@ -284,9 +284,131 @@ describe('addToCart', () => {
     client.send.mockResolvedValueOnce({}); // PutCommand
 
     // No ordersTable, so purchase limit check is skipped
-    const result = await addToCart('user-001', 'prod-001', client, CART_TABLE, PRODUCTS_TABLE);
+    const result = await addToCart('user-001', 'prod-001', 1, client, CART_TABLE, PRODUCTS_TABLE);
 
     expect(result.success).toBe(true);
+  });
+
+  // --- Quantity parameter tests ---
+
+  it('should add new product with quantity=3 to empty cart', async () => {
+    client.send.mockResolvedValueOnce({ Item: makeProduct() }); // product lookup
+    client.send.mockResolvedValueOnce({ Item: undefined }); // empty cart
+    client.send.mockResolvedValueOnce({}); // PutCommand
+
+    const result = await addToCart('user-001', 'prod-001', 3, client, CART_TABLE, PRODUCTS_TABLE);
+
+    expect(result.success).toBe(true);
+    const putCmd = client.send.mock.calls[2][0];
+    const items = putCmd.input.Item.items;
+    expect(items).toHaveLength(1);
+    expect(items[0].productId).toBe('prod-001');
+    expect(items[0].quantity).toBe(3);
+  });
+
+  it('should accumulate quantity correctly when adding quantity=2 to existing item', async () => {
+    const existingItems = [{ productId: 'prod-001', quantity: 3, addedAt: '2024-01-01T00:00:00.000Z' }];
+    client.send.mockResolvedValueOnce({ Item: makeProduct() }); // stock=10
+    client.send.mockResolvedValueOnce({ Item: makeCartRecord(existingItems) });
+    client.send.mockResolvedValueOnce({}); // PutCommand
+
+    const result = await addToCart('user-001', 'prod-001', 2, client, CART_TABLE, PRODUCTS_TABLE);
+
+    expect(result.success).toBe(true);
+    const putCmd = client.send.mock.calls[2][0];
+    const items = putCmd.input.Item.items;
+    expect(items).toHaveLength(1);
+    expect(items[0].quantity).toBe(5); // 3 + 2
+  });
+
+  it('should succeed when quantity exactly equals remaining stock', async () => {
+    // stock=10, cart has 7, adding 3 → 7+3=10 <= 10
+    const existingItems = [{ productId: 'prod-001', quantity: 7, addedAt: '2024-01-01T00:00:00.000Z' }];
+    client.send.mockResolvedValueOnce({ Item: makeProduct({ stock: 10 }) });
+    client.send.mockResolvedValueOnce({ Item: makeCartRecord(existingItems) });
+    client.send.mockResolvedValueOnce({}); // PutCommand
+
+    const result = await addToCart('user-001', 'prod-001', 3, client, CART_TABLE, PRODUCTS_TABLE);
+
+    expect(result.success).toBe(true);
+    const putCmd = client.send.mock.calls[2][0];
+    expect(putCmd.input.Item.items[0].quantity).toBe(10);
+  });
+
+  it('should return QUANTITY_EXCEEDS_STOCK when quantity exceeds remaining stock by 1', async () => {
+    // stock=10, cart has 7, adding 4 → 7+4=11 > 10
+    const existingItems = [{ productId: 'prod-001', quantity: 7, addedAt: '2024-01-01T00:00:00.000Z' }];
+    client.send.mockResolvedValueOnce({ Item: makeProduct({ stock: 10 }) });
+    client.send.mockResolvedValueOnce({ Item: makeCartRecord(existingItems) });
+
+    const result = await addToCart('user-001', 'prod-001', 4, client, CART_TABLE, PRODUCTS_TABLE);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe(ErrorCodes.QUANTITY_EXCEEDS_STOCK);
+  });
+
+  it('should return INVALID_QUANTITY when quantity is 0', async () => {
+    client.send.mockResolvedValueOnce({ Item: makeProduct() });
+
+    const result = await addToCart('user-001', 'prod-001', 0, client, CART_TABLE, PRODUCTS_TABLE);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe(ErrorCodes.INVALID_QUANTITY);
+  });
+
+  it('should return INVALID_QUANTITY when quantity is negative', async () => {
+    client.send.mockResolvedValueOnce({ Item: makeProduct() });
+
+    const result = await addToCart('user-001', 'prod-001', -2, client, CART_TABLE, PRODUCTS_TABLE);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe(ErrorCodes.INVALID_QUANTITY);
+  });
+
+  it('should return INVALID_QUANTITY when quantity is a decimal', async () => {
+    client.send.mockResolvedValueOnce({ Item: makeProduct() });
+
+    const result = await addToCart('user-001', 'prod-001', 1.5, client, CART_TABLE, PRODUCTS_TABLE);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe(ErrorCodes.INVALID_QUANTITY);
+  });
+
+  it('should validate stock independently per size for sized products', async () => {
+    // M has stock=3, L has stock=5
+    const product = makeProduct({ sizeOptions: [{ name: 'M', stock: 3 }, { name: 'L', stock: 5 }] });
+    const existingItems = [
+      { productId: 'prod-001', quantity: 2, addedAt: '2024-01-01T00:00:00.000Z', selectedSize: 'M' },
+    ];
+    client.send.mockResolvedValueOnce({ Item: product });
+    client.send.mockResolvedValueOnce({ Item: makeCartRecord(existingItems) });
+
+    // M: existing=2, adding 2 → 2+2=4 > 3 (M stock), should fail
+    const result = await addToCart('user-001', 'prod-001', 2, client, CART_TABLE, PRODUCTS_TABLE, 'M', ORDERS_TABLE);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe(ErrorCodes.QUANTITY_EXCEEDS_STOCK);
+  });
+
+  it('should allow adding to different size even when one size is near stock limit', async () => {
+    // M has stock=3, L has stock=5
+    const product = makeProduct({ sizeOptions: [{ name: 'M', stock: 3 }, { name: 'L', stock: 5 }] });
+    const existingItems = [
+      { productId: 'prod-001', quantity: 3, addedAt: '2024-01-01T00:00:00.000Z', selectedSize: 'M' },
+    ];
+    client.send.mockResolvedValueOnce({ Item: product });
+    client.send.mockResolvedValueOnce({ Item: makeCartRecord(existingItems) });
+    client.send.mockResolvedValueOnce({}); // PutCommand
+
+    // L: existing=0, adding 4 → 0+4=4 <= 5 (L stock), should succeed
+    const result = await addToCart('user-001', 'prod-001', 4, client, CART_TABLE, PRODUCTS_TABLE, 'L', ORDERS_TABLE);
+
+    expect(result.success).toBe(true);
+    const putCmd = client.send.mock.calls[2][0];
+    const items = putCmd.input.Item.items;
+    expect(items).toHaveLength(2);
+    expect(items[1].selectedSize).toBe('L');
+    expect(items[1].quantity).toBe(4);
   });
 });
 
@@ -396,6 +518,46 @@ describe('updateCartItem', () => {
     const putCmd = client.send.mock.calls[1][0];
     expect(putCmd.input.Item.items).toHaveLength(1);
     expect(putCmd.input.Item.items[0].productId).toBe('prod-002');
+  });
+
+  it('should succeed when productsTable is provided and quantity does not exceed stock', async () => {
+    const items = [{ productId: 'prod-001', quantity: 2, addedAt: '2024-01-01T00:00:00.000Z' }];
+    client.send.mockResolvedValueOnce({ Item: makeCartRecord(items) }); // 1st: GetCommand cart
+    client.send.mockResolvedValueOnce({ Item: makeProduct({ stock: 10 }) }); // 2nd: GetCommand product
+    client.send.mockResolvedValueOnce({}); // 3rd: PutCommand
+
+    const result = await updateCartItem('user-001', 'prod-001', 5, client, CART_TABLE, PRODUCTS_TABLE);
+
+    expect(result.success).toBe(true);
+    const putCmd = client.send.mock.calls[2][0];
+    expect(putCmd.input.Item.items[0].quantity).toBe(5);
+  });
+
+  it('should return QUANTITY_EXCEEDS_STOCK when productsTable is provided and quantity exceeds stock', async () => {
+    const items = [{ productId: 'prod-001', quantity: 2, addedAt: '2024-01-01T00:00:00.000Z' }];
+    client.send.mockResolvedValueOnce({ Item: makeCartRecord(items) }); // 1st: GetCommand cart
+    client.send.mockResolvedValueOnce({ Item: makeProduct({ stock: 5 }) }); // 2nd: GetCommand product
+
+    const result = await updateCartItem('user-001', 'prod-001', 8, client, CART_TABLE, PRODUCTS_TABLE);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe(ErrorCodes.QUANTITY_EXCEEDS_STOCK);
+    // Should NOT have written to cart (only 2 send calls, no PutCommand)
+    expect(client.send).toHaveBeenCalledTimes(2);
+  });
+
+  it('should skip stock validation when productsTable is not provided (backward compatible)', async () => {
+    const items = [{ productId: 'prod-001', quantity: 2, addedAt: '2024-01-01T00:00:00.000Z' }];
+    client.send.mockResolvedValueOnce({ Item: makeCartRecord(items) }); // 1st: GetCommand cart
+    client.send.mockResolvedValueOnce({}); // 2nd: PutCommand (no product lookup)
+
+    const result = await updateCartItem('user-001', 'prod-001', 99, client, CART_TABLE);
+
+    expect(result.success).toBe(true);
+    // Only 2 calls: GetCommand cart + PutCommand (no product lookup)
+    expect(client.send).toHaveBeenCalledTimes(2);
+    const putCmd = client.send.mock.calls[1][0];
+    expect(putCmd.input.Item.items[0].quantity).toBe(99);
   });
 });
 

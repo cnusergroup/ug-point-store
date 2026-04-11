@@ -86,6 +86,44 @@ export async function getUploadUrl(
 }
 
 /**
+ * Generate a presigned PUT URL for uploading a product image without a productId.
+ * Used during product creation before the product exists.
+ * S3 key format: products/temp/{ulid}.{ext}
+ */
+export async function getTempUploadUrl(
+  input: { fileName: string; contentType: string },
+  s3Client: S3Client,
+  bucketName: string,
+): Promise<GetUploadUrlResult> {
+  const ext = extractExtension(input.fileName);
+  if (!ext || !ALLOWED_EXTENSIONS.includes(ext)) {
+    return {
+      success: false,
+      error: { code: ErrorCodes.INVALID_FILE_TYPE, message: ErrorMessages[ErrorCodes.INVALID_FILE_TYPE] },
+    };
+  }
+
+  const key = `products/temp/${ulid()}.${ext}`;
+
+  const command = new PutObjectCommand({
+    Bucket: bucketName,
+    Key: key,
+    ContentType: input.contentType,
+  });
+
+  const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: PRESIGNED_URL_EXPIRES_IN });
+
+  return {
+    success: true,
+    data: {
+      uploadUrl,
+      key,
+      url: `/${key}`,
+    },
+  };
+}
+
+/**
  * Delete an image from S3 by its key.
  */
 export async function deleteImage(

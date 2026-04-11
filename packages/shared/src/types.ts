@@ -158,7 +158,7 @@ export interface ErrorResponse {
 // ============================================================
 
 /** 物流状态 */
-export type ShippingStatus = 'pending' | 'shipped' | 'in_transit' | 'delivered';
+export type ShippingStatus = 'pending' | 'shipped';
 
 /** 物流事件 */
 export interface ShippingEvent {
@@ -274,14 +274,13 @@ export interface OrderListItem {
   totalPoints: number;
   shippingStatus: ShippingStatus;
   createdAt: string;
+  productNames: string[];
 }
 
 /** 订单统计 */
 export interface OrderStats {
   pending: number;
   shipped: number;
-  inTransit: number;
-  delivered: number;
   total: number;
 }
 
@@ -322,6 +321,7 @@ export type InviteStatus = 'pending' | 'used' | 'expired';
 export interface InviteRecord {
   token: string;
   role: UserRole;
+  roles?: UserRole[];    // 新增，多角色数组（向后兼容旧数据时可选）
   status: InviteStatus;
   createdAt: string;
   expiresAt: string;
@@ -329,12 +329,19 @@ export interface InviteRecord {
   usedBy?: string; // userId
 }
 
+/** 从 InviteRecord 安全获取 roles 数组（兼容旧数据） */
+export function getInviteRoles(record: { role?: UserRole; roles?: UserRole[] }): UserRole[] {
+  if (record.roles && record.roles.length > 0) return record.roles;
+  if (record.role) return [record.role];
+  return [];
+}
+
 // ============================================================
 // 辅助函数
 // ============================================================
 
 /** 物流状态顺序 */
-export const SHIPPING_STATUS_ORDER: ShippingStatus[] = ['pending', 'shipped', 'in_transit', 'delivered'];
+export const SHIPPING_STATUS_ORDER: ShippingStatus[] = ['pending', 'shipped'];
 
 /** 校验物流状态流转是否合法（仅允许前进到直接后继状态） */
 export function validateStatusTransition(
@@ -357,4 +364,102 @@ export function calculateCartTotal(items: { pointsCost: number; quantity: number
 /** 手机号遮蔽（前3位 + **** + 后4位） */
 export function maskPhone(phone: string): string {
   return phone.slice(0, 3) + '****' + phone.slice(7);
+}
+
+// ============================================================
+// 内容中心（Content Hub）相关类型定义
+// ============================================================
+
+/** 内容状态 */
+export type ContentStatus = 'pending' | 'approved' | 'rejected';
+
+/** 内容记录 */
+export interface ContentItem {
+  contentId: string;
+  title: string;
+  description: string;
+  categoryId: string;
+  categoryName: string;
+  uploaderId: string;
+  uploaderNickname: string;
+  uploaderRole: string;
+  fileKey: string;
+  fileName: string;
+  fileSize: number;
+  videoUrl?: string;
+  status: ContentStatus;
+  rejectReason?: string;
+  reviewerId?: string;
+  reviewedAt?: string;
+  likeCount: number;
+  commentCount: number;
+  reservationCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 内容列表摘要 */
+export interface ContentItemSummary {
+  contentId: string;
+  title: string;
+  categoryName: string;
+  uploaderNickname: string;
+  likeCount: number;
+  commentCount: number;
+  reservationCount: number;
+  createdAt: string;
+}
+
+/** 内容分类 */
+export interface ContentCategory {
+  categoryId: string;
+  name: string;
+  createdAt: string;
+}
+
+/** 内容评论 */
+export interface ContentComment {
+  commentId: string;
+  contentId: string;
+  userId: string;
+  userNickname: string;
+  userRole: string;
+  content: string;
+  createdAt: string;
+}
+
+/** 内容预约记录 */
+export interface ContentReservation {
+  pk: string;
+  userId: string;
+  contentId: string;
+  createdAt: string;
+}
+
+// ============================================================
+// 内容中心校验辅助函数
+// ============================================================
+
+/** 允许的文档 MIME 类型 */
+const ALLOWED_CONTENT_MIME_TYPES = [
+  'application/pdf',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+] as const;
+
+/** 校验文档文件 MIME 类型是否合法 */
+export function isValidContentFileType(mimeType: string): boolean {
+  return (ALLOWED_CONTENT_MIME_TYPES as readonly string[]).includes(mimeType);
+}
+
+/** 校验视频 URL 格式是否合法 */
+export function isValidVideoUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
 }

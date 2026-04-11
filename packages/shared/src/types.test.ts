@@ -10,8 +10,9 @@ import type {
   RedemptionRecord,
   CodeInfo,
   ErrorResponse,
+  InviteRecord,
 } from './types';
-import { ADMIN_ROLES, REGULAR_ROLES, ALL_ROLES, hasAdminAccess, isSuperAdmin, isAdminRole } from './types';
+import { ADMIN_ROLES, REGULAR_ROLES, ALL_ROLES, hasAdminAccess, isSuperAdmin, isAdminRole, getInviteRoles, isValidContentFileType, isValidVideoUrl } from './types';
 import { ErrorCodes, ErrorHttpStatus, ErrorMessages } from './errors';
 
 describe('shared types', () => {
@@ -214,9 +215,9 @@ describe('isSuperAdmin', () => {
 });
 
 describe('error codes', () => {
-  it('defines all 61 error codes', () => {
+  it('defines all error codes', () => {
     const codes = Object.keys(ErrorCodes);
-    expect(codes).toHaveLength(61);
+    expect(codes).toHaveLength(76);
   });
 
   it('each error code has a corresponding HTTP status', () => {
@@ -242,6 +243,7 @@ describe('error codes', () => {
     expect(ErrorHttpStatus[ErrorCodes.CODE_ONLY_PRODUCT]).toBe(400);
     expect(ErrorHttpStatus[ErrorCodes.INSUFFICIENT_POINTS]).toBe(400);
     expect(ErrorHttpStatus[ErrorCodes.OUT_OF_STOCK]).toBe(400);
+    expect(ErrorHttpStatus[ErrorCodes.INVALID_ROLES]).toBe(400);
   });
 
   it('401 errors are mapped correctly', () => {
@@ -273,6 +275,184 @@ describe('Property 1: 管理员判断逻辑正确性', () => {
           const result = hasAdminAccess(roles);
           const expected = roles.some(r => r === 'Admin' || r === 'SuperAdmin');
           expect(result).toBe(expected);
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+});
+
+describe('InviteRecord with roles field', () => {
+  it('accepts InviteRecord with roles field', () => {
+    const record: InviteRecord = {
+      token: 'abc123',
+      role: 'Speaker',
+      roles: ['Speaker', 'Volunteer'],
+      status: 'pending',
+      createdAt: '2024-01-01T00:00:00Z',
+      expiresAt: '2025-01-01T00:00:00Z',
+    };
+    expect(record.roles).toEqual(['Speaker', 'Volunteer']);
+    expect(record.role).toBe('Speaker');
+  });
+
+  it('accepts InviteRecord without roles field (backward compat)', () => {
+    const record: InviteRecord = {
+      token: 'abc123',
+      role: 'Volunteer',
+      status: 'pending',
+      createdAt: '2024-01-01T00:00:00Z',
+      expiresAt: '2025-01-01T00:00:00Z',
+    };
+    expect(record.roles).toBeUndefined();
+    expect(record.role).toBe('Volunteer');
+  });
+});
+
+describe('getInviteRoles', () => {
+  it('returns roles when roles array is present and non-empty', () => {
+    expect(getInviteRoles({ roles: ['Speaker', 'Volunteer'] })).toEqual(['Speaker', 'Volunteer']);
+  });
+
+  it('falls back to [role] when roles is absent', () => {
+    expect(getInviteRoles({ role: 'Speaker' })).toEqual(['Speaker']);
+  });
+
+  it('falls back to [role] when roles is empty array', () => {
+    expect(getInviteRoles({ role: 'Volunteer', roles: [] })).toEqual(['Volunteer']);
+  });
+
+  it('prefers roles over role when both present', () => {
+    expect(getInviteRoles({ role: 'Speaker', roles: ['Volunteer', 'UserGroupLeader'] }))
+      .toEqual(['Volunteer', 'UserGroupLeader']);
+  });
+
+  it('returns empty array when neither role nor roles present', () => {
+    expect(getInviteRoles({})).toEqual([]);
+  });
+});
+
+// Feature: invite-multi-role, Property 4: 向后兼容读取（Backward-compatible role extraction）
+// **Validates: Requirements 3.2**
+describe('Feature: invite-multi-role, Property 4: 向后兼容读取（Backward-compatible role extraction）', () => {
+  it('getInviteRoles({ role: r }) returns [r] for any single UserRole', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...REGULAR_ROLES),
+        (r) => {
+          const result = getInviteRoles({ role: r });
+          expect(result).toEqual([r]);
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  it('getInviteRoles({ roles: rs }) returns rs for any non-empty UserRole[]', () => {
+    fc.assert(
+      fc.property(
+        fc.subarray(REGULAR_ROLES, { minLength: 1 }),
+        (rs) => {
+          const result = getInviteRoles({ roles: rs });
+          expect(result).toEqual(rs);
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  it('roles takes priority over role when both are present', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...REGULAR_ROLES),
+        fc.subarray(REGULAR_ROLES, { minLength: 1 }),
+        (r, rs) => {
+          const result = getInviteRoles({ role: r, roles: rs });
+          expect(result).toEqual(rs);
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+});
+
+// Feature: content-hub, Property 1: 文档格式校验正确性
+// **Validates: Requirements 1.4**
+describe('Feature: content-hub, Property 1: 文档格式校验正确性', () => {
+  const ALLOWED_MIME_TYPES = [
+    'application/pdf',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  ];
+
+  it('不属于 5 种允许类型的 MIME 类型应被拒绝', () => {
+    fc.assert(
+      fc.property(
+        fc.string().filter(s => !ALLOWED_MIME_TYPES.includes(s)),
+        (mimeType) => {
+          expect(isValidContentFileType(mimeType)).toBe(false);
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  it('属于 5 种允许类型的 MIME 类型应通过校验', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...ALLOWED_MIME_TYPES),
+        (mimeType) => {
+          expect(isValidContentFileType(mimeType)).toBe(true);
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+});
+
+// Feature: content-hub, Property 2: 视频 URL 格式校验正确性
+// **Validates: Requirements 1.6**
+describe('Feature: content-hub, Property 2: 视频 URL 格式校验正确性', () => {
+  it('非法 URL 字符串应被拒绝', () => {
+    fc.assert(
+      fc.property(
+        fc.string().filter(s => {
+          try { new URL(s); return false; } catch { return true; }
+        }),
+        (invalidUrl) => {
+          expect(isValidVideoUrl(invalidUrl)).toBe(false);
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  it('合法的 http/https URL 应通过校验', () => {
+    fc.assert(
+      fc.property(
+        fc.webUrl(),
+        (validUrl) => {
+          expect(isValidVideoUrl(validUrl)).toBe(true);
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  it('非 http/https 协议的合法 URL 应被拒绝', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom('ftp', 'file', 'data', 'javascript', 'mailto'),
+        fc.webUrl().map(u => {
+          const parsed = new URL(u);
+          return u; // just need the host part
+        }),
+        (protocol, webUrl) => {
+          const parsed = new URL(webUrl);
+          const nonHttpUrl = `${protocol}://${parsed.host}${parsed.pathname}`;
+          expect(isValidVideoUrl(nonHttpUrl)).toBe(false);
         }
       ),
       { numRuns: 100 }

@@ -4,6 +4,7 @@ import Taro from '@tarojs/taro';
 import { useAppStore } from '../../store';
 import { request, RequestError } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
+import { useTranslation } from '../../i18n';
 import './users.scss';
 
 /** User list item returned by the API */
@@ -21,7 +22,7 @@ interface UserListItem {
 type RoleFilter = 'all' | 'UserGroupLeader' | 'CommunityBuilder' | 'Speaker' | 'Volunteer' | 'Admin';
 
 const ROLE_FILTER_TABS: { key: RoleFilter; label: string }[] = [
-  { key: 'all', label: '全部' },
+  { key: 'all', label: 'all' },
   { key: 'UserGroupLeader', label: 'UserGroupLeader' },
   { key: 'CommunityBuilder', label: 'CommunityBuilder' },
   { key: 'Speaker', label: 'Speaker' },
@@ -39,11 +40,6 @@ const ROLE_CONFIG: Record<string, { label: string; className: string }> = {
   SuperAdmin: { label: 'SuperAdmin', className: 'role-badge--superadmin' },
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  active: '正常',
-  disabled: '已停用',
-};
-
 /** Regular roles any Admin can assign */
 const REGULAR_ROLES = ['UserGroupLeader', 'CommunityBuilder', 'Speaker', 'Volunteer'];
 
@@ -59,6 +55,7 @@ const ROLE_LABELS: Record<string, string> = {
 export default function AdminUsersPage() {
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
   const adminRoles = useAppStore((s) => s.user?.roles || []);
+  const { t } = useTranslation();
 
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
@@ -116,12 +113,12 @@ export default function AdminUsersPage() {
         method: 'PATCH',
         data: { status },
       });
-      Taro.showToast({ title: status === 'disabled' ? '已停用' : '已启用', icon: 'none' });
+      Taro.showToast({ title: status === 'disabled' ? t('admin.users.disabled') : t('admin.users.enabled'), icon: 'none' });
       setConfirmAction(null);
       fetchUsers(roleFilter);
     } catch (err) {
       Taro.showToast({
-        title: err instanceof RequestError ? err.message : '操作失败',
+        title: err instanceof RequestError ? err.message : t('common.operationFailed'),
         icon: 'none',
       });
     }
@@ -133,12 +130,12 @@ export default function AdminUsersPage() {
         url: `/api/admin/users/${user.userId}`,
         method: 'DELETE',
       });
-      Taro.showToast({ title: '已删除', icon: 'none' });
+      Taro.showToast({ title: t('admin.users.deleted'), icon: 'none' });
       setConfirmAction(null);
       fetchUsers(roleFilter);
     } catch (err) {
       Taro.showToast({
-        title: err instanceof RequestError ? err.message : '删除失败',
+        title: err instanceof RequestError ? err.message : t('common.deleteFailed'),
         icon: 'none',
       });
     }
@@ -170,11 +167,11 @@ export default function AdminUsersPage() {
         method: 'PUT',
         data: { roles: selectedRoles },
       });
-      Taro.showToast({ title: '角色已更新', icon: 'none' });
+      Taro.showToast({ title: t('admin.users.rolesUpdated'), icon: 'none' });
       setEditingUser(null);
       fetchUsers(roleFilter);
     } catch (err) {
-      setRoleError(err instanceof RequestError ? err.message : '角色更新失败');
+      setRoleError(err instanceof RequestError ? err.message : t('admin.users.rolesUpdateFailed'));
     } finally {
       setSubmittingRoles(false);
     }
@@ -193,9 +190,9 @@ export default function AdminUsersPage() {
       {/* Toolbar */}
       <View className='admin-users__toolbar'>
         <View className='admin-users__back' onClick={handleBack}>
-          <Text>‹ 返回</Text>
+          <Text>{t('admin.users.backButton')}</Text>
         </View>
-        <Text className='admin-users__title'>用户管理</Text>
+        <Text className='admin-users__title'>{t('admin.users.title')}</Text>
         <View style={{ width: '60px' }} />
       </View>
 
@@ -207,18 +204,18 @@ export default function AdminUsersPage() {
             className={`user-tabs__item ${roleFilter === tab.key ? 'user-tabs__item--active' : ''}`}
             onClick={() => handleTabChange(tab.key)}
           >
-            <Text>{tab.label}</Text>
+            <Text>{tab.key === 'all' ? t('admin.users.filterAll') : tab.label}</Text>
           </View>
         ))}
       </View>
 
       {/* User List */}
       {loading ? (
-        <View className='admin-loading'><Text>加载中...</Text></View>
+        <View className='admin-loading'><Text>{t('admin.users.loading')}</Text></View>
       ) : users.length === 0 ? (
         <View className='admin-empty'>
           <Text className='admin-empty__icon'>👤</Text>
-          <Text className='admin-empty__text'>暂无用户记录</Text>
+          <Text className='admin-empty__text'>{t('admin.users.noUsers')}</Text>
         </View>
       ) : (
         <View className='user-list'>
@@ -229,7 +226,7 @@ export default function AdminUsersPage() {
                   <View className='user-row__top'>
                     <Text className='user-row__nickname'>{user.nickname}</Text>
                     <Text className={`user-status user-status--${user.status}`}>
-                      {STATUS_LABELS[user.status] || user.status}
+                      {user.status === 'active' ? t('admin.users.statusActive') : t('admin.users.statusDisabled')}
                     </Text>
                   </View>
                   <Text className='user-row__email'>{user.email}</Text>
@@ -243,38 +240,38 @@ export default function AdminUsersPage() {
                       );
                     })}
                     {user.roles.length === 0 && (
-                      <Text className='user-row__no-role'>无角色</Text>
+                      <Text className='user-row__no-role'>{t('admin.users.noRole')}</Text>
                     )}
                   </View>
                   <View className='user-row__meta'>
-                    <Text className='user-row__meta-item'>积分: {user.points}</Text>
-                    <Text className='user-row__meta-item'>注册: {formatTime(user.createdAt)}</Text>
+                    <Text className='user-row__meta-item'>{t('admin.users.pointsLabel', { count: user.points })}</Text>
+                    <Text className='user-row__meta-item'>{t('admin.users.registeredLabel', { time: formatTime(user.createdAt) })}</Text>
                   </View>
                 </View>
                 <View className='user-row__actions'>
                   <View className='user-row__action-btn user-row__action-btn--edit' onClick={() => openRoleEditor(user)}>
-                    <Text>编辑角色</Text>
+                    <Text>{t('admin.users.editRoles')}</Text>
                   </View>
                   {user.status === 'active' ? (
                     <View
                       className='user-row__action-btn user-row__action-btn--warn'
                       onClick={() => setConfirmAction({ type: 'disable', user })}
                     >
-                      <Text>停用</Text>
+                      <Text>{t('admin.users.disableUser')}</Text>
                     </View>
                   ) : (
                     <View
                       className='user-row__action-btn user-row__action-btn--enable'
                       onClick={() => setConfirmAction({ type: 'enable', user })}
                     >
-                      <Text>启用</Text>
+                      <Text>{t('admin.users.enableUser')}</Text>
                     </View>
                   )}
                   <View
                     className='user-row__action-btn user-row__action-btn--danger'
                     onClick={() => setConfirmAction({ type: 'delete', user })}
                   >
-                    <Text>删除</Text>
+                    <Text>{t('admin.users.deleteUser')}</Text>
                   </View>
                 </View>
               </View>
@@ -284,7 +281,7 @@ export default function AdminUsersPage() {
           {/* Load More */}
           {lastKey && (
             <View className='user-list__load-more' onClick={handleLoadMore}>
-              <Text>加载更多</Text>
+              <Text>{t('admin.users.loadMore')}</Text>
             </View>
           )}
         </View>
@@ -296,22 +293,22 @@ export default function AdminUsersPage() {
           <View className='form-modal'>
             <View className='form-modal__header'>
               <Text className='form-modal__title'>
-                {confirmAction.type === 'delete' ? '确认删除' : confirmAction.type === 'disable' ? '确认停用' : '确认启用'}
+                {confirmAction.type === 'delete' ? t('admin.users.confirmDeleteTitle') : confirmAction.type === 'disable' ? t('admin.users.confirmDisableTitle') : t('admin.users.confirmEnableTitle')}
               </Text>
               <View className='form-modal__close' onClick={() => setConfirmAction(null)}><Text>✕</Text></View>
             </View>
             <View className='form-modal__body'>
               <Text className='confirm-text'>
                 {confirmAction.type === 'delete'
-                  ? `确定要删除用户「${confirmAction.user.nickname}」吗？此操作不可恢复。`
+                  ? t('admin.users.confirmDeleteMessage', { name: confirmAction.user.nickname })
                   : confirmAction.type === 'disable'
-                    ? `确定要停用用户「${confirmAction.user.nickname}」吗？停用后该用户将无法登录。`
-                    : `确定要启用用户「${confirmAction.user.nickname}」吗？`}
+                    ? t('admin.users.confirmDisableMessage', { name: confirmAction.user.nickname })
+                    : t('admin.users.confirmEnableMessage', { name: confirmAction.user.nickname })}
               </Text>
             </View>
             <View className='form-modal__actions'>
               <View className='form-modal__cancel' onClick={() => setConfirmAction(null)}>
-                <Text>取消</Text>
+                <Text>{t('common.cancel')}</Text>
               </View>
               <View
                 className={`form-modal__submit ${confirmAction.type === 'delete' ? 'form-modal__submit--danger' : ''}`}
@@ -323,7 +320,7 @@ export default function AdminUsersPage() {
                   }
                 }}
               >
-                <Text>确认</Text>
+                <Text>{t('common.confirm')}</Text>
               </View>
             </View>
           </View>
@@ -335,7 +332,7 @@ export default function AdminUsersPage() {
         <View className='form-overlay'>
           <View className='form-modal'>
             <View className='form-modal__header'>
-              <Text className='form-modal__title'>编辑角色 - {editingUser.nickname}</Text>
+              <Text className='form-modal__title'>{t('admin.users.editRolesTitle', { name: editingUser.nickname })}</Text>
               <View className='form-modal__close' onClick={() => setEditingUser(null)}><Text>✕</Text></View>
             </View>
             {roleError && (
@@ -343,7 +340,7 @@ export default function AdminUsersPage() {
             )}
             <View className='form-modal__body'>
               <View className='role-edit-current'>
-                <Text className='role-edit-current__label'>当前角色</Text>
+                <Text className='role-edit-current__label'>{t('admin.users.currentRolesLabel')}</Text>
                 <View className='role-edit-current__badges'>
                   {editingUser.roles.length > 0 ? editingUser.roles.map((role) => {
                     const config = ROLE_CONFIG[role];
@@ -353,12 +350,12 @@ export default function AdminUsersPage() {
                       </Text>
                     );
                   }) : (
-                    <Text className='role-edit-current__none'>无角色</Text>
+                    <Text className='role-edit-current__none'>{t('admin.users.noRolesLabel')}</Text>
                   )}
                 </View>
               </View>
               <View className='role-edit-list'>
-                <Text className='role-edit-list__label'>可分配角色</Text>
+                <Text className='role-edit-list__label'>{t('admin.users.assignableRolesLabel')}</Text>
                 {assignableRoles.map((role) => {
                   const isSelected = selectedRoles.includes(role);
                   return (
@@ -378,13 +375,13 @@ export default function AdminUsersPage() {
             </View>
             <View className='form-modal__actions'>
               <View className='form-modal__cancel' onClick={() => setEditingUser(null)}>
-                <Text>取消</Text>
+                <Text>{t('common.cancel')}</Text>
               </View>
               <View
                 className={`form-modal__submit ${submittingRoles ? 'form-modal__submit--loading' : ''}`}
                 onClick={handleSubmitRoles}
               >
-                <Text>{submittingRoles ? '保存中...' : '保存'}</Text>
+                <Text>{submittingRoles ? t('admin.users.saving') : t('common.save')}</Text>
               </View>
             </View>
           </View>

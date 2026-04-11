@@ -6,7 +6,7 @@
 .mall-page {
   min-height: 100vh;
   background-color: var(--bg-base);
-  padding-bottom: var(--space-10);
+  padding-bottom: calc(56px + env(safe-area-inset-bottom));
 }
 
 /* ---- Header / Welcome ---- */
@@ -15,22 +15,10 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--space-6) var(--space-5) var(--space-5);
-  background: linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-elevated) 100%);
+  background: var(--bg-void);
   border-bottom: 1px solid var(--card-border);
   position: relative;
   z-index: 20;
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: -50%;
-    right: -15%;
-    width: 200px;
-    height: 200px;
-    background: radial-gradient(circle, rgba(124, 109, 240, 0.2) 0%, transparent 70%);
-    pointer-events: none;
-    z-index: -1;
-  }
 
   &__info {
     flex: 1;
@@ -39,7 +27,7 @@
 
   &__greeting {
     display: block;
-    font-family: var(--font-display);
+    font-family: var(--font-body);
     font-size: 18px;
     font-weight: 700;
     color: var(--text-primary);
@@ -50,127 +38,24 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-1);
+    align-items: center;
+  }
+
+  &__roles-overflow {
+    font-family: var(--font-body);
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    padding: 2px var(--space-2);
+    background: var(--bg-elevated);
+    border-radius: var(--radius-full);
+    line-height: 1;
   }
 
   &__right {
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    position: relative;
     flex-shrink: 0;
-    z-index: 30;
-  }
-
-  &__user-wrap {
-    position: relative;
-    flex-shrink: 0;
-  }
-
-  &__user-btn {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, var(--accent-primary) 0%, #9b8afb 100%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-
-  &__cart-btn {
-    position: relative;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    background: rgba(124, 109, 240, 0.1);
-    border: 1px solid rgba(124, 109, 240, 0.2);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: all var(--transition-fast);
-
-    &:hover {
-      background: rgba(124, 109, 240, 0.2);
-      border-color: rgba(124, 109, 240, 0.4);
-    }
-  }
-
-  &__cart-icon {
-    font-size: 16px;
-    line-height: 1;
-  }
-
-  &__cart-badge {
-    position: absolute;
-    top: -4px;
-    right: -4px;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 var(--space-1);
-    border-radius: var(--radius-full);
-    background: var(--error);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  &__cart-badge-text {
-    font-family: var(--font-display);
-    font-size: 10px;
-    font-weight: 700;
-    color: #fff;
-    line-height: 1;
-  }
-
-  &__user-avatar {
-    font-family: var(--font-display);
-    font-size: var(--text-body);
-    font-weight: 700;
-    color: #fff;
-  }
-
-  &__user-menu {
-    position: absolute;
-    top: calc(100% + var(--space-2));
-    right: 0;
-    min-width: 140px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--card-border);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-lg);
-    overflow: hidden;
-    z-index: 100;
-  }
-
-  &__menu-item {
-    padding: var(--space-3) var(--space-4);
-    font-family: var(--font-body);
-    font-size: var(--text-body);
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-
-    &:hover {
-      background: var(--bg-hover);
-      color: var(--text-primary);
-    }
-
-    &--danger {
-      color: var(--error);
-
-      &:hover {
-        background: rgba(239, 68, 68, 0.08);
-        color: var(--error);
-      }
-    }
-  }
-
-  &__menu-divider {
-    height: 1px;
-    background: var(--card-border);
   }
 
   &__points {
@@ -182,6 +67,7 @@
     border: 1px solid rgba(124, 109, 240, 0.2);
     border-radius: var(--radius-full);
     flex-shrink: 0;
+    white-space: nowrap;
   }
 
   &__points-diamond {
@@ -204,6 +90,49 @@
 
 /* ---- NOTE: .role-badge styles are defined globally in app.scss ---- */
 
+/* ---- Content Hub Entry ---- */
+.mall-content-hub-entry {
+  display: flex;
+  align-items: center;
+  margin: var(--space-3) var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: var(--transition-base);
+
+  &:active {
+    background: var(--bg-hover);
+  }
+
+  &__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+    background: var(--bg-elevated);
+    margin-right: var(--space-3);
+    flex-shrink: 0;
+  }
+
+  &__label {
+    flex: 1;
+    font-family: var(--font-body);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  &__arrow {
+    font-size: 18px;
+    color: var(--text-tertiary);
+    flex-shrink: 0;
+  }
+}
+
 /* ---- Filter Bar ---- */
 .filter-bar {
   display: flex;
@@ -214,15 +143,18 @@
   border-bottom: 1px solid var(--card-border);
   position: relative;
   z-index: 10;
+  gap: var(--space-2);
 
   &__types {
     display: flex;
     gap: var(--space-1);
+    flex-shrink: 0;
   }
 
   &__role-wrap {
     position: relative;
     z-index: 50;
+    flex-shrink: 0;
   }
 
   &__role-btn {
@@ -238,6 +170,7 @@
     font-size: var(--text-body-sm);
     cursor: pointer;
     transition: all var(--transition-fast);
+    white-space: nowrap;
 
     &:hover {
       border-color: rgba(255, 255, 255, 0.2);
@@ -295,13 +228,14 @@
 
 .filter-tab {
   position: relative;
-  padding: var(--space-1) var(--space-4);
+  padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-full);
   font-family: var(--font-body);
   font-size: var(--text-body-sm);
   color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--transition-fast);
+  white-space: nowrap;
 
   &:hover {
     color: var(--text-primary);
@@ -527,6 +461,15 @@
 }
 
 /* ---- Loading / Empty ---- */
+.mall-loading-fade {
+  animation: mallFadeIn var(--transition-fast) ease-out;
+}
+
+@keyframes mallFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 .mall-loading {
   display: flex;
   align-items: center;

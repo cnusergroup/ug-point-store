@@ -93,6 +93,9 @@ export async function getAdminOrders(
     totalPoints: (item.totalPoints as number) ?? 0,
     shippingStatus: item.shippingStatus as OrderListItem['shippingStatus'],
     createdAt: item.createdAt as string,
+    productNames: Array.isArray(item.items)
+      ? item.items.map((i: any) => i.productName as string).filter(Boolean)
+      : [],
   }));
 
   return { success: true, orders, total, page: safePage, pageSize: safePageSize };
@@ -250,8 +253,6 @@ export async function getOrderStats(
   const stats: OrderStats = {
     pending: 0,
     shipped: 0,
-    inTransit: 0,
-    delivered: 0,
     total: items.length,
   };
 
@@ -259,8 +260,6 @@ export async function getOrderStats(
     const s = item.shippingStatus as string;
     if (s === 'pending') stats.pending++;
     else if (s === 'shipped') stats.shipped++;
-    else if (s === 'in_transit') stats.inTransit++;
-    else if (s === 'delivered') stats.delivered++;
   }
 
   return { success: true, stats };
