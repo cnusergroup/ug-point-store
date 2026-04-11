@@ -15,7 +15,14 @@ const USER_KEY = 'user_info';
 function getSavedUser(): UserState | null {
   try {
     const raw = Taro.getStorageSync(USER_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // 过滤旧缓存中残留的已禁用角色
+      if (parsed?.roles) {
+        parsed.roles = filterDisabledRoles(parsed.roles);
+      }
+      return parsed;
+    }
   } catch { /* ignore */ }
   return null;
 }
@@ -32,6 +39,12 @@ function saveUser(user: UserState | null): void {
 
 /** 用户角色（与后端 UserRole 保持一致） */
 export type UserRole = 'UserGroupLeader' | 'Speaker' | 'Volunteer' | 'Admin' | 'SuperAdmin';
+
+/** [DISABLED] CommunityBuilder — 过滤旧数据中残留的已禁用角色 */
+const DISABLED_ROLES = ['CommunityBuilder'];
+function filterDisabledRoles(roles: string[]): UserRole[] {
+  return roles.filter((r) => !DISABLED_ROLES.includes(r)) as UserRole[];
+}
 
 /** 用户状态 */
 export interface UserState {
@@ -183,8 +196,9 @@ export const useAppStore = create<AppState>((set) => ({
       skipAuth: true,
     });
     setToken(res.accessToken);
-    saveUser(res.user);
-    set({ isAuthenticated: true, user: res.user });
+    const user = { ...res.user, roles: filterDisabledRoles(res.user.roles) };
+    saveUser(user);
+    set({ isAuthenticated: true, user });
   },
 
   register: async (email, password, nickname, inviteToken) => {
@@ -195,8 +209,9 @@ export const useAppStore = create<AppState>((set) => ({
       skipAuth: true,
     });
     setToken(res.accessToken);
-    saveUser(res.user);
-    set({ isAuthenticated: true, user: res.user });
+    const user = { ...res.user, roles: filterDisabledRoles(res.user.roles) };
+    saveUser(user);
+    set({ isAuthenticated: true, user });
   },
 
   wechatLogin: async () => {
@@ -211,8 +226,9 @@ export const useAppStore = create<AppState>((set) => ({
         skipAuth: true,
       });
       setToken(res.accessToken);
-      saveUser(res.user);
-      set({ isAuthenticated: true, user: res.user });
+      const user = { ...res.user, roles: filterDisabledRoles(res.user.roles) };
+      saveUser(user);
+      set({ isAuthenticated: true, user });
     } else {
       // PC/H5 端：获取二维码 URL，由页面组件展示
       const { qrcodeUrl } = await request<{ qrcodeUrl: string }>({
@@ -254,7 +270,9 @@ export const useAppStore = create<AppState>((set) => ({
         method: 'POST',
       });
       setToken(res.accessToken);
-      set({ isAuthenticated: true, user: res.user });
+      const user = { ...res.user, roles: filterDisabledRoles(res.user.roles) };
+      saveUser(user);
+      set({ isAuthenticated: true, user });
     } catch {
       clearToken();
       set({ isAuthenticated: false, user: null });
@@ -373,7 +391,8 @@ export const useAppStore = create<AppState>((set) => ({
     try {
       const res = await request<{ success: boolean; profile: { userId: string; nickname: string; email?: string; roles: UserRole[]; points: number; createdAt?: string } }>({ url: '/api/user/profile' });
       if (res.profile) {
-        const { createdAt: _, ...userState } = res.profile as any;
+        const { createdAt: _, ...rest } = res.profile as any;
+        const userState = { ...rest, roles: filterDisabledRoles(rest.roles || []) };
         saveUser(userState);
         set({ user: userState });
       }

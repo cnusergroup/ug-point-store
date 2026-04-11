@@ -4,7 +4,13 @@ import { ErrorCodes, ErrorMessages } from '@points-mall/shared';
 import type { ClaimRecord } from '@points-mall/shared';
 
 /** Roles allowed to submit a claim */
-const CLAIM_ALLOWED_ROLES = ['Speaker', 'UserGroupLeader', 'CommunityBuilder', 'Volunteer'];
+const CLAIM_ALLOWED_ROLES = [
+  'Speaker',
+  'UserGroupLeader',
+  // [DISABLED] CommunityBuilder
+  // 'CommunityBuilder',
+  'Volunteer',
+];
 
 export interface SubmitClaimInput {
   userId: string;
