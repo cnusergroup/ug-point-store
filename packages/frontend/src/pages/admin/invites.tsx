@@ -29,14 +29,16 @@ type StatusFilter = 'all' | 'pending' | 'used' | 'expired';
 
 const ROLE_OPTIONS = [
   { value: 'UserGroupLeader', label: 'Leader', className: 'role-badge--leader' },
-  { value: 'CommunityBuilder', label: 'Builder', className: 'role-badge--builder' },
+  // [DISABLED] CommunityBuilder
+  // { value: 'CommunityBuilder', label: 'Builder', className: 'role-badge--builder' },
   { value: 'Speaker', label: 'Speaker', className: 'role-badge--speaker' },
   { value: 'Volunteer', label: 'Volunteer', className: 'role-badge--volunteer' },
 ];
 
 const ROLE_LABELS: Record<string, { label: string; className: string }> = {
   UserGroupLeader: { label: 'Leader', className: 'role-badge--leader' },
-  CommunityBuilder: { label: 'Builder', className: 'role-badge--builder' },
+  // [DISABLED] CommunityBuilder
+  // CommunityBuilder: { label: 'Builder', className: 'role-badge--builder' },
   Speaker: { label: 'Speaker', className: 'role-badge--speaker' },
   Volunteer: { label: 'Volunteer', className: 'role-badge--volunteer' },
 };

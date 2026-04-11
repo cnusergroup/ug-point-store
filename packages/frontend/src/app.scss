@@ -25,8 +25,9 @@
   /* === 角色专属色 === */
   --role-leader: #f5a623;
   --role-leader-glow: rgba(245, 166, 35, 0.25);
-  --role-builder: #2dd4a8;
-  --role-builder-glow: rgba(45, 212, 168, 0.25);
+  /* [DISABLED] CommunityBuilder */
+  /* --role-builder: #2dd4a8; */
+  /* --role-builder-glow: rgba(45, 212, 168, 0.25); */
   --role-speaker: #5b8def;
   --role-speaker-glow: rgba(91, 141, 239, 0.25);
   --role-volunteer: #f06292;
@@ -178,11 +179,12 @@ page {
     border: 1px solid rgba(245, 166, 35, 0.3);
   }
 
-  &--builder {
+  /* [DISABLED] CommunityBuilder */
+  /* &--builder {
     background: var(--role-builder-glow);
     color: var(--role-builder);
     border: 1px solid rgba(45, 212, 168, 0.3);
-  }
+  } */
 
   &--speaker {
     background: var(--role-speaker-glow);

@@ -41,12 +41,19 @@ const STATUS_CONFIG: Record<string, { labelKey: string; className: string }> = {
 };
 
 /** Roles allowed to submit claims */
-const CLAIM_ALLOWED_ROLES = ['Speaker', 'UserGroupLeader', 'CommunityBuilder', 'Volunteer'];
+const CLAIM_ALLOWED_ROLES = [
+  'Speaker',
+  'UserGroupLeader',
+  // [DISABLED] CommunityBuilder
+  // 'CommunityBuilder',
+  'Volunteer',
+];
 
 const ROLE_CONFIG: Record<string, { label: string; className: string }> = {
   Speaker: { label: 'Speaker', className: 'role-badge--speaker' },
   UserGroupLeader: { label: 'Leader', className: 'role-badge--leader' },
-  CommunityBuilder: { label: 'Builder', className: 'role-badge--builder' },
+  // [DISABLED] CommunityBuilder
+  // CommunityBuilder: { label: 'Builder', className: 'role-badge--builder' },
   Volunteer: { label: 'Volunteer', className: 'role-badge--volunteer' },
 };
 

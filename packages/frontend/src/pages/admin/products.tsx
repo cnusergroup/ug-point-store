@@ -73,10 +73,17 @@ interface AdminProduct {
   purchaseLimitCount?: number;
 }
 
-const ALL_ROLES: UserRole[] = ['UserGroupLeader', 'CommunityBuilder', 'Speaker', 'Volunteer'];
+const ALL_ROLES: UserRole[] = [
+  'UserGroupLeader',
+  // [DISABLED] CommunityBuilder
+  // 'CommunityBuilder',
+  'Speaker',
+  'Volunteer',
+];
 const ROLE_LABELS: Record<UserRole, string> = {
   UserGroupLeader: 'Leader',
-  CommunityBuilder: 'Builder',
+  // [DISABLED] CommunityBuilder
+  // CommunityBuilder: 'Builder',
   Speaker: 'Speaker',
   Volunteer: 'Volunteer',
   Admin: 'Admin',

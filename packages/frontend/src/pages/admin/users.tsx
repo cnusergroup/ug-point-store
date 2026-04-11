@@ -19,12 +19,13 @@ interface UserListItem {
 }
 
 /** Role filter tab options */
-type RoleFilter = 'all' | 'UserGroupLeader' | 'CommunityBuilder' | 'Speaker' | 'Volunteer' | 'Admin';
+type RoleFilter = 'all' | 'UserGroupLeader' | /* [DISABLED] CommunityBuilder */ 'Speaker' | 'Volunteer' | 'Admin';
 
 const ROLE_FILTER_TABS: { key: RoleFilter; label: string }[] = [
   { key: 'all', label: 'all' },
   { key: 'UserGroupLeader', label: 'UserGroupLeader' },
-  { key: 'CommunityBuilder', label: 'CommunityBuilder' },
+  // [DISABLED] CommunityBuilder
+  // { key: 'CommunityBuilder', label: 'CommunityBuilder' },
   { key: 'Speaker', label: 'Speaker' },
   { key: 'Volunteer', label: 'Volunteer' },
   { key: 'Admin', label: 'Admin' },
@@ -33,7 +34,8 @@ const ROLE_FILTER_TABS: { key: RoleFilter; label: string }[] = [
 /** Role display config for badges */
 const ROLE_CONFIG: Record<string, { label: string; className: string }> = {
   UserGroupLeader: { label: 'Leader', className: 'role-badge--leader' },
-  CommunityBuilder: { label: 'Builder', className: 'role-badge--builder' },
+  // [DISABLED] CommunityBuilder
+  // CommunityBuilder: { label: 'Builder', className: 'role-badge--builder' },
   Speaker: { label: 'Speaker', className: 'role-badge--speaker' },
   Volunteer: { label: 'Volunteer', className: 'role-badge--volunteer' },
   Admin: { label: 'Admin', className: 'role-badge--admin' },
@@ -41,12 +43,19 @@ const ROLE_CONFIG: Record<string, { label: string; className: string }> = {
 };
 
 /** Regular roles any Admin can assign */
-const REGULAR_ROLES = ['UserGroupLeader', 'CommunityBuilder', 'Speaker', 'Volunteer'];
+const REGULAR_ROLES = [
+  'UserGroupLeader',
+  // [DISABLED] CommunityBuilder
+  // 'CommunityBuilder',
+  'Speaker',
+  'Volunteer',
+];
 
 /** Role labels for display in the edit modal */
 const ROLE_LABELS: Record<string, string> = {
   UserGroupLeader: 'UserGroupLeader',
-  CommunityBuilder: 'CommunityBuilder',
+  // [DISABLED] CommunityBuilder
+  // CommunityBuilder: 'CommunityBuilder',
   Speaker: 'Speaker',
   Volunteer: 'Volunteer',
   Admin: 'Admin',

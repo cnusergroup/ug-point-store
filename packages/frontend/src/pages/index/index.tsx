@@ -36,14 +36,13 @@ interface ProductListResponse {
 /** Role display config */
 const ROLE_CONFIG: Record<UserRole, { label: string; className: string }> = {
   UserGroupLeader: { label: 'Leader', className: 'role-badge--leader' },
-  CommunityBuilder: { label: 'Builder', className: 'role-badge--builder' },
   Speaker: { label: 'Speaker', className: 'role-badge--speaker' },
   Volunteer: { label: 'Volunteer', className: 'role-badge--volunteer' },
   Admin: { label: 'Admin', className: 'role-badge--admin' },
   SuperAdmin: { label: 'SuperAdmin', className: 'role-badge--superadmin' },
 };
 
-const ALL_ROLES: UserRole[] = ['UserGroupLeader', 'CommunityBuilder', 'Speaker', 'Volunteer'];
+const ALL_ROLES: UserRole[] = ['UserGroupLeader', 'Speaker', 'Volunteer'];
 
 export default function IndexPage() {
   const { t } = useTranslation();

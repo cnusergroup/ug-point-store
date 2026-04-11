@@ -121,7 +121,8 @@ export async function batchCreateInvites(
     if (!REGULAR_ROLES.includes(role)) {
       return {
         success: false,
-        error: { code: 'INVALID_ROLE', message: '角色必须为普通角色之一（UserGroupLeader、CommunityBuilder、Speaker、Volunteer）' },
+        // [DISABLED] CommunityBuilder — error message still references old role list for backward compat
+        error: { code: 'INVALID_ROLE', message: '角色必须为普通角色之一（UserGroupLeader、Speaker、Volunteer）' },
       };
     }
   }

@@ -2,7 +2,14 @@ import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import type { UserRole } from '@points-mall/shared';
 
 /** Valid roles that can be assigned via API (includes Admin, excludes SuperAdmin) */
-const VALID_ROLES: UserRole[] = ['UserGroupLeader', 'CommunityBuilder', 'Speaker', 'Volunteer', 'Admin'];
+const VALID_ROLES: UserRole[] = [
+  'UserGroupLeader',
+  // [DISABLED] CommunityBuilder
+  // 'CommunityBuilder',
+  'Speaker',
+  'Volunteer',
+  'Admin',
+];
 
 export interface RoleOperationResult {
   success: boolean;

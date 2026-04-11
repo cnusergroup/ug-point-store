@@ -6,13 +6,13 @@
 export type UserStatus = 'active' | 'disabled';
 
 /** 用户角色类型（扩展后） */
-export type UserRole = 'UserGroupLeader' | 'CommunityBuilder' | 'Speaker' | 'Volunteer' | 'Admin' | 'SuperAdmin';
+export type UserRole = 'UserGroupLeader' | 'Speaker' | 'Volunteer' | 'Admin' | 'SuperAdmin';
 
 /** 管理角色 */
 export const ADMIN_ROLES: UserRole[] = ['Admin', 'SuperAdmin'];
 
 /** 普通角色 */
-export const REGULAR_ROLES: UserRole[] = ['UserGroupLeader', 'CommunityBuilder', 'Speaker', 'Volunteer'];
+export const REGULAR_ROLES: UserRole[] = ['UserGroupLeader', 'Speaker', 'Volunteer'];
 
 /** 所有角色 */
 export const ALL_ROLES: UserRole[] = [...REGULAR_ROLES, ...ADMIN_ROLES];

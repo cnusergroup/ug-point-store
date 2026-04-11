@@ -41,7 +41,8 @@ interface ProductDetail {
 
 const ROLE_CONFIG: Record<UserRole, { label: string; icon: string; className: string }> = {
   UserGroupLeader: { label: 'UserGroupLeader', icon: '♛', className: 'role-item--leader' },
-  CommunityBuilder: { label: 'CommunityBuilder', icon: '▣', className: 'role-item--builder' },
+  // [DISABLED] CommunityBuilder
+  // CommunityBuilder: { label: 'CommunityBuilder', icon: '▣', className: 'role-item--builder' },
   Speaker: { label: 'Speaker', icon: '♪', className: 'role-item--speaker' },
   Volunteer: { label: 'Volunteer', icon: '♥', className: 'role-item--volunteer' },
   Admin: { label: 'Admin', icon: '⚙', className: 'role-item--admin' },
@@ -300,7 +301,7 @@ export default function ProductDetailPage() {
                   <Text className='role-badge role-badge--all'>{t('product.everyone')}</Text>
                 ) : (
                   product.allowedRoles.map((role) => (
-                    <Text key={role} className={`role-badge role-badge--${role === 'UserGroupLeader' ? 'leader' : role === 'CommunityBuilder' ? 'builder' : role === 'Speaker' ? 'speaker' : 'volunteer'}`}>
+                    <Text key={role} className={`role-badge role-badge--${role === 'UserGroupLeader' ? 'leader' : /* [DISABLED] CommunityBuilder */ role === 'Speaker' ? 'speaker' : 'volunteer'}`}>
                       {ROLE_CONFIG[role]?.label || role}
                     </Text>
                   ))

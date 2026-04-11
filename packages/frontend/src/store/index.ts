@@ -31,7 +31,7 @@ function saveUser(user: UserState | null): void {
 }
 
 /** 用户角色（与后端 UserRole 保持一致） */
-export type UserRole = 'UserGroupLeader' | 'CommunityBuilder' | 'Speaker' | 'Volunteer' | 'Admin' | 'SuperAdmin';
+export type UserRole = 'UserGroupLeader' | 'Speaker' | 'Volunteer' | 'Admin' | 'SuperAdmin';
 
 /** 用户状态 */
 export interface UserState {

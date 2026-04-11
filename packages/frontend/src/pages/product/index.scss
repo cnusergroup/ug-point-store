@@ -432,9 +432,10 @@
     border-left: 3px solid var(--role-leader);
   }
 
-  &--builder {
+  /* [DISABLED] CommunityBuilder */
+  /* &--builder {
     border-left: 3px solid var(--role-builder);
-  }
+  } */
 
   &--speaker {
     border-left: 3px solid var(--role-speaker);

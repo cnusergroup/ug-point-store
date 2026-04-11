@@ -77,7 +77,8 @@ interface PaginatedResponse<T> {
 /** Role display config */
 const ROLE_CONFIG: Record<UserRole, { label: string; className: string }> = {
   UserGroupLeader: { label: 'Leader', className: 'role-badge--leader' },
-  CommunityBuilder: { label: 'Builder', className: 'role-badge--builder' },
+  // [DISABLED] CommunityBuilder
+  // CommunityBuilder: { label: 'Builder', className: 'role-badge--builder' },
   Speaker: { label: 'Speaker', className: 'role-badge--speaker' },
   Volunteer: { label: 'Volunteer', className: 'role-badge--volunteer' },
   Admin: { label: 'Admin', className: 'role-badge--admin' },
