@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>密码重置</title></head>
+<body>
+<script>
+  var params = new URLSearchParams(window.location.search);
+  var token = params.get('token');
+  if (token) {
+    window.location.replace('/#/pages/reset-password/index?token=' + encodeURIComponent(token));
+  } else {
+    window.location.replace('/#/pages/login/index');
+  }
+</script>
+<p>正在跳转...</p>
+</body>
+</html>

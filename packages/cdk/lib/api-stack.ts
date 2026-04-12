@@ -24,6 +24,9 @@ export interface ApiStackProps extends cdk.StackProps {
   contentCommentsTable: dynamodb.Table;
   contentLikesTable: dynamodb.Table;
   contentReservationsTable: dynamodb.Table;
+  batchDistributionsTable: dynamodb.Table;
+  travelApplicationsTable: dynamodb.Table;
+  contentTagsTable: dynamodb.Table;
   jwtSecret: string;
   wechatAppId: string;
   wechatAppSecret: string;
@@ -43,7 +46,7 @@ export class ApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
-    const { usersTable, productsTable, codesTable, redemptionsTable, pointsRecordsTable, cartTable, addressesTable, ordersTable, invitesTable, claimsTable, contentItemsTable, contentCategoriesTable, contentCommentsTable, contentLikesTable, contentReservationsTable } = props;
+    const { usersTable, productsTable, codesTable, redemptionsTable, pointsRecordsTable, cartTable, addressesTable, ordersTable, invitesTable, claimsTable, contentItemsTable, contentCategoriesTable, contentCommentsTable, contentLikesTable, contentReservationsTable, batchDistributionsTable, travelApplicationsTable, contentTagsTable } = props;
 
     // --- SSM Parameter for JWT Secret ---
     const jwtSecretParam = new ssm.StringParameter(this, 'JwtSecretParam', {
@@ -79,7 +82,7 @@ export class ApiStack extends cdk.Stack {
     const commonFnProps: Partial<NodejsFunctionProps> = {
       runtime: Runtime.NODEJS_20_X,
       timeout: cdk.Duration.seconds(30),
-      memorySize: 256,
+      memorySize: 512,
       environment: tableEnv,
       bundling: {
         // Bundle all dependencies into a single file
@@ -134,6 +137,12 @@ export class ApiStack extends cdk.Stack {
     adminFn.addEnvironment('CONTENT_COMMENTS_TABLE', contentCommentsTable.tableName);
     adminFn.addEnvironment('CONTENT_LIKES_TABLE', contentLikesTable.tableName);
     adminFn.addEnvironment('CONTENT_RESERVATIONS_TABLE', contentReservationsTable.tableName);
+    adminFn.addEnvironment('BATCH_DISTRIBUTIONS_TABLE', batchDistributionsTable.tableName);
+    adminFn.addEnvironment('TRAVEL_APPLICATIONS_TABLE', travelApplicationsTable.tableName);
+    adminFn.addEnvironment('CONTENT_TAGS_TABLE', contentTagsTable.tableName);
+
+    // Add travel table env var to Points Lambda
+    pointsFn.addEnvironment('TRAVEL_APPLICATIONS_TABLE', travelApplicationsTable.tableName);
 
     // Note: imagesBucket configuration is done post-construction via configureImagesBucket()
 
@@ -164,6 +173,7 @@ export class ApiStack extends cdk.Stack {
         CONTENT_LIKES_TABLE: contentLikesTable.tableName,
         CONTENT_RESERVATIONS_TABLE: contentReservationsTable.tableName,
         CONTENT_REWARD_POINTS: '10',
+        CONTENT_TAGS_TABLE: contentTagsTable.tableName,
       },
     } as NodejsFunctionProps);
     this.contentFn = contentFn;
@@ -181,6 +191,7 @@ export class ApiStack extends cdk.Stack {
     codesTable.grantReadWriteData(pointsFn);
     pointsRecordsTable.grantReadWriteData(pointsFn);
     claimsTable.grantReadWriteData(pointsFn);
+    travelApplicationsTable.grantReadWriteData(pointsFn);
     usersTable.grantReadWriteData(redemptionFn);
     productsTable.grantReadWriteData(redemptionFn);
     codesTable.grantReadWriteData(redemptionFn);
@@ -188,17 +199,29 @@ export class ApiStack extends cdk.Stack {
     pointsRecordsTable.grantReadWriteData(redemptionFn);
     addressesTable.grantReadData(redemptionFn);
     ordersTable.grantReadWriteData(redemptionFn);
-    usersTable.grantReadWriteData(adminFn);
-    productsTable.grantReadWriteData(adminFn);
-    codesTable.grantReadWriteData(adminFn);
-    invitesTable.grantReadWriteData(adminFn);
-    claimsTable.grantReadWriteData(adminFn);
-    pointsRecordsTable.grantReadWriteData(adminFn);
-    contentItemsTable.grantReadWriteData(adminFn);
-    contentCategoriesTable.grantReadWriteData(adminFn);
-    contentCommentsTable.grantReadWriteData(adminFn);
-    contentLikesTable.grantReadWriteData(adminFn);
-    contentReservationsTable.grantReadWriteData(adminFn);
+    // Admin Lambda needs access to all PointsMall tables.
+    // Using a wildcard resource policy to avoid IAM managed policy size limits (20480 bytes)
+    // that would be exceeded if granting each table individually.
+    adminFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: [
+        'dynamodb:BatchGetItem',
+        'dynamodb:BatchWriteItem',
+        'dynamodb:ConditionCheckItem',
+        'dynamodb:DeleteItem',
+        'dynamodb:DescribeTable',
+        'dynamodb:GetItem',
+        'dynamodb:GetRecords',
+        'dynamodb:GetShardIterator',
+        'dynamodb:PutItem',
+        'dynamodb:Query',
+        'dynamodb:Scan',
+        'dynamodb:UpdateItem',
+      ],
+      resources: [
+        `arn:aws:dynamodb:${this.region}:${this.account}:table/PointsMall-*`,
+        `arn:aws:dynamodb:${this.region}:${this.account}:table/PointsMall-*/index/*`,
+      ],
+    }));
 
     // Cart Lambda: Cart, Addresses, Products tables
     cartTable.grantReadWriteData(cartFn);
@@ -219,6 +242,7 @@ export class ApiStack extends cdk.Stack {
     contentCommentsTable.grantReadWriteData(contentFn);
     contentLikesTable.grantReadWriteData(contentFn);
     contentReservationsTable.grantReadWriteData(contentFn);
+    contentTagsTable.grantReadWriteData(contentFn);
     usersTable.grantReadWriteData(contentFn);
     pointsRecordsTable.grantReadWriteData(contentFn);
 
@@ -279,11 +303,24 @@ export class ApiStack extends cdk.Stack {
     const user = api.addResource('user');
     user.addResource('profile').addMethod('GET', pointsInt);
 
+    // Settings routes (public, no auth — integrated to Points Lambda)
+    const settings = api.addResource('settings');
+    settings.addResource('feature-toggles').addMethod('GET', pointsInt);
+    settings.addResource('travel-sponsorship').addMethod('GET', pointsInt);
+
     // Claims routes (user-facing, integrated to Points Lambda)
     const claims = api.addResource('claims');
     claims.addMethod('POST', pointsInt);
     claims.addMethod('GET', pointsInt);
     claims.addResource('upload-url').addMethod('POST', pointsInt);
+
+    // Travel routes (user-facing, integrated to Points Lambda)
+    const travel = api.addResource('travel');
+    travel.addResource('quota').addMethod('GET', pointsInt);
+    travel.addResource('apply').addMethod('POST', pointsInt);
+    travel.addResource('my-applications').addMethod('GET', pointsInt);
+    const travelApplications = travel.addResource('applications');
+    travelApplications.addResource('{id}').addMethod('PUT', pointsInt);
 
     // Redemption routes
     const redemptionInt = new apigateway.LambdaIntegration(redemptionFn);
@@ -292,45 +329,31 @@ export class ApiStack extends cdk.Stack {
     redemptions.addResource('code').addMethod('POST', redemptionInt);
     redemptions.addResource('history').addMethod('GET', redemptionInt);
 
-    // Admin routes
+    // Order Lambda integration — defined early because it's also used for admin order routes
+    const orderInt = new apigateway.LambdaIntegration(orderFn);
+
+    // Admin routes — use a single greedy proxy to avoid Lambda resource policy size limits.
+    // Each explicit method registration adds a Lambda::Permission resource; with 30+ admin
+    // routes the policy exceeds the 20 KB limit. A {proxy+} resource uses only 2 permissions
+    // (ANY + OPTIONS) regardless of how many routes the handler supports internally.
     const adminInt = new apigateway.LambdaIntegration(adminFn);
     const admin = api.addResource('admin');
-    const adminUsers = admin.addResource('users');
-    adminUsers.addMethod('GET', adminInt);
-    const adminUserById = adminUsers.addResource('{id}');
-    adminUserById.addResource('roles').addMethod('PUT', adminInt);
-    adminUserById.addResource('status').addMethod('PATCH', adminInt);
-    adminUserById.addMethod('DELETE', adminInt);
-    const adminCodes = admin.addResource('codes');
-    adminCodes.addResource('batch-generate').addMethod('POST', adminInt);
-    adminCodes.addResource('product-code').addMethod('POST', adminInt);
-    adminCodes.addMethod('GET', adminInt);
-    const adminCodeById = adminCodes.addResource('{id}');
-    adminCodeById.addResource('disable').addMethod('PATCH', adminInt);
-    adminCodeById.addMethod('DELETE', adminInt);
-    const adminProducts = admin.addResource('products');
-    adminProducts.addMethod('POST', adminInt);
 
-    // Admin images upload-url (no productId needed — for product creation)
-    const adminImages = admin.addResource('images');
-    adminImages.addResource('upload-url').addMethod('POST', adminInt);
+    // Admin order routes must be defined BEFORE addProxy to avoid CDK conflict with {proxy+}.
+    // API Gateway prefers explicit paths over the greedy {proxy+} catch-all.
+    const adminOrders = admin.addResource('orders');
+    adminOrders.addMethod('GET', orderInt);
+    adminOrders.addResource('stats').addMethod('GET', orderInt);
+    const adminOrderById = adminOrders.addResource('{orderId}');
+    adminOrderById.addMethod('GET', orderInt);
+    adminOrderById.addResource('shipping').addMethod('PATCH', orderInt);
 
-    const adminProductById = adminProducts.addResource('{id}');
-    adminProductById.addMethod('PUT', adminInt);
-    adminProductById.addResource('status').addMethod('PATCH', adminInt);
-    adminProductById.addResource('upload-url').addMethod('POST', adminInt);
-    adminProductById.addResource('images').addResource('{key}').addMethod('DELETE', adminInt);
-
-    // Admin invite routes
-    const adminInvites = admin.addResource('invites');
-    adminInvites.addResource('batch').addMethod('POST', adminInt);
-    adminInvites.addMethod('GET', adminInt);
-    adminInvites.addResource('{token}').addResource('revoke').addMethod('PATCH', adminInt);
-
-    // Admin claims routes
-    const adminClaims = admin.addResource('claims');
-    adminClaims.addMethod('GET', adminInt);
-    adminClaims.addResource('{id}').addResource('review').addMethod('PATCH', adminInt);
+    // Catch-all proxy for all other /api/admin/* routes (handled by adminFn)
+    admin.addMethod('ANY', adminInt);
+    admin.addProxy({
+      defaultIntegration: adminInt,
+      anyMethod: true,
+    });
 
     // Cart routes
     const cartInt = new apigateway.LambdaIntegration(cartFn);
@@ -351,21 +374,12 @@ export class ApiStack extends cdk.Stack {
     addressById.addMethod('DELETE', cartInt);
     addressById.addResource('default').addMethod('PATCH', cartInt);
 
-    // Order routes
-    const orderInt = new apigateway.LambdaIntegration(orderFn);
+    // Order routes (user-facing)
     const orders = api.addResource('orders');
     orders.addMethod('POST', orderInt);
     orders.addResource('direct').addMethod('POST', orderInt);
     orders.addMethod('GET', orderInt);
     orders.addResource('{orderId}').addMethod('GET', orderInt);
-
-    // Admin order routes
-    const adminOrders = admin.addResource('orders');
-    adminOrders.addMethod('GET', orderInt);
-    adminOrders.addResource('stats').addMethod('GET', orderInt);
-    const adminOrderById = adminOrders.addResource('{orderId}');
-    adminOrderById.addMethod('GET', orderInt);
-    adminOrderById.addResource('shipping').addMethod('PATCH', orderInt);
 
     // Content routes (user-facing)
     const contentInt = new apigateway.LambdaIntegration(contentFn);
@@ -374,6 +388,10 @@ export class ApiStack extends cdk.Stack {
     content.addMethod('POST', contentInt);
     content.addMethod('GET', contentInt);
     content.addResource('categories').addMethod('GET', contentInt);
+    const contentTags = content.addResource('tags');
+    contentTags.addResource('search').addMethod('GET', contentInt);
+    contentTags.addResource('hot').addMethod('GET', contentInt);
+    contentTags.addResource('cloud').addMethod('GET', contentInt);
     const contentById = content.addResource('{id}');
     contentById.addMethod('GET', contentInt);
     contentById.addMethod('PUT', contentInt);
@@ -383,14 +401,6 @@ export class ApiStack extends cdk.Stack {
     contentById.addResource('like').addMethod('POST', contentInt);
     contentById.addResource('reserve').addMethod('POST', contentInt);
     contentById.addResource('download').addMethod('GET', contentInt);
-
-    // Admin content routes — use proxy to avoid Lambda resource policy size limit
-    const adminContent = admin.addResource('content');
-    adminContent.addMethod('GET', adminInt);
-    adminContent.addProxy({
-      defaultIntegration: adminInt,
-      anyMethod: true,
-    });
 
     new cdk.CfnOutput(this, 'ApiUrl', {
       value: this.api.url,
@@ -403,7 +413,15 @@ export class ApiStack extends cdk.Stack {
    * for the images bucket. Called after FrontendStack is created to avoid
    * circular dependencies between stacks.
    */
-  public configureImagesBucket(imagesBucketName: string, imagesBucketArn: string): void {
+  public configureImagesBucket(imagesBucketName: string, imagesBucketArn: string, uploadViaCloudfront: string, uploadTokenSecret: string): void {
+    // Add upload proxy environment variables to Lambda functions that generate upload URLs
+    this.adminFn.addEnvironment('UPLOAD_VIA_CLOUDFRONT', uploadViaCloudfront);
+    this.adminFn.addEnvironment('UPLOAD_TOKEN_SECRET', uploadTokenSecret);
+    this.contentFn.addEnvironment('UPLOAD_VIA_CLOUDFRONT', uploadViaCloudfront);
+    this.contentFn.addEnvironment('UPLOAD_TOKEN_SECRET', uploadTokenSecret);
+    this.pointsFn.addEnvironment('UPLOAD_VIA_CLOUDFRONT', uploadViaCloudfront);
+    this.pointsFn.addEnvironment('UPLOAD_TOKEN_SECRET', uploadTokenSecret);
+
     this.adminFn.addEnvironment('IMAGES_BUCKET', imagesBucketName);
     this.adminFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['s3:PutObject', 's3:DeleteObject', 's3:GetObject'],

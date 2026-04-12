@@ -2,10 +2,15 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ulid } from 'ulid';
 import { ErrorCodes, ErrorMessages } from '@points-mall/shared';
+import { generateUploadToken } from '../utils/upload-token';
 
 const MAX_IMAGES = 5;
 const PRESIGNED_URL_EXPIRES_IN = 300; // 5 minutes
 const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];
+
+const UPLOAD_VIA_CLOUDFRONT = process.env.UPLOAD_VIA_CLOUDFRONT === 'true';
+const UPLOAD_TOKEN_SECRET = process.env.UPLOAD_TOKEN_SECRET || '';
+const CLOUDFRONT_DOMAIN = process.env.CLOUDFRONT_DOMAIN || 'https://store.awscommunity.cn';
 
 export interface GetUploadUrlInput {
   productId: string;
@@ -41,8 +46,21 @@ export function generateS3Key(productId: string, ext: string): string {
 }
 
 /**
+ * Generate a CloudFront upload URL with an HMAC token for the given S3 key.
+ * Throws if UPLOAD_TOKEN_SECRET is not configured.
+ */
+function generateCloudFrontUploadUrl(key: string): string {
+  if (!UPLOAD_TOKEN_SECRET) {
+    throw new Error('UPLOAD_TOKEN_SECRET must be configured when UPLOAD_VIA_CLOUDFRONT is enabled');
+  }
+  const { token } = generateUploadToken({ key, expiresIn: PRESIGNED_URL_EXPIRES_IN }, UPLOAD_TOKEN_SECRET);
+  return `${CLOUDFRONT_DOMAIN}/${key}?token=${token}`;
+}
+
+/**
  * Generate a presigned PUT URL for uploading a product image to S3.
  * Validates image count limit and file type before generating the URL.
+ * When UPLOAD_VIA_CLOUDFRONT is enabled, generates a CloudFront URL with an HMAC token.
  */
 export async function getUploadUrl(
   input: GetUploadUrlInput,
@@ -67,13 +85,17 @@ export async function getUploadUrl(
 
   const key = generateS3Key(input.productId, ext);
 
-  const command = new PutObjectCommand({
-    Bucket: bucketName,
-    Key: key,
-    ContentType: input.contentType,
-  });
-
-  const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: PRESIGNED_URL_EXPIRES_IN });
+  let uploadUrl: string;
+  if (UPLOAD_VIA_CLOUDFRONT) {
+    uploadUrl = generateCloudFrontUploadUrl(key);
+  } else {
+    const command = new PutObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+      ContentType: input.contentType,
+    });
+    uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: PRESIGNED_URL_EXPIRES_IN });
+  }
 
   return {
     success: true,
@@ -89,6 +111,7 @@ export async function getUploadUrl(
  * Generate a presigned PUT URL for uploading a product image without a productId.
  * Used during product creation before the product exists.
  * S3 key format: products/temp/{ulid}.{ext}
+ * When UPLOAD_VIA_CLOUDFRONT is enabled, generates a CloudFront URL with an HMAC token.
  */
 export async function getTempUploadUrl(
   input: { fileName: string; contentType: string },
@@ -105,13 +128,17 @@ export async function getTempUploadUrl(
 
   const key = `products/temp/${ulid()}.${ext}`;
 
-  const command = new PutObjectCommand({
-    Bucket: bucketName,
-    Key: key,
-    ContentType: input.contentType,
-  });
-
-  const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: PRESIGNED_URL_EXPIRES_IN });
+  let uploadUrl: string;
+  if (UPLOAD_VIA_CLOUDFRONT) {
+    uploadUrl = generateCloudFrontUploadUrl(key);
+  } else {
+    const command = new PutObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+      ContentType: input.contentType,
+    });
+    uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: PRESIGNED_URL_EXPIRES_IN });
+  }
 
   return {
     success: true,

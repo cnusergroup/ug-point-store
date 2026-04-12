@@ -2,9 +2,14 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ulid } from 'ulid';
 import { ErrorCodes, ErrorMessages } from '@points-mall/shared';
+import { generateUploadToken } from '../utils/upload-token';
 
 const PRESIGNED_URL_EXPIRES_IN = 300; // 5 minutes
 const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];
+
+const UPLOAD_VIA_CLOUDFRONT = process.env.UPLOAD_VIA_CLOUDFRONT === 'true';
+const UPLOAD_TOKEN_SECRET = process.env.UPLOAD_TOKEN_SECRET || '';
+const CLOUDFRONT_DOMAIN = process.env.CLOUDFRONT_DOMAIN || 'https://store.awscommunity.cn';
 
 export interface GetClaimUploadUrlInput {
   userId: string;
@@ -43,13 +48,21 @@ export async function getClaimUploadUrl(
 
   const key = `claims/${input.userId}/${ulid()}.${ext}`;
 
-  const command = new PutObjectCommand({
-    Bucket: bucketName,
-    Key: key,
-    ContentType: input.contentType,
-  });
-
-  const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: PRESIGNED_URL_EXPIRES_IN });
+  let uploadUrl: string;
+  if (UPLOAD_VIA_CLOUDFRONT) {
+    if (!UPLOAD_TOKEN_SECRET) {
+      throw new Error('UPLOAD_TOKEN_SECRET must be configured when UPLOAD_VIA_CLOUDFRONT is enabled');
+    }
+    const { token } = generateUploadToken({ key, expiresIn: PRESIGNED_URL_EXPIRES_IN }, UPLOAD_TOKEN_SECRET);
+    uploadUrl = `${CLOUDFRONT_DOMAIN}/${key}?token=${token}`;
+  } else {
+    const command = new PutObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+      ContentType: input.contentType,
+    });
+    uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: PRESIGNED_URL_EXPIRES_IN });
+  }
 
   return {
     success: true,

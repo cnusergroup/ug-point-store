@@ -64,7 +64,7 @@ export default function LoginPage() {
     setError('');
     try {
       await loginByEmail(email, password);
-      Taro.switchTab({ url: '/pages/index/index' });
+      Taro.redirectTo({ url: '/pages/hub/index' });
     } catch (err) {
       if (err instanceof RequestError) {
         if (err.code === 'ACCOUNT_LOCKED') {
@@ -88,7 +88,7 @@ export default function LoginPage() {
       if (isWeapp) {
         setLoading(true);
         await wechatLogin();
-        Taro.switchTab({ url: '/pages/index/index' });
+        Taro.redirectTo({ url: '/pages/hub/index' });
       } else {
         // H5: show QR code
         setShowQr(true);

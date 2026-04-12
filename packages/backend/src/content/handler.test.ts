@@ -41,6 +41,11 @@ vi.mock('./edit', () => ({
 vi.mock('./admin', () => ({
   listCategories: vi.fn(),
 }));
+vi.mock('./tags', () => ({
+  searchTags: vi.fn(),
+  getHotTags: vi.fn(),
+  getTagCloudTags: vi.fn(),
+}));
 
 // Mock auth middleware
 vi.mock('../middleware/auth-middleware', () => ({
@@ -64,6 +69,7 @@ import { toggleLike } from './like';
 import { createReservation, getDownloadUrl } from './reservation';
 import { editContentItem } from './edit';
 import { listCategories } from './admin';
+import { searchTags, getHotTags, getTagCloudTags } from './tags';
 
 function makeEvent(overrides: Partial<APIGatewayProxyEvent> = {}): APIGatewayProxyEvent {
   return {
@@ -389,6 +395,88 @@ describe('Content Lambda Handler', () => {
       const result = await handler(event);
       expect(result.statusCode).toBe(400);
       expect(JSON.parse(result.body).code).toBe('CONTENT_NOT_EDITABLE');
+    });
+  });
+
+  // ── Tag route tests ──────────────────────────────────────
+
+  describe('GET /api/content/tags/search', () => {
+    it('routes to searchTags with prefix query param', async () => {
+      vi.mocked(searchTags).mockResolvedValue({
+        success: true,
+        tags: [{ tagId: 't1', tagName: 'react', usageCount: 10, createdAt: '2024-01-01' }],
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/content/tags/search',
+        queryStringParameters: { prefix: 'rea' },
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.tags).toHaveLength(1);
+      expect(body.tags[0].tagName).toBe('react');
+      expect(searchTags).toHaveBeenCalledWith(
+        { prefix: 'rea' },
+        expect.anything(),
+        '',
+      );
+    });
+
+    it('passes empty prefix when no query param', async () => {
+      vi.mocked(searchTags).mockResolvedValue({ success: true, tags: [] });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/content/tags/search',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(searchTags).toHaveBeenCalledWith(
+        { prefix: '' },
+        expect.anything(),
+        '',
+      );
+    });
+  });
+
+  describe('GET /api/content/tags/hot', () => {
+    it('routes to getHotTags and returns results', async () => {
+      vi.mocked(getHotTags).mockResolvedValue({
+        success: true,
+        tags: [
+          { tagId: 't1', tagName: 'react', usageCount: 50, createdAt: '2024-01-01' },
+          { tagId: 't2', tagName: 'aws', usageCount: 30, createdAt: '2024-01-01' },
+        ],
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/content/tags/hot',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.tags).toHaveLength(2);
+      expect(getHotTags).toHaveBeenCalled();
+    });
+  });
+
+  describe('GET /api/content/tags/cloud', () => {
+    it('routes to getTagCloudTags and returns results', async () => {
+      vi.mocked(getTagCloudTags).mockResolvedValue({
+        success: true,
+        tags: [
+          { tagId: 't1', tagName: 'react', usageCount: 50, createdAt: '2024-01-01' },
+        ],
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/content/tags/cloud',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.tags).toHaveLength(1);
+      expect(getTagCloudTags).toHaveBeenCalled();
     });
   });
 });

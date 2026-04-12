@@ -134,7 +134,7 @@ export default function RegisterPage() {
       // Registration auto-logs in — redirect to home
       Taro.showToast({ title: t('register.registerSuccess'), icon: 'success', duration: 1500 });
       setTimeout(() => {
-        Taro.reLaunch({ url: '/pages/index/index' });
+        Taro.reLaunch({ url: '/pages/hub/index' });
       }, 1000);
     } catch (err) {
       if (err instanceof RequestError) {

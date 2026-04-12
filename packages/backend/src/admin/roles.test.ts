@@ -30,8 +30,8 @@ describe('validateRoles', () => {
     expect(validateRoles(['Speaker', 'InvalidRole'])).toBe(false);
   });
 
-  it('should return true for all five assignable roles', () => {
-    expect(validateRoles(['UserGroupLeader', 'CommunityBuilder', 'Speaker', 'Volunteer', 'Admin'])).toBe(true);
+  it('should return false for CommunityBuilder (currently disabled)', () => {
+    expect(validateRoles(['UserGroupLeader', 'CommunityBuilder', 'Speaker', 'Volunteer', 'Admin'])).toBe(false);
   });
 });
 
@@ -65,7 +65,7 @@ describe('validateRoleAssignment', () => {
 });
 
 describe('assignRoles', () => {
-  it('should assign roles successfully with ADD expression', async () => {
+  it('should assign roles successfully', async () => {
     const client = createMockDynamoClient();
     const result = await assignRoles('user-1', ['Speaker', 'Volunteer'], client, tableName, ['Admin']);
 
@@ -76,9 +76,10 @@ describe('assignRoles', () => {
     const command = client.send.mock.calls[0][0];
     expect(command.constructor.name).toBe('UpdateCommand');
     expect(command.input.Key).toEqual({ userId: 'user-1' });
-    expect(command.input.UpdateExpression).toContain('ADD');
-    expect(command.input.ExpressionAttributeValues[':roles']).toEqual(new Set(['Speaker', 'Volunteer']));
+    expect(command.input.UpdateExpression).toContain('SET');
+    expect(command.input.ExpressionAttributeValues[':roles']).toEqual(['Speaker', 'Volunteer']);
     expect(command.input.ExpressionAttributeValues[':now']).toBeDefined();
+    expect(command.input.ExpressionAttributeValues[':rv']).toBeDefined();
   });
 
   it('should reject empty roles array', async () => {
@@ -146,19 +147,25 @@ describe('assignRoles', () => {
 });
 
 describe('revokeRole', () => {
-  it('should revoke a role successfully with DELETE expression', async () => {
+  it('should revoke a role successfully', async () => {
     const client = createMockDynamoClient();
+    // Mock the GetCommand response for reading current roles
+    client.send.mockResolvedValueOnce({ Item: { roles: ['Speaker', 'Volunteer'] } });
+    // Mock the UpdateCommand response
+    client.send.mockResolvedValueOnce({});
+
     const result = await revokeRole('user-1', 'Speaker', client, tableName, ['Admin']);
 
     expect(result.success).toBe(true);
     expect(result.error).toBeUndefined();
 
-    expect(client.send).toHaveBeenCalledTimes(1);
-    const command = client.send.mock.calls[0][0];
-    expect(command.constructor.name).toBe('UpdateCommand');
-    expect(command.input.Key).toEqual({ userId: 'user-1' });
-    expect(command.input.UpdateExpression).toContain('DELETE');
-    expect(command.input.ExpressionAttributeValues[':role']).toEqual(new Set(['Speaker']));
+    expect(client.send).toHaveBeenCalledTimes(2);
+    const updateCommand = client.send.mock.calls[1][0];
+    expect(updateCommand.constructor.name).toBe('UpdateCommand');
+    expect(updateCommand.input.Key).toEqual({ userId: 'user-1' });
+    expect(updateCommand.input.UpdateExpression).toContain('SET');
+    expect(updateCommand.input.ExpressionAttributeValues[':roles']).toEqual(['Volunteer']);
+    expect(updateCommand.input.ExpressionAttributeValues[':rv']).toBeDefined();
   });
 
   it('should reject invalid role', async () => {
@@ -181,10 +188,12 @@ describe('revokeRole', () => {
 
   it('should allow revoking Admin when caller is SuperAdmin', async () => {
     const client = createMockDynamoClient();
+    client.send.mockResolvedValueOnce({ Item: { roles: ['Admin'] } });
+    client.send.mockResolvedValueOnce({});
     const result = await revokeRole('user-1', 'Admin', client, tableName, ['SuperAdmin']);
 
     expect(result.success).toBe(true);
-    expect(client.send).toHaveBeenCalledTimes(1);
+    expect(client.send).toHaveBeenCalledTimes(2);
   });
 
   it('should reject revoking SuperAdmin via API', async () => {
@@ -198,9 +207,11 @@ describe('revokeRole', () => {
 
   it('should set updatedAt timestamp', async () => {
     const client = createMockDynamoClient();
+    client.send.mockResolvedValueOnce({ Item: { roles: ['Volunteer'] } });
+    client.send.mockResolvedValueOnce({});
     await revokeRole('user-1', 'Volunteer', client, tableName, ['Admin']);
 
-    const command = client.send.mock.calls[0][0];
+    const command = client.send.mock.calls[1][0];
     expect(command.input.UpdateExpression).toContain('updatedAt');
     const now = command.input.ExpressionAttributeValues[':now'];
     expect(new Date(now).toISOString()).toBe(now);

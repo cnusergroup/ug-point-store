@@ -363,3 +363,223 @@ describe('Property 19: 分页正确性', () => {
     );
   });
 });
+
+
+// ─── Shared Tag Arbitraries ────────────────────────────────
+
+/** Arbitrary for a valid tag name (2-20 lowercase chars) */
+const validTagNameArb = fc.string({ minLength: 2, maxLength: 20, unit: fc.constantFrom(
+  ...'abcdefghijklmnopqrstuvwxyz0123456789'.split(''),
+) }).filter(s => s.trim().length >= 2);
+
+/** Arbitrary for a ContentItem with optional tags and mixed status/category */
+const contentItemWithTagsArb = fc.record({
+  contentId: fc.uuid(),
+  title: fc.string({ minLength: 1, maxLength: 100 }),
+  description: fc.string({ minLength: 1, maxLength: 200 }),
+  categoryId: fc.constantFrom('cat-a', 'cat-b', 'cat-c'),
+  categoryName: fc.constantFrom('Tech', 'Design', 'Marketing'),
+  uploaderId: fc.uuid(),
+  uploaderNickname: fc.string({ minLength: 1, maxLength: 30 }),
+  uploaderRole: fc.constantFrom('Speaker', 'Volunteer', 'Admin'),
+  fileKey: fc.string({ minLength: 1, maxLength: 100 }),
+  fileName: fc.string({ minLength: 1, maxLength: 50 }),
+  fileSize: fc.integer({ min: 1, max: 50 * 1024 * 1024 }),
+  status: fc.constantFrom<ContentStatus>('pending', 'approved', 'rejected'),
+  likeCount: fc.nat({ max: 1000 }),
+  commentCount: fc.nat({ max: 500 }),
+  reservationCount: fc.nat({ max: 500 }),
+  createdAt: fc.integer({ min: 1704067200000, max: 1767225600000 }).map((ts) => new Date(ts).toISOString()),
+  updatedAt: fc.constant('2024-06-01T00:00:00.000Z'),
+  tags: fc.array(validTagNameArb, { minLength: 0, maxLength: 5 }).map(tags => {
+    // Deduplicate
+    const seen = new Set<string>();
+    return tags.filter(t => {
+      if (seen.has(t)) return false;
+      seen.add(t);
+      return true;
+    });
+  }),
+});
+
+// ─── Mock helpers for tag filtering ────────────────────────
+
+/**
+ * Create a mock DynamoDB client that simulates list query behavior with tag filtering.
+ * - Without categoryId: uses status-createdAt-index, filters status=approved + optional contains(tags, :tag)
+ * - With categoryId: uses categoryId-createdAt-index, filters status=approved + optional contains(tags, :tag)
+ */
+function createTagFilterMockDynamoClient(allItems: Record<string, any>[]) {
+  return {
+    send: vi.fn().mockImplementation((cmd: any) => {
+      const input = cmd.input;
+      let filtered: Record<string, any>[];
+
+      if (input.IndexName === 'categoryId-createdAt-index') {
+        // Category filter path
+        const catId = input.ExpressionAttributeValues[':categoryId'];
+        filtered = allItems.filter((i) => i.categoryId === catId && i.status === 'approved');
+      } else {
+        // status-createdAt-index path
+        filtered = allItems.filter((i) => i.status === 'approved');
+      }
+
+      // Apply tag filter if present (simulates FilterExpression contains(tags, :tag))
+      const tagValue = input.ExpressionAttributeValues?.[':tag'];
+      if (tagValue) {
+        filtered = filtered.filter((i) => {
+          const itemTags: string[] = i.tags ?? [];
+          return itemTags.includes(tagValue);
+        });
+      }
+
+      // Sort by createdAt descending
+      filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      // Handle pagination
+      let startIdx = 0;
+      if (input.ExclusiveStartKey) {
+        const startKey = input.ExclusiveStartKey;
+        const idx = filtered.findIndex((i) => i.contentId === startKey.contentId);
+        if (idx >= 0) {
+          startIdx = idx + 1;
+        }
+      }
+
+      const limit = input.Limit ?? 20;
+      const page = filtered.slice(startIdx, startIdx + limit);
+      const hasMore = startIdx + limit < filtered.length;
+
+      return Promise.resolve({
+        Items: page,
+        LastEvaluatedKey: hasMore
+          ? { contentId: page[page.length - 1].contentId, status: 'approved', createdAt: page[page.length - 1].createdAt }
+          : undefined,
+      });
+    }),
+  } as any;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Property 10: 标签筛选正确性
+// ═══════════════════════════════════════════════════════════
+
+// Feature: content-tags, Property 10: 标签筛选正确性
+// 对于任何标签名和可选的 categoryId 筛选条件，内容列表查询返回的每条 ContentItem 应同时满足：
+// - tags 数组包含指定的标签名
+// - 如果指定了 categoryId，则 categoryId 等于指定值
+// - status 等于 "approved"
+// **Validates: Requirements 6.2, 6.4, 6.5**
+
+describe('Feature: content-tags, Property 10: 标签筛选正确性', () => {
+  it('按标签筛选时，返回的每条 ContentItem 的 tags 包含指定标签名且 status=approved', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(contentItemWithTagsArb, { minLength: 1, maxLength: 30 }),
+        validTagNameArb,
+        async (items, filterTag) => {
+          // Inject some items that have the filterTag to ensure non-empty results possible
+          const enrichedItems = items.map((item, idx) =>
+            idx % 3 === 0
+              ? {
+                  ...item,
+                  status: 'approved' as const,
+                  tags: [...new Set([...(item.tags ?? []), filterTag])].slice(0, 5),
+                }
+              : item,
+          );
+
+          const client = createTagFilterMockDynamoClient(enrichedItems);
+          const result = await listContentItems({ tag: filterTag, pageSize: 100 }, client, TABLE);
+
+          expect(result.success).toBe(true);
+
+          for (const summary of result.items!) {
+            // Find the original item to check tags
+            const original = enrichedItems.find((i) => i.contentId === summary.contentId);
+            expect(original).toBeDefined();
+
+            // status must be approved
+            expect(original!.status).toBe('approved');
+
+            // tags array must contain the filter tag
+            const itemTags: string[] = original!.tags ?? [];
+            expect(itemTags).toContain(filterTag);
+          }
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
+  it('按标签 + 分类同时筛选时，返回的每条 ContentItem 满足 tags 包含标签、categoryId 匹配、status=approved', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(contentItemWithTagsArb, { minLength: 1, maxLength: 30 }),
+        validTagNameArb,
+        fc.constantFrom('cat-a', 'cat-b', 'cat-c'),
+        async (items, filterTag, filterCategoryId) => {
+          // Inject some items that match both filters
+          const enrichedItems = items.map((item, idx) =>
+            idx % 3 === 0
+              ? {
+                  ...item,
+                  status: 'approved' as const,
+                  categoryId: filterCategoryId,
+                  tags: [...new Set([...(item.tags ?? []), filterTag])].slice(0, 5),
+                }
+              : item,
+          );
+
+          const client = createTagFilterMockDynamoClient(enrichedItems);
+          const result = await listContentItems(
+            { tag: filterTag, categoryId: filterCategoryId, pageSize: 100 },
+            client,
+            TABLE,
+          );
+
+          expect(result.success).toBe(true);
+
+          for (const summary of result.items!) {
+            const original = enrichedItems.find((i) => i.contentId === summary.contentId);
+            expect(original).toBeDefined();
+
+            // status must be approved
+            expect(original!.status).toBe('approved');
+
+            // categoryId must match
+            expect(original!.categoryId).toBe(filterCategoryId);
+
+            // tags array must contain the filter tag
+            const itemTags: string[] = original!.tags ?? [];
+            expect(itemTags).toContain(filterTag);
+          }
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
+  it('返回的结果数量应等于满足所有筛选条件的 approved 记录数', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(contentItemWithTagsArb, { minLength: 0, maxLength: 30 }),
+        validTagNameArb,
+        async (items, filterTag) => {
+          const client = createTagFilterMockDynamoClient(items);
+          const result = await listContentItems({ tag: filterTag, pageSize: 100 }, client, TABLE);
+
+          expect(result.success).toBe(true);
+
+          // Count expected matches: approved + tags contains filterTag
+          const expectedCount = items.filter(
+            (i) => i.status === 'approved' && (i.tags ?? []).includes(filterTag),
+          ).length;
+
+          expect(result.items!.length).toBe(expectedCount);
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+});

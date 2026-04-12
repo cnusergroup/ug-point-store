@@ -81,6 +81,10 @@ export default function RedeemPage() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // Feature toggle state (only used for points-code mode)
+  const [featureDisabled, setFeatureDisabled] = useState(false);
+  const [featureLoading, setFeatureLoading] = useState(mode === 'points-code');
+
   // Address state
   const [addresses, setAddresses] = useState<AddressResponse[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState('');
@@ -138,6 +142,26 @@ export default function RedeemPage() {
       loadAddresses();
     }
   }, [mode, loadAddresses]);
+
+  // Check feature toggle for points-code mode
+  useEffect(() => {
+    if (mode !== 'points-code') return;
+    setFeatureLoading(true);
+    request<{ codeRedemptionEnabled: boolean }>({
+      url: '/api/settings/feature-toggles',
+      skipAuth: true,
+    })
+      .then((res) => {
+        setFeatureDisabled(!res.codeRedemptionEnabled);
+      })
+      .catch(() => {
+        // Frontend degradation: default to showing the form on failure
+        setFeatureDisabled(false);
+      })
+      .finally(() => {
+        setFeatureLoading(false);
+      });
+  }, [mode]);
 
   const handleBack = () => {
     goBack('/pages/index/index');
@@ -288,7 +312,7 @@ export default function RedeemPage() {
   }
 
   // ---- Loading View ----
-  if (pageLoading) {
+  if (pageLoading || featureLoading) {
     return (
       <View className='redeem-page'>
         <View className='redeem-header'>
@@ -501,7 +525,7 @@ export default function RedeemPage() {
         )}
 
         {/* Mode: Points Code (no product, redeem code for points) */}
-        {mode === 'points-code' && (
+        {mode === 'points-code' && !featureDisabled && (
           <>
             <View className='redeem-code redeem-points-code'>
               <Text className='redeem-points-code__icon'><TicketIcon size={32} color='var(--accent-primary)' /></Text>
@@ -529,6 +553,45 @@ export default function RedeemPage() {
               <Text>{t('redeem.cancelButton')}</Text>
             </View>
           </>
+        )}
+
+        {/* Feature disabled message for points-code mode */}
+        {mode === 'points-code' && featureDisabled && (
+          <View style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 'var(--space-48) var(--space-24)',
+            textAlign: 'center',
+          }}>
+            <Text style={{
+              fontSize: '48px',
+              marginBottom: 'var(--space-16)',
+              opacity: 0.5,
+            }}>🔒</Text>
+            <Text style={{
+              fontFamily: 'var(--font-display)',
+              fontSize: '18px',
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              marginBottom: 'var(--space-8)',
+            }}>{t('featureToggle.featureDisabled')}</Text>
+            <Text style={{
+              fontFamily: 'var(--font-body)',
+              fontSize: '14px',
+              color: 'var(--text-secondary)',
+              marginBottom: 'var(--space-32)',
+              lineHeight: 1.5,
+            }}>{t('featureToggle.featureDisabledDesc')}</Text>
+            <View
+              className='btn-secondary'
+              style={{ padding: 'var(--space-12) var(--space-32)', cursor: 'pointer' }}
+              onClick={handleBack}
+            >
+              <Text>{t('featureToggle.backButton')}</Text>
+            </View>
+          </View>
         )}
       </View>
     </View>

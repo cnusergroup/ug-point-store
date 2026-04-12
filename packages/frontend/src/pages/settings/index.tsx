@@ -102,7 +102,7 @@ export default function SettingsPage() {
   return (
     <View className='settings-page'>
       <View className='settings-header'>
-        <View className='settings-header__back' onClick={() => goBack('/pages/profile/index')}>
+        <View className='settings-header__back' onClick={() => goBack('/pages/hub/index')}>
           <ArrowLeftIcon size={20} color='var(--text-primary)' />
         </View>
         <Text className='settings-header__title'>{t('settings.title')}</Text>

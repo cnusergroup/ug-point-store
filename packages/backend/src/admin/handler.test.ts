@@ -61,6 +61,28 @@ vi.mock('../content/admin', () => ({
   updateCategory: vi.fn(),
   deleteCategory: vi.fn(),
 }));
+vi.mock('../settings/feature-toggles', () => ({
+  updateFeatureToggles: vi.fn(),
+}));
+vi.mock('../content/admin-tags', () => ({
+  listAllTags: vi.fn(),
+  mergeTags: vi.fn(),
+  deleteTag: vi.fn(),
+}));
+vi.mock('./batch-points', () => ({
+  executeBatchDistribution: vi.fn(),
+  validateBatchDistributionInput: vi.fn(),
+  listDistributionHistory: vi.fn(),
+  getDistributionDetail: vi.fn(),
+}));
+vi.mock('../travel/settings', () => ({
+  updateTravelSettings: vi.fn(),
+  validateTravelSettingsInput: vi.fn(),
+}));
+vi.mock('../travel/review', () => ({
+  reviewTravelApplication: vi.fn(),
+  listAllTravelApplications: vi.fn(),
+}));
 
 // Mock auth middleware - inject user with admin role by default
 let mockUserRoles: string[] = ['Admin'];
@@ -86,6 +108,11 @@ import { listUsers, setUserStatus, deleteUser } from './users';
 import { batchGenerateInvites } from './invites';
 import { reviewClaim, listAllClaims } from '../claims/review';
 import { reviewContent, listAllContent, deleteContent, createCategory, updateCategory, deleteCategory } from '../content/admin';
+import { listAllTags, mergeTags, deleteTag } from '../content/admin-tags';
+import { updateFeatureToggles } from '../settings/feature-toggles';
+import { executeBatchDistribution, validateBatchDistributionInput, listDistributionHistory, getDistributionDetail } from './batch-points';
+import { updateTravelSettings, validateTravelSettingsInput } from '../travel/settings';
+import { reviewTravelApplication, listAllTravelApplications } from '../travel/review';
 
 function makeEvent(overrides: Partial<APIGatewayProxyEvent> = {}): APIGatewayProxyEvent {
   return {
@@ -1163,6 +1190,768 @@ describe('Admin Lambda Handler', () => {
       const result = await handler(event);
       expect(result.statusCode).toBe(200);
       expect(deleteCategory).toHaveBeenCalledWith('cat-1', expect.anything(), '');
+    });
+  });
+
+  // ── Tag Management Routes ──────────────────────────────
+
+  describe('GET /api/admin/tags', () => {
+    it('routes to listAllTags and returns results', async () => {
+      vi.mocked(listAllTags).mockResolvedValue({
+        success: true,
+        tags: [
+          { tagId: 'tag-1', tagName: 'angular', usageCount: 3, createdAt: '2024-01-01' },
+          { tagId: 'tag-2', tagName: 'react', usageCount: 10, createdAt: '2024-01-01' },
+        ],
+      });
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/tags' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.tags).toHaveLength(2);
+      expect(body.tags[0].tagName).toBe('angular');
+      expect(listAllTags).toHaveBeenCalledWith(expect.anything(), '');
+    });
+
+    it('Admin role can list tags', async () => {
+      mockUserRoles = ['Admin'];
+      vi.mocked(listAllTags).mockResolvedValue({ success: true, tags: [] });
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/tags' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+    });
+  });
+
+  describe('POST /api/admin/tags/merge', () => {
+    it('routes to mergeTags when user is SuperAdmin', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(mergeTags).mockResolvedValue({ success: true });
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/tags/merge',
+        body: JSON.stringify({ sourceTagId: 'src-1', targetTagId: 'tgt-1' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body).message).toBe('标签合并成功');
+      expect(mergeTags).toHaveBeenCalledWith(
+        { sourceTagId: 'src-1', targetTagId: 'tgt-1' },
+        expect.anything(),
+        { contentTagsTable: '', contentItemsTable: '' },
+      );
+    });
+
+    it('non-SuperAdmin gets 403 FORBIDDEN for merge', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/tags/merge',
+        body: JSON.stringify({ sourceTagId: 'src-1', targetTagId: 'tgt-1' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(mergeTags).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when required fields are missing', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/tags/merge',
+        body: JSON.stringify({ sourceTagId: 'src-1' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+    });
+
+    it('returns error when mergeTags fails', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(mergeTags).mockResolvedValue({
+        success: false,
+        error: { code: 'TAG_MERGE_SELF_ERROR', message: '不能将标签合并到自身' },
+      });
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/tags/merge',
+        body: JSON.stringify({ sourceTagId: 'tag-1', targetTagId: 'tag-1' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('TAG_MERGE_SELF_ERROR');
+    });
+  });
+
+  describe('DELETE /api/admin/tags/:id', () => {
+    it('routes to deleteTag when user is SuperAdmin', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(deleteTag).mockResolvedValue({ success: true });
+      const event = makeEvent({
+        httpMethod: 'DELETE',
+        path: '/api/admin/tags/tag-123',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body).message).toBe('标签已删除');
+      expect(deleteTag).toHaveBeenCalledWith(
+        'tag-123',
+        expect.anything(),
+        { contentTagsTable: '', contentItemsTable: '' },
+      );
+    });
+
+    it('non-SuperAdmin gets 403 FORBIDDEN for delete', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'DELETE',
+        path: '/api/admin/tags/tag-123',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(deleteTag).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when tag not found', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(deleteTag).mockResolvedValue({
+        success: false,
+        error: { code: 'TAG_NOT_FOUND', message: '标签不存在' },
+      });
+      const event = makeEvent({
+        httpMethod: 'DELETE',
+        path: '/api/admin/tags/nonexistent',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(404);
+      expect(JSON.parse(result.body).code).toBe('TAG_NOT_FOUND');
+    });
+  });
+
+  describe('PUT /api/admin/settings/feature-toggles', () => {
+    it('SuperAdmin can update feature toggles successfully', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(updateFeatureToggles).mockResolvedValue({
+        success: true,
+        settings: {
+          codeRedemptionEnabled: true,
+          pointsClaimEnabled: false,
+          updatedAt: '2024-01-01T00:00:00.000Z',
+          updatedBy: 'admin-user-id',
+        },
+      });
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/settings/feature-toggles',
+        body: JSON.stringify({ codeRedemptionEnabled: true, pointsClaimEnabled: false }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.settings.codeRedemptionEnabled).toBe(true);
+      expect(body.settings.pointsClaimEnabled).toBe(false);
+      expect(updateFeatureToggles).toHaveBeenCalledWith(
+        {
+          codeRedemptionEnabled: true,
+          pointsClaimEnabled: false,
+          updatedBy: 'admin-user-id',
+        },
+        expect.anything(),
+        '',
+      );
+    });
+
+    it('non-SuperAdmin gets 403 FORBIDDEN', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/settings/feature-toggles',
+        body: JSON.stringify({ codeRedemptionEnabled: true, pointsClaimEnabled: false }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+    });
+
+    it('invalid request body gets 400 INVALID_REQUEST', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/settings/feature-toggles',
+        body: null,
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+    });
+  });
+
+  // ── Batch Points Routes ──────────────────────────────
+
+  describe('POST /api/admin/batch-points', () => {
+    it('dispatches to batch distribution handler and returns 201', async () => {
+      mockUserRoles = ['Admin'];
+      vi.mocked(validateBatchDistributionInput).mockReturnValue({ valid: true });
+      mockDynamoSend.mockResolvedValueOnce({ Item: { nickname: 'AdminUser' } });
+      vi.mocked(executeBatchDistribution).mockResolvedValue({
+        success: true,
+        distributionId: 'dist-001',
+        successCount: 3,
+        totalPoints: 300,
+      });
+
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/batch-points',
+        body: JSON.stringify({
+          userIds: ['u1', 'u2', 'u3'],
+          points: 100,
+          reason: '季度奖励',
+          targetRole: 'Speaker',
+        }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(201);
+      const body = JSON.parse(result.body);
+      expect(body.distributionId).toBe('dist-001');
+      expect(body.successCount).toBe(3);
+      expect(body.totalPoints).toBe(300);
+      expect(executeBatchDistribution).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userIds: ['u1', 'u2', 'u3'],
+          points: 100,
+          reason: '季度奖励',
+          targetRole: 'Speaker',
+          distributorId: 'admin-user-id',
+          distributorNickname: 'AdminUser',
+        }),
+        expect.anything(),
+        expect.objectContaining({
+          usersTable: '',
+          pointsRecordsTable: '',
+          batchDistributionsTable: '',
+        }),
+      );
+    });
+
+    it('returns 400 when validation fails', async () => {
+      mockUserRoles = ['Admin'];
+      vi.mocked(validateBatchDistributionInput).mockReturnValue({
+        valid: false,
+        error: { code: 'INVALID_REQUEST', message: 'userIds 必须为非空数组' },
+      });
+
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/batch-points',
+        body: JSON.stringify({ points: 100 }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+    });
+
+    it('Admin can execute batch distribution', async () => {
+      mockUserRoles = ['Admin'];
+      vi.mocked(validateBatchDistributionInput).mockReturnValue({ valid: true });
+      mockDynamoSend.mockResolvedValueOnce({ Item: { nickname: 'Admin1' } });
+      vi.mocked(executeBatchDistribution).mockResolvedValue({
+        success: true,
+        distributionId: 'dist-002',
+        successCount: 1,
+        totalPoints: 50,
+      });
+
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/batch-points',
+        body: JSON.stringify({
+          userIds: ['u1'],
+          points: 50,
+          reason: '测试发放',
+          targetRole: 'Volunteer',
+        }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(201);
+    });
+
+    it('returns error when executeBatchDistribution fails', async () => {
+      mockUserRoles = ['Admin'];
+      vi.mocked(validateBatchDistributionInput).mockReturnValue({ valid: true });
+      mockDynamoSend.mockResolvedValueOnce({ Item: { nickname: 'Admin1' } });
+      vi.mocked(executeBatchDistribution).mockResolvedValue({
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: '批量发放事务执行失败' },
+      });
+
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/batch-points',
+        body: JSON.stringify({
+          userIds: ['u1'],
+          points: 50,
+          reason: '测试',
+          targetRole: 'Speaker',
+        }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INTERNAL_ERROR');
+    });
+  });
+
+  describe('GET /api/admin/batch-points/history', () => {
+    it('dispatches to list distribution history handler for SuperAdmin', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(listDistributionHistory).mockResolvedValue({
+        success: true,
+        distributions: [
+          {
+            distributionId: 'dist-001',
+            distributorId: 'admin-1',
+            distributorNickname: 'Admin1',
+            targetRole: 'Speaker',
+            recipientIds: ['u1', 'u2'],
+            points: 100,
+            reason: '季度奖励',
+            successCount: 2,
+            totalPoints: 200,
+            createdAt: '2024-01-01T00:00:00Z',
+          },
+        ],
+        lastKey: undefined,
+      });
+
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/batch-points/history',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.distributions).toHaveLength(1);
+      expect(body.distributions[0].distributionId).toBe('dist-001');
+      expect(listDistributionHistory).toHaveBeenCalledWith(
+        { pageSize: undefined, lastKey: undefined },
+        expect.anything(),
+        '',
+      );
+    });
+
+    it('passes pageSize and lastKey query params', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(listDistributionHistory).mockResolvedValue({
+        success: true,
+        distributions: [],
+        lastKey: undefined,
+      });
+
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/batch-points/history',
+        queryStringParameters: { pageSize: '10', lastKey: 'some-cursor' },
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(listDistributionHistory).toHaveBeenCalledWith(
+        { pageSize: 10, lastKey: 'some-cursor' },
+        expect.anything(),
+        '',
+      );
+    });
+
+    it('non-SuperAdmin cannot view history (returns 403)', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/batch-points/history',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(listDistributionHistory).not.toHaveBeenCalled();
+    });
+
+    it('SuperAdmin can view history', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(listDistributionHistory).mockResolvedValue({
+        success: true,
+        distributions: [],
+        lastKey: undefined,
+      });
+
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/batch-points/history',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+    });
+  });
+
+  describe('GET /api/admin/batch-points/history/{id}', () => {
+    it('dispatches to get distribution detail handler for SuperAdmin', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(getDistributionDetail).mockResolvedValue({
+        success: true,
+        distribution: {
+          distributionId: 'dist-001',
+          distributorId: 'admin-1',
+          distributorNickname: 'Admin1',
+          targetRole: 'Speaker',
+          recipientIds: ['u1', 'u2'],
+          recipientDetails: [
+            { userId: 'u1', nickname: 'User1', email: 'u1@test.com' },
+            { userId: 'u2', nickname: 'User2', email: 'u2@test.com' },
+          ],
+          points: 100,
+          reason: '季度奖励',
+          successCount: 2,
+          totalPoints: 200,
+          createdAt: '2024-01-01T00:00:00Z',
+        },
+      });
+
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/batch-points/history/dist-001',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.distribution.distributionId).toBe('dist-001');
+      expect(body.distribution.recipientDetails).toHaveLength(2);
+      expect(getDistributionDetail).toHaveBeenCalledWith(
+        'dist-001',
+        expect.anything(),
+        '',
+      );
+    });
+
+    it('non-SuperAdmin cannot view distribution detail (returns 403)', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/batch-points/history/dist-001',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(getDistributionDetail).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when distribution not found', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(getDistributionDetail).mockResolvedValue({
+        success: false,
+        error: { code: 'DISTRIBUTION_NOT_FOUND', message: '发放记录不存在' },
+      });
+
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/batch-points/history/nonexistent',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(404);
+      expect(JSON.parse(result.body).code).toBe('DISTRIBUTION_NOT_FOUND');
+    });
+  });
+
+  // ── Travel Sponsorship Routes ──────────────────────────────
+
+  describe('PUT /api/admin/settings/travel-sponsorship', () => {
+    it('SuperAdmin can update travel sponsorship settings', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(validateTravelSettingsInput).mockReturnValue({ valid: true });
+      vi.mocked(updateTravelSettings).mockResolvedValue({
+        success: true,
+        settings: {
+          userId: 'travel-sponsorship',
+          travelSponsorshipEnabled: true,
+          domesticThreshold: 500,
+          internationalThreshold: 1000,
+          updatedAt: '2024-01-01T00:00:00.000Z',
+          updatedBy: 'admin-user-id',
+        },
+      });
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/settings/travel-sponsorship',
+        body: JSON.stringify({
+          travelSponsorshipEnabled: true,
+          domesticThreshold: 500,
+          internationalThreshold: 1000,
+        }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.settings.travelSponsorshipEnabled).toBe(true);
+      expect(body.settings.domesticThreshold).toBe(500);
+      expect(body.settings.internationalThreshold).toBe(1000);
+      expect(updateTravelSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          travelSponsorshipEnabled: true,
+          domesticThreshold: 500,
+          internationalThreshold: 1000,
+          updatedBy: 'admin-user-id',
+        }),
+        expect.anything(),
+        '',
+      );
+    });
+
+    it('non-SuperAdmin gets 403 FORBIDDEN', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/settings/travel-sponsorship',
+        body: JSON.stringify({
+          travelSponsorshipEnabled: true,
+          domesticThreshold: 500,
+          internationalThreshold: 1000,
+        }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(updateTravelSettings).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when validation fails', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(validateTravelSettingsInput).mockReturnValue({
+        valid: false,
+        error: { code: 'INVALID_REQUEST', message: 'domesticThreshold 必须为正整数（最小值 1）' },
+      });
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/settings/travel-sponsorship',
+        body: JSON.stringify({
+          travelSponsorshipEnabled: true,
+          domesticThreshold: 0,
+          internationalThreshold: 1000,
+        }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+    });
+  });
+
+  describe('GET /api/admin/travel/applications', () => {
+    it('SuperAdmin can list all travel applications', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      const mockApplications = [
+        {
+          applicationId: 'app-1',
+          userId: 'user-1',
+          applicantNickname: 'Speaker1',
+          category: 'domestic',
+          communityRole: 'Hero',
+          eventLink: 'https://example.com/event',
+          cfpScreenshotUrl: 'https://example.com/screenshot.png',
+          flightCost: 1000,
+          hotelCost: 500,
+          totalCost: 1500,
+          status: 'pending',
+          earnDeducted: 500,
+          createdAt: '2024-01-01T00:00:00Z',
+          updatedAt: '2024-01-01T00:00:00Z',
+        },
+      ];
+      vi.mocked(listAllTravelApplications).mockResolvedValue({
+        success: true,
+        applications: mockApplications as any,
+        lastKey: undefined,
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/travel/applications',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.applications).toEqual(mockApplications);
+      expect(listAllTravelApplications).toHaveBeenCalledWith(
+        expect.objectContaining({ status: undefined }),
+        expect.anything(),
+        '',
+      );
+    });
+
+    it('passes status, pageSize and lastKey query params', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(listAllTravelApplications).mockResolvedValue({
+        success: true,
+        applications: [],
+        lastKey: undefined,
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/travel/applications',
+        queryStringParameters: { status: 'pending', pageSize: '10', lastKey: 'some-cursor' },
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(listAllTravelApplications).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'pending', pageSize: 10, lastKey: 'some-cursor' }),
+        expect.anything(),
+        '',
+      );
+    });
+
+    it('non-SuperAdmin gets 403 FORBIDDEN', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/travel/applications',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(listAllTravelApplications).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('PATCH /api/admin/travel/{id}/review', () => {
+    it('SuperAdmin can approve a travel application', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      mockDynamoSend.mockResolvedValueOnce({ Item: { nickname: 'AdminUser' } });
+      const mockApplication = {
+        applicationId: 'app-1',
+        userId: 'user-1',
+        applicantNickname: 'Speaker1',
+        category: 'domestic',
+        communityRole: 'Hero',
+        eventLink: 'https://example.com/event',
+        cfpScreenshotUrl: 'https://example.com/screenshot.png',
+        flightCost: 1000,
+        hotelCost: 500,
+        totalCost: 1500,
+        status: 'approved',
+        earnDeducted: 500,
+        reviewerId: 'admin-user-id',
+        reviewerNickname: 'AdminUser',
+        reviewedAt: '2024-01-02T00:00:00Z',
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-02T00:00:00Z',
+      };
+      vi.mocked(reviewTravelApplication).mockResolvedValue({
+        success: true,
+        application: mockApplication as any,
+      });
+      const event = makeEvent({
+        httpMethod: 'PATCH',
+        path: '/api/admin/travel/app-1/review',
+        body: JSON.stringify({ action: 'approve' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body).application).toEqual(mockApplication);
+      expect(reviewTravelApplication).toHaveBeenCalledWith(
+        {
+          applicationId: 'app-1',
+          reviewerId: 'admin-user-id',
+          reviewerNickname: 'AdminUser',
+          action: 'approve',
+          rejectReason: undefined,
+        },
+        expect.anything(),
+        { usersTable: '', travelApplicationsTable: '' },
+      );
+    });
+
+    it('SuperAdmin can reject a travel application with reason', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      mockDynamoSend.mockResolvedValueOnce({ Item: { nickname: 'AdminUser' } });
+      const mockApplication = {
+        applicationId: 'app-2',
+        userId: 'user-2',
+        applicantNickname: 'Speaker2',
+        category: 'international',
+        communityRole: 'UGL',
+        eventLink: 'https://example.com/event2',
+        cfpScreenshotUrl: 'https://example.com/screenshot2.png',
+        flightCost: 3000,
+        hotelCost: 1500,
+        totalCost: 4500,
+        status: 'rejected',
+        earnDeducted: 1000,
+        rejectReason: '费用过高',
+        reviewerId: 'admin-user-id',
+        reviewerNickname: 'AdminUser',
+        reviewedAt: '2024-01-02T00:00:00Z',
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-02T00:00:00Z',
+      };
+      vi.mocked(reviewTravelApplication).mockResolvedValue({
+        success: true,
+        application: mockApplication as any,
+      });
+      const event = makeEvent({
+        httpMethod: 'PATCH',
+        path: '/api/admin/travel/app-2/review',
+        body: JSON.stringify({ action: 'reject', rejectReason: '费用过高' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body).application).toEqual(mockApplication);
+      expect(reviewTravelApplication).toHaveBeenCalledWith(
+        {
+          applicationId: 'app-2',
+          reviewerId: 'admin-user-id',
+          reviewerNickname: 'AdminUser',
+          action: 'reject',
+          rejectReason: '费用过高',
+        },
+        expect.anything(),
+        { usersTable: '', travelApplicationsTable: '' },
+      );
+    });
+
+    it('returns 400 when action field is missing', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      const event = makeEvent({
+        httpMethod: 'PATCH',
+        path: '/api/admin/travel/app-1/review',
+        body: JSON.stringify({}),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+    });
+
+    it('non-SuperAdmin gets 403 FORBIDDEN', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'PATCH',
+        path: '/api/admin/travel/app-1/review',
+        body: JSON.stringify({ action: 'approve' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(reviewTravelApplication).not.toHaveBeenCalled();
+    });
+
+    it('returns error with correct HTTP status when reviewTravelApplication fails', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      mockDynamoSend.mockResolvedValueOnce({ Item: { nickname: 'AdminUser' } });
+      vi.mocked(reviewTravelApplication).mockResolvedValue({
+        success: false,
+        error: { code: 'APPLICATION_ALREADY_REVIEWED', message: '该申请已被审批' },
+      });
+      const event = makeEvent({
+        httpMethod: 'PATCH',
+        path: '/api/admin/travel/app-1/review',
+        body: JSON.stringify({ action: 'approve' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('APPLICATION_ALREADY_REVIEWED');
     });
   });
 });

@@ -18,6 +18,9 @@ export class DatabaseStack extends cdk.Stack {
   public readonly contentCommentsTable: dynamodb.Table;
   public readonly contentLikesTable: dynamodb.Table;
   public readonly contentReservationsTable: dynamodb.Table;
+  public readonly batchDistributionsTable: dynamodb.Table;
+  public readonly travelApplicationsTable: dynamodb.Table;
+  public readonly contentTagsTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -289,5 +292,61 @@ export class DatabaseStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'ContentReservationsTableName', { value: this.contentReservationsTable.tableName, exportName: 'PointsMall-ContentReservationsTableName' });
     new cdk.CfnOutput(this, 'ContentReservationsTableArn', { value: this.contentReservationsTable.tableArn, exportName: 'PointsMall-ContentReservationsTableArn' });
+
+    // BatchDistributions table: PK=distributionId, GSI: createdAt-index (PK=pk, SK=createdAt)
+    this.batchDistributionsTable = new dynamodb.Table(this, 'BatchDistributionsTable', {
+      tableName: 'PointsMall-BatchDistributions',
+      partitionKey: { name: 'distributionId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.batchDistributionsTable.addGlobalSecondaryIndex({
+      indexName: 'createdAt-index',
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+    });
+
+    new cdk.CfnOutput(this, 'BatchDistributionsTableName', { value: this.batchDistributionsTable.tableName, exportName: 'PointsMall-BatchDistributionsTableName' });
+    new cdk.CfnOutput(this, 'BatchDistributionsTableArn', { value: this.batchDistributionsTable.tableArn, exportName: 'PointsMall-BatchDistributionsTableArn' });
+
+    // TravelApplications table: PK=applicationId, GSI: userId-createdAt-index, status-createdAt-index
+    this.travelApplicationsTable = new dynamodb.Table(this, 'TravelApplicationsTable', {
+      tableName: 'PointsMall-TravelApplications',
+      partitionKey: { name: 'applicationId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.travelApplicationsTable.addGlobalSecondaryIndex({
+      indexName: 'userId-createdAt-index',
+      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+    });
+
+    this.travelApplicationsTable.addGlobalSecondaryIndex({
+      indexName: 'status-createdAt-index',
+      partitionKey: { name: 'status', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+    });
+
+    new cdk.CfnOutput(this, 'TravelApplicationsTableName', { value: this.travelApplicationsTable.tableName, exportName: 'PointsMall-TravelApplicationsTableName' });
+    new cdk.CfnOutput(this, 'TravelApplicationsTableArn', { value: this.travelApplicationsTable.tableArn, exportName: 'PointsMall-TravelApplicationsTableArn' });
+
+    // ContentTags table: PK=tagId, GSI: tagName-index
+    this.contentTagsTable = new dynamodb.Table(this, 'ContentTagsTable', {
+      tableName: 'PointsMall-ContentTags',
+      partitionKey: { name: 'tagId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.contentTagsTable.addGlobalSecondaryIndex({
+      indexName: 'tagName-index',
+      partitionKey: { name: 'tagName', type: dynamodb.AttributeType.STRING },
+    });
+
+    new cdk.CfnOutput(this, 'ContentTagsTableName', { value: this.contentTagsTable.tableName, exportName: 'PointsMall-ContentTagsTableName' });
+    new cdk.CfnOutput(this, 'ContentTagsTableArn', { value: this.contentTagsTable.tableArn, exportName: 'PointsMall-ContentTagsTableArn' });
   }
 }

@@ -3,6 +3,7 @@ import { View, Text, Input, Image } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useAppStore, UserRole } from '../../store';
 import { request, RequestError } from '../../utils/request';
+import { uploadWithRetry, UploadError } from '../../utils/upload';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
 import { PackageIcon } from '../../components/icons';
@@ -249,7 +250,6 @@ export default function AdminProductsPage() {
           method: 'POST',
           data: { fileName: uploadFileName, contentType: uploadContentType },
         });
-
         const env = Taro.getEnv();
         if (env === Taro.ENV_TYPE.WEB) {
           const fileObj = (chooseRes as any).tempFiles?.[i]?.originalFileObj as File | undefined;
@@ -259,14 +259,14 @@ export default function AdminProductsPage() {
               const blobUrl = URL.createObjectURL(fileObj);
               uploadBody = await resizeImage(blobUrl, MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT);
               URL.revokeObjectURL(blobUrl);
-            } catch {
+            } catch (resizeErr) {
               uploadBody = fileObj;
             }
           } else {
             const resp = await fetch(filePath);
             uploadBody = await resp.blob();
           }
-          await fetch(uploadInfo.uploadUrl, {
+          await uploadWithRetry(uploadInfo.uploadUrl, {
             method: 'PUT',
             headers: { 'Content-Type': uploadContentType },
             body: uploadBody,
@@ -300,6 +300,20 @@ export default function AdminProductsPage() {
       // Silently ignore user cancellation (errMsg contains 'cancel' or 'fail cancel')
       const msg = err?.errMsg || err?.message || '';
       if (msg.includes('cancel') || msg.includes('Cancel') || msg.includes('取消')) return;
+      if (err instanceof UploadError) {
+        switch (err.type) {
+          case 'TOKEN_EXPIRED':
+            setError(t('upload.tokenExpired'));
+            break;
+          case 'NETWORK_ERROR':
+            setError(t('upload.networkUnstable'));
+            break;
+          case 'SERVER_ERROR':
+            setError(t('upload.serverError'));
+            break;
+        }
+        return;
+      }
       setError(err instanceof RequestError ? err.message : t('admin.products.uploadFailed'));
     } finally {
       setUploading(false);

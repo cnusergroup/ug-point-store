@@ -1,0 +1,285 @@
+/* ============================================
+   TagInput 自动补全标签输入组件
+   Uses design system CSS variables from app.scss
+   ============================================ */
+
+.tag-input {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* ---- Selected tag chips ---- */
+.tag-input__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.tag-input__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  background: rgba(124, 109, 240, 0.15);
+  border: 1px solid rgba(124, 109, 240, 0.3);
+  border-radius: var(--radius-full);
+  transition: all var(--transition-fast);
+}
+
+.tag-input__chip-text {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--accent-primary);
+  white-space: nowrap;
+}
+
+.tag-input__chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--accent-primary);
+  cursor: pointer;
+  border-radius: var(--radius-full);
+  transition: all var(--transition-fast);
+
+  &:hover {
+    background: rgba(124, 109, 240, 0.25);
+    color: var(--text-primary);
+  }
+}
+
+/* ---- Input field wrapper ---- */
+.tag-input__field-wrapper {
+  position: relative;
+}
+
+.tag-input__input {
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-elevated);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  transition: border-color var(--transition-fast);
+  box-sizing: border-box;
+
+  &::placeholder {
+    color: var(--text-tertiary);
+  }
+
+  &:focus {
+    border-color: var(--accent-primary);
+    outline: none;
+  }
+
+  &--disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: var(--bg-surface);
+  }
+}
+
+.tag-input__limit-hint {
+  display: block;
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  color: var(--text-tertiary);
+  margin-top: var(--space-1);
+}
+
+/* ---- Autocomplete dropdown ---- */
+.tag-input__dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  margin-top: var(--space-1);
+  background: var(--bg-elevated);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  max-height: 200px;
+  overflow-y: auto;
+
+  &--create {
+    margin-top: 0;
+    border-top: none;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+}
+
+.tag-input__dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+
+  &:hover {
+    background: var(--bg-hover);
+  }
+
+  &:not(:last-child) {
+    border-bottom: 1px solid var(--card-border);
+  }
+
+  &--create {
+    color: var(--accent-primary);
+  }
+}
+
+.tag-input__dropdown-name {
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  color: var(--text-primary);
+
+  .tag-input__dropdown-item--create & {
+    color: var(--accent-primary);
+    font-weight: 500;
+  }
+}
+
+.tag-input__dropdown-count {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  margin-left: var(--space-2);
+}
+
+/* ---- Hot Tags area ---- */
+.tag-input__hot {
+  margin-top: var(--space-2);
+}
+
+.tag-input__hot-title {
+  display: block;
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-2);
+}
+
+.tag-input__hot-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.tag-input__hot-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    border-color: var(--card-border-hover);
+    background: var(--bg-hover);
+  }
+
+  &--selected {
+    background: rgba(124, 109, 240, 0.15);
+    border-color: rgba(124, 109, 240, 0.3);
+
+    .tag-input__hot-chip-text {
+      color: var(--accent-primary);
+    }
+  }
+
+  &--disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+
+    &:hover {
+      border-color: var(--card-border);
+      background: var(--bg-surface);
+    }
+  }
+}
+
+.tag-input__hot-chip-text {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* ============================================
+   Tablet (768px+)
+   ============================================ */
+@media (min-width: 768px) {
+  .tag-input__input {
+    padding: 14px var(--space-5);
+    font-size: 16px;
+    border-radius: var(--radius-lg);
+  }
+
+  .tag-input__chip {
+    padding: var(--space-1) var(--space-4);
+  }
+
+  .tag-input__chip-text {
+    font-size: var(--text-body-sm);
+  }
+
+  .tag-input__dropdown {
+    border-radius: var(--radius-lg);
+  }
+
+  .tag-input__dropdown-item {
+    padding: var(--space-3) var(--space-5);
+  }
+}
+
+/* ============================================
+   Desktop (1024px+)
+   ============================================ */
+@media (min-width: 1024px) {
+  .tag-input__input {
+    border-width: 2px;
+    background: var(--bg-elevated);
+
+    &:focus {
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 3px rgba(124, 109, 240, 0.12);
+    }
+  }
+
+  .tag-input__chip {
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .tag-input__chip-text {
+    font-size: var(--text-body);
+  }
+
+  .tag-input__chip-remove {
+    width: 18px;
+    height: 18px;
+    font-size: 16px;
+  }
+
+  .tag-input__hot-chip {
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .tag-input__hot-chip-text {
+    font-size: var(--text-body-sm);
+  }
+}

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import {
   getContentUploadUrl,
   createContentItem,
@@ -253,5 +253,103 @@ describe('createContentItem', () => {
 
     expect(result.item!.createdAt).toBeDefined();
     expect(result.item!.updatedAt).toBeDefined();
+  });
+
+  // ── Tag-related tests ──────────────────────────────────────
+
+  it('should create content item with valid tags', async () => {
+    const dynamo = createMockDynamoClient({ Item: { categoryId: 'cat-1', name: 'Tech' } });
+    const result = await createContentItem(
+      { ...validInput, tags: ['React', 'TypeScript'] },
+      dynamo,
+      { ...tables, contentTagsTable: 'ContentTags' },
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.item).toBeDefined();
+    expect(result.item!.tags).toEqual(['react', 'typescript']);
+  });
+
+  it('should default tags to empty array when not provided', async () => {
+    const dynamo = createMockDynamoClient({ Item: { categoryId: 'cat-1', name: 'Tech' } });
+    const result = await createContentItem(validInput, dynamo, tables);
+
+    expect(result.success).toBe(true);
+    expect(result.item).toBeDefined();
+    expect(result.item!.tags).toEqual([]);
+  });
+
+  it('should reject tags exceeding maximum of 5', async () => {
+    const dynamo = createMockDynamoClient({ Item: { categoryId: 'cat-1', name: 'Tech' } });
+    const result = await createContentItem(
+      { ...validInput, tags: ['tag1', 'tag2', 'tag3', 'tag4', 'tag5', 'tag6'] },
+      dynamo,
+      tables,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error!.code).toBe(ErrorCodes.TOO_MANY_TAGS);
+  });
+
+  it('should reject invalid tag name (too short)', async () => {
+    const dynamo = createMockDynamoClient({ Item: { categoryId: 'cat-1', name: 'Tech' } });
+    const result = await createContentItem(
+      { ...validInput, tags: ['a'] },
+      dynamo,
+      tables,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error!.code).toBe(ErrorCodes.INVALID_TAG_NAME);
+  });
+
+  it('should reject duplicate tags after normalization', async () => {
+    const dynamo = createMockDynamoClient({ Item: { categoryId: 'cat-1', name: 'Tech' } });
+    const result = await createContentItem(
+      { ...validInput, tags: ['React', 'react'] },
+      dynamo,
+      tables,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error!.code).toBe(ErrorCodes.DUPLICATE_TAG_NAME);
+  });
+});
+
+
+// ─── getContentUploadUrl - CloudFront mode ─────────────────
+
+describe('getContentUploadUrl - CloudFront mode', () => {
+  let cfGetContentUploadUrl: typeof import('./upload').getContentUploadUrl;
+
+  beforeAll(async () => {
+    vi.resetModules();
+    process.env.UPLOAD_VIA_CLOUDFRONT = 'true';
+    process.env.UPLOAD_TOKEN_SECRET = 'test-secret-key';
+    process.env.CLOUDFRONT_DOMAIN = 'https://store.awscommunity.cn';
+    const mod = await import('./upload');
+    cfGetContentUploadUrl = mod.getContentUploadUrl;
+  });
+
+  afterAll(() => {
+    delete process.env.UPLOAD_VIA_CLOUDFRONT;
+    delete process.env.UPLOAD_TOKEN_SECRET;
+    delete process.env.CLOUDFRONT_DOMAIN;
+    vi.resetModules();
+  });
+
+  it('should return CloudFront domain URL with token parameter', async () => {
+    const s3 = { send: vi.fn().mockResolvedValue({}) } as any;
+    const input: GetContentUploadUrlInput = {
+      userId: 'user-cf',
+      fileName: 'slides.pptx',
+      contentType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    };
+    const result = await cfGetContentUploadUrl(input, s3, 'test-content-bucket');
+
+    expect(result.success).toBe(true);
+    expect(result.data!.uploadUrl).toMatch(
+      /^https:\/\/store\.awscommunity\.cn\/content\/user-cf\/[A-Z0-9]+\/slides\.pptx\?token=.+$/,
+    );
   });
 });

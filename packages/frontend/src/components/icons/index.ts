@@ -27,3 +27,5 @@ export { TruckIcon } from './TruckIcon';
 export { CheckCircleIcon } from './CheckCircleIcon';
 export { ClockIcon } from './ClockIcon';
 export { GlobeIcon } from './GlobeIcon';
+export { ContentIcon } from './ContentIcon';
+export { TagIcon } from './TagIcon';

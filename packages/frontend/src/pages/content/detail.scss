@@ -107,6 +107,30 @@
     white-space: pre-wrap;
     word-break: break-word;
   }
+
+  &__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+  }
+
+  &__tag-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--space-1) var(--space-3);
+    background: rgba(124, 109, 240, 0.15);
+    border: 1px solid rgba(124, 109, 240, 0.3);
+    border-radius: var(--radius-full);
+  }
+
+  &__tag-chip-text {
+    font-family: var(--font-body);
+    font-size: var(--text-caption);
+    font-weight: 500;
+    color: var(--accent-primary);
+    white-space: nowrap;
+  }
 }
 
 /* ---- Owner: Status + Edit ---- */

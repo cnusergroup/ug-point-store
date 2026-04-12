@@ -11,12 +11,15 @@ import { addComment, listComments } from './comment';
 import { toggleLike } from './like';
 import { createReservation, getDownloadUrl, getPreviewUrl } from './reservation';
 import { listCategories } from './admin';
+import { listMyContent } from './mine';
+import { searchTags, getHotTags, getTagCloudTags } from './tags';
 
 // Create clients outside handler for Lambda container reuse
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const s3Client = new S3Client({});
 
 const CONTENT_ITEMS_TABLE = process.env.CONTENT_ITEMS_TABLE ?? '';
+const CONTENT_TAGS_TABLE = process.env.CONTENT_TAGS_TABLE ?? '';
 const CONTENT_CATEGORIES_TABLE = process.env.CONTENT_CATEGORIES_TABLE ?? '';
 const CONTENT_COMMENTS_TABLE = process.env.CONTENT_COMMENTS_TABLE ?? '';
 const CONTENT_LIKES_TABLE = process.env.CONTENT_LIKES_TABLE ?? '';
@@ -121,6 +124,22 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
       return await handleListCategories();
     }
 
+    if (path === '/api/content/mine') {
+      return await handleListMyContent(event);
+    }
+
+    if (path === '/api/content/tags/search') {
+      return await handleSearchTags(event);
+    }
+
+    if (path === '/api/content/tags/hot') {
+      return await handleGetHotTags();
+    }
+
+    if (path === '/api/content/tags/cloud') {
+      return await handleGetTagCloudTags();
+    }
+
     const downloadMatch = path.match(CONTENT_DOWNLOAD_REGEX);
     if (downloadMatch) {
       return await handleGetDownloadUrl(downloadMatch[1], event);
@@ -208,9 +227,10 @@ async function handleCreateContentItem(event: AuthenticatedEvent): Promise<APIGa
       fileName: body.fileName as string,
       fileSize: (body.fileSize as number) ?? 0,
       videoUrl: body.videoUrl as string | undefined,
+      tags: body.tags as string[] | undefined,
     },
     dynamoClient,
-    { contentItemsTable: CONTENT_ITEMS_TABLE, categoriesTable: CONTENT_CATEGORIES_TABLE },
+    { contentItemsTable: CONTENT_ITEMS_TABLE, categoriesTable: CONTENT_CATEGORIES_TABLE, contentTagsTable: CONTENT_TAGS_TABLE },
   );
 
   if (!result.success) {
@@ -222,13 +242,14 @@ async function handleCreateContentItem(event: AuthenticatedEvent): Promise<APIGa
 
 async function handleListContentItems(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
   const categoryId = event.queryStringParameters?.categoryId;
+  const tag = event.queryStringParameters?.tag;
   const pageSize = event.queryStringParameters?.pageSize
     ? parseInt(event.queryStringParameters.pageSize, 10)
     : undefined;
   const lastKey = event.queryStringParameters?.lastKey;
 
   const result = await listContentItems(
-    { categoryId, pageSize, lastKey },
+    { categoryId, tag, pageSize, lastKey },
     dynamoClient,
     CONTENT_ITEMS_TABLE,
   );
@@ -239,6 +260,22 @@ async function handleListContentItems(event: AuthenticatedEvent): Promise<APIGat
 async function handleListCategories(): Promise<APIGatewayProxyResult> {
   const result = await listCategories(dynamoClient, CONTENT_CATEGORIES_TABLE);
   return jsonResponse(200, { categories: result.categories });
+}
+
+async function handleListMyContent(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const status = event.queryStringParameters?.status;
+  const pageSize = event.queryStringParameters?.pageSize
+    ? parseInt(event.queryStringParameters.pageSize, 10)
+    : undefined;
+  const lastKey = event.queryStringParameters?.lastKey;
+
+  const result = await listMyContent(
+    { userId: event.user.userId, status, pageSize, lastKey },
+    dynamoClient,
+    CONTENT_ITEMS_TABLE,
+  );
+
+  return jsonResponse(200, { items: result.items, lastKey: result.lastKey });
 }
 
 async function handleGetContentDetail(contentId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
@@ -371,10 +408,11 @@ async function handleEditContentItem(contentId: string, event: AuthenticatedEven
       fileKey: body.fileKey as string | undefined,
       fileName: body.fileName as string | undefined,
       fileSize: body.fileSize as number | undefined,
+      tags: body.tags as string[] | undefined,
     },
     dynamoClient,
     s3Client,
-    { contentItemsTable: CONTENT_ITEMS_TABLE, categoriesTable: CONTENT_CATEGORIES_TABLE },
+    { contentItemsTable: CONTENT_ITEMS_TABLE, categoriesTable: CONTENT_CATEGORIES_TABLE, contentTagsTable: CONTENT_TAGS_TABLE },
     IMAGES_BUCKET,
   );
 
@@ -384,4 +422,28 @@ async function handleEditContentItem(contentId: string, event: AuthenticatedEven
   }
 
   return jsonResponse(200, { item: result.item });
+}
+
+// ── Tag Route Handlers ─────────────────────────────────────
+
+async function handleSearchTags(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const prefix = event.queryStringParameters?.prefix ?? '';
+
+  const result = await searchTags(
+    { prefix },
+    dynamoClient,
+    CONTENT_TAGS_TABLE,
+  );
+
+  return jsonResponse(200, { tags: result.tags });
+}
+
+async function handleGetHotTags(): Promise<APIGatewayProxyResult> {
+  const result = await getHotTags(dynamoClient, CONTENT_TAGS_TABLE);
+  return jsonResponse(200, { tags: result.tags });
+}
+
+async function handleGetTagCloudTags(): Promise<APIGatewayProxyResult> {
+  const result = await getTagCloudTags(dynamoClient, CONTENT_TAGS_TABLE);
+  return jsonResponse(200, { tags: result.tags });
 }

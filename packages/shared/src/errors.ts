@@ -155,6 +155,28 @@ export const ErrorCodes = {
   CONTENT_REVIEW_FORBIDDEN: 'CONTENT_REVIEW_FORBIDDEN',
   /** 该内容已被预约使用，不允许编辑 (400) - 需求 1.4 */
   CONTENT_NOT_EDITABLE: 'CONTENT_NOT_EDITABLE',
+  /** 该功能当前未开放 (403) - 需求 4.1, 4.2 */
+  FEATURE_DISABLED: 'FEATURE_DISABLED',
+  /** 累计获得积分不足，无法申请差旅赞助 (400) - 需求 4.7 */
+  INSUFFICIENT_EARN_QUOTA: 'INSUFFICIENT_EARN_QUOTA',
+  /** 差旅申请不存在 (404) - 需求 5.5 */
+  APPLICATION_NOT_FOUND: 'APPLICATION_NOT_FOUND',
+  /** 该申请已被审批 (400) - 需求 7.3 */
+  APPLICATION_ALREADY_REVIEWED: 'APPLICATION_ALREADY_REVIEWED',
+  /** 仅被驳回的申请可以编辑重新提交 (400) - 需求 3.5 */
+  INVALID_APPLICATION_STATUS: 'INVALID_APPLICATION_STATUS',
+  /** 仅 Speaker 角色可访问差旅赞助 (403) - 需求 3.5 */
+  TRAVEL_SPEAKER_ONLY: 'TRAVEL_SPEAKER_ONLY',
+  /** 标签名无效（需 2~20 字符，不能为纯空白）(400) - 需求 2.1 */
+  INVALID_TAG_NAME: 'INVALID_TAG_NAME',
+  /** 标签数量超过上限（最多 5 个）(400) - 需求 2.2 */
+  TOO_MANY_TAGS: 'TOO_MANY_TAGS',
+  /** 标签名重复 (400) - 需求 2.8 */
+  DUPLICATE_TAG_NAME: 'DUPLICATE_TAG_NAME',
+  /** 不能将标签合并到自身 (400) - 需求 7.7 */
+  TAG_MERGE_SELF_ERROR: 'TAG_MERGE_SELF_ERROR',
+  /** 标签不存在 (404) - 需求 7.8 */
+  TAG_NOT_FOUND: 'TAG_NOT_FOUND',
 } as const;
 
 /** 错误码类型 */
@@ -238,6 +260,17 @@ export const ErrorHttpStatus: Record<ErrorCode, number> = {
   [ErrorCodes.RESERVATION_REQUIRED]: 400,
   [ErrorCodes.CONTENT_REVIEW_FORBIDDEN]: 403,
   [ErrorCodes.CONTENT_NOT_EDITABLE]: 400,
+  [ErrorCodes.FEATURE_DISABLED]: 403,
+  [ErrorCodes.INSUFFICIENT_EARN_QUOTA]: 400,
+  [ErrorCodes.APPLICATION_NOT_FOUND]: 404,
+  [ErrorCodes.APPLICATION_ALREADY_REVIEWED]: 400,
+  [ErrorCodes.INVALID_APPLICATION_STATUS]: 400,
+  [ErrorCodes.TRAVEL_SPEAKER_ONLY]: 403,
+  [ErrorCodes.INVALID_TAG_NAME]: 400,
+  [ErrorCodes.TOO_MANY_TAGS]: 400,
+  [ErrorCodes.DUPLICATE_TAG_NAME]: 400,
+  [ErrorCodes.TAG_MERGE_SELF_ERROR]: 400,
+  [ErrorCodes.TAG_NOT_FOUND]: 404,
 };
 
 /** 错误码对应的默认错误消息 */
@@ -318,4 +351,15 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.RESERVATION_REQUIRED]: '需先完成使用预约才能下载',
   [ErrorCodes.CONTENT_REVIEW_FORBIDDEN]: '仅 SuperAdmin 可审核内容',
   [ErrorCodes.CONTENT_NOT_EDITABLE]: '该内容已被预约使用，不允许编辑',
+  [ErrorCodes.FEATURE_DISABLED]: '该功能当前未开放',
+  [ErrorCodes.INSUFFICIENT_EARN_QUOTA]: '累计获得积分不足，无法申请差旅赞助',
+  [ErrorCodes.APPLICATION_NOT_FOUND]: '差旅申请不存在',
+  [ErrorCodes.APPLICATION_ALREADY_REVIEWED]: '该申请已被审批',
+  [ErrorCodes.INVALID_APPLICATION_STATUS]: '仅被驳回的申请可以编辑重新提交',
+  [ErrorCodes.TRAVEL_SPEAKER_ONLY]: '仅 Speaker 角色可访问差旅赞助',
+  [ErrorCodes.INVALID_TAG_NAME]: '标签名无效（需 2~20 字符，不能为纯空白）',
+  [ErrorCodes.TOO_MANY_TAGS]: '标签数量超过上限（最多 5 个）',
+  [ErrorCodes.DUPLICATE_TAG_NAME]: '标签名重复',
+  [ErrorCodes.TAG_MERGE_SELF_ERROR]: '不能将标签合并到自身',
+  [ErrorCodes.TAG_NOT_FOUND]: '标签不存在',
 };

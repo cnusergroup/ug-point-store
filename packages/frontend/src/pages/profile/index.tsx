@@ -4,7 +4,7 @@ import Taro from '@tarojs/taro';
 import { useAppStore, UserRole } from '../../store';
 import { request } from '../../utils/request';
 import { useTranslation } from '../../i18n';
-import { TicketIcon, LocationIcon, ClaimIcon, SettingsIcon, VoucherIcon, ShoppingBagIcon } from '../../components/icons';
+import { TicketIcon, LocationIcon, ClaimIcon, SettingsIcon, VoucherIcon, ShoppingBagIcon, ContentIcon, GlobeIcon } from '../../components/icons';
 import { ProfileSkeleton } from '../../components/Skeleton';
 import TabBar from '../../components/TabBar';
 import './index.scss';
@@ -90,8 +90,15 @@ const QUICK_ACTIONS = [
   { key: 'redeem', labelKey: 'profile.quickActionRedeem', icon: TicketIcon, url: '/pages/redeem/index?type=points-code' },
   { key: 'address', labelKey: 'profile.quickActionAddress', icon: LocationIcon, url: '/pages/address/index' },
   { key: 'claims', labelKey: 'profile.quickActionClaims', icon: ClaimIcon, url: '/pages/claims/index' },
+  { key: 'myContent', labelKey: 'profile.quickActionMyContent', icon: ContentIcon, url: '/pages/content/mine' },
+  { key: 'myTravel', labelKey: 'profile.quickActionMyTravel', icon: GlobeIcon, url: '/pages/my-travel/index', speakerOnly: true },
   { key: 'settings', labelKey: 'profile.quickActionSettings', icon: SettingsIcon, url: '/pages/settings/index' },
 ] as const;
+
+interface FeatureToggles {
+  codeRedemptionEnabled: boolean;
+  pointsClaimEnabled: boolean;
+}
 
 type ActiveTab = 'points' | 'redemptions';
 
@@ -112,6 +119,12 @@ function ProfilePage() {
   const fetchProfile = useAppStore((s) => s.fetchProfile);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('points');
+
+  // Feature toggles state — default false so conditional items are hidden until API confirms they're enabled
+  const [featureToggles, setFeatureToggles] = useState<FeatureToggles>({
+    codeRedemptionEnabled: false,
+    pointsClaimEnabled: false,
+  });
 
   // Points records state
   const [pointsRecords, setPointsRecords] = useState<PointsRecord[]>([]);
@@ -169,6 +182,16 @@ function ProfilePage() {
     fetchProfile();
     fetchPointsRecords(1, true);
     fetchRedemptionRecords(1, true);
+
+    // Fetch feature toggles (public endpoint, no auth needed)
+    request<FeatureToggles>({
+      url: '/api/settings/feature-toggles',
+      skipAuth: true,
+    })
+      .then((res) => setFeatureToggles(res))
+      .catch(() => {
+        // On failure, keep defaults (both false — safe degradation)
+      });
   }, [isAuthenticated, fetchProfile, fetchPointsRecords, fetchRedemptionRecords]);
 
   const handleLoadMore = () => {
@@ -272,7 +295,12 @@ function ProfilePage() {
 
           {/* Quick Actions Grid (2×2) */}
           <View className='profile-actions-grid'>
-            {QUICK_ACTIONS.map((action) => {
+            {QUICK_ACTIONS.filter((action) => {
+              if (action.key === 'redeem' && !featureToggles.codeRedemptionEnabled) return false;
+              if (action.key === 'claims' && !featureToggles.pointsClaimEnabled) return false;
+              if ('speakerOnly' in action && action.speakerOnly && !userRoles.includes('Speaker')) return false;
+              return true;
+            }).map((action) => {
               const IconComponent = action.icon;
               return (
                 <View

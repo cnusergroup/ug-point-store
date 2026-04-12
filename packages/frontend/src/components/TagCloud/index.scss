@@ -1,0 +1,101 @@
+/* ============================================
+   TagCloud — Horizontal scrollable tag filter
+   Uses design system CSS variables from app.scss
+   ============================================ */
+
+.tag-cloud {
+  flex-shrink: 0;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--card-border);
+  white-space: nowrap;
+
+  &__inner {
+    display: inline-flex;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-5);
+  }
+
+  &__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-height: 32px;
+    padding: var(--space-1) var(--space-3);
+    background: var(--bg-elevated);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+    flex-shrink: 0;
+
+    &:hover {
+      border-color: var(--card-border-hover);
+      background: var(--bg-hover);
+    }
+
+    &--selected {
+      background: rgba(124, 109, 240, 0.15);
+      border-color: rgba(124, 109, 240, 0.3);
+
+      .tag-cloud__chip-text {
+        color: var(--accent-primary);
+      }
+
+      .tag-cloud__chip-count {
+        color: var(--accent-primary);
+        opacity: 0.7;
+      }
+    }
+  }
+
+  &__chip-text {
+    font-family: var(--font-body);
+    font-size: var(--text-caption);
+    font-weight: 500;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  &__chip-count {
+    font-family: var(--font-display);
+    font-size: var(--text-overline);
+    font-weight: 600;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+  }
+}
+
+/* ============================================
+   Tablet (768px+)
+   ============================================ */
+@media (min-width: 768px) {
+  .tag-cloud__chip {
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .tag-cloud__chip-text {
+    font-size: var(--text-body-sm);
+  }
+
+  .tag-cloud__chip-count {
+    font-size: var(--text-caption);
+  }
+}
+
+/* ============================================
+   Desktop (1024px+)
+   ============================================ */
+@media (min-width: 1024px) {
+  .tag-cloud__chip {
+    padding: var(--space-2) var(--space-4);
+
+    &:hover {
+      box-shadow: var(--shadow-sm);
+    }
+  }
+
+  .tag-cloud__chip-text {
+    font-size: var(--text-body-sm);
+  }
+}

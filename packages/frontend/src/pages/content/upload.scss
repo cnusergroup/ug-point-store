@@ -57,6 +57,28 @@
   }
 }
 
+/* ---- Status Notice Banner ---- */
+.upload-status-notice {
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-5);
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--text-tertiary);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  color: var(--text-primary);
+  line-height: 1.5;
+
+  &--error {
+    background: rgba(239, 68, 68, 0.08);
+    border-left-color: var(--error);
+  }
+
+  &--warning {
+    background: rgba(245, 166, 35, 0.08);
+    border-left-color: var(--warning);
+  }
+}
+
 /* ---- Body ---- */
 .upload-body {
   flex: 1;

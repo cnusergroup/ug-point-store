@@ -338,13 +338,26 @@ export default function ContentDetailPage() {
           <Text className='detail-info__title'>{item.title}</Text>
           <View className='detail-info__meta'>
             <Text className='detail-info__uploader'>{item.uploaderNickname}</Text>
-            <Text className={getRoleBadgeClass(item.uploaderRole)}>
-              {getRoleBadgeLabel(item.uploaderRole)}
-            </Text>
+            {ROLE_CONFIG[item.uploaderRole] && (
+              <Text className={getRoleBadgeClass(item.uploaderRole)}>
+                {getRoleBadgeLabel(item.uploaderRole)}
+              </Text>
+            )}
             <Text className='detail-info__category'>{item.categoryName}</Text>
             <Text className='detail-info__time'>{formatTime(item.createdAt)}</Text>
           </View>
           <Text className='detail-info__desc'>{item.description}</Text>
+
+          {/* Tags */}
+          {(item.tags ?? []).length > 0 && (
+            <View className='detail-info__tags'>
+              {(item.tags ?? []).map((tag) => (
+                <View key={tag} className='detail-info__tag-chip'>
+                  <Text className='detail-info__tag-chip-text'>{tag}</Text>
+                </View>
+              ))}
+            </View>
+          )}
 
           {/* Owner: Status display + Edit button */}
           {isOwner && (

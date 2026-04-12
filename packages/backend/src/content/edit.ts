@@ -1,7 +1,8 @@
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { ErrorCodes, ErrorMessages, isValidVideoUrl } from '@points-mall/shared';
+import { ErrorCodes, ErrorMessages, isValidVideoUrl, validateTagsArray, normalizeTagName } from '@points-mall/shared';
 import type { ContentItem } from '@points-mall/shared';
+import { syncTagsOnEdit } from './tags';
 
 // ─── Edit Content Item ─────────────────────────────────────
 
@@ -15,6 +16,7 @@ export interface EditContentItemInput {
   fileKey?: string;        // new S3 key
   fileName?: string;
   fileSize?: number;
+  tags?: string[];
 }
 
 export interface EditContentItemResult {
@@ -36,7 +38,7 @@ export async function editContentItem(
   input: EditContentItemInput,
   dynamoClient: DynamoDBDocumentClient,
   s3Client: S3Client,
-  tables: { contentItemsTable: string; categoriesTable: string },
+  tables: { contentItemsTable: string; categoriesTable: string; contentTagsTable?: string },
   bucket: string,
 ): Promise<EditContentItemResult> {
   // 1. Fetch the content item
@@ -110,6 +112,23 @@ export async function editContentItem(
       error: { code: ErrorCodes.INVALID_VIDEO_URL, message: ErrorMessages[ErrorCodes.INVALID_VIDEO_URL] },
     };
   }
+
+  // 4b. Validate and normalize tags (optional)
+  let normalizedTags: string[] | undefined;
+  if (input.tags !== undefined) {
+    const tagValidation = validateTagsArray(input.tags);
+    if (!tagValidation.valid) {
+      const errorCode = tagValidation.error as string;
+      return {
+        success: false,
+        error: { code: errorCode, message: ErrorMessages[errorCode as keyof typeof ErrorMessages] },
+      };
+    }
+    normalizedTags = tagValidation.normalizedTags;
+  }
+
+  // Read old tags for sync
+  const oldTags = item.tags ?? [];
 
   // 5. File replacement: detect old fileKey if changed
   let oldFileKey: string | undefined;
@@ -188,6 +207,12 @@ export async function editContentItem(
     attrValues[':fileSize'] = input.fileSize;
   }
 
+  if (normalizedTags !== undefined) {
+    expressionParts.push('#tags = :tags');
+    attrNames['#tags'] = 'tags';
+    attrValues[':tags'] = normalizedTags;
+  }
+
   let updateExpression = 'SET ' + expressionParts.join(', ');
   if (removeNames.length > 0) {
     updateExpression += ' REMOVE ' + removeNames.join(', ');
@@ -212,6 +237,7 @@ export async function editContentItem(
     ...(input.fileKey !== undefined ? { fileKey: input.fileKey } : {}),
     ...(input.fileName !== undefined ? { fileName: input.fileName } : {}),
     ...(input.fileSize !== undefined ? { fileSize: input.fileSize } : {}),
+    ...(normalizedTags !== undefined ? { tags: normalizedTags } : {}),
     status: 'pending',
     updatedAt: now,
   };
@@ -239,6 +265,11 @@ export async function editContentItem(
     } catch (err) {
       console.error('Failed to delete old S3 file:', oldFileKey, err);
     }
+  }
+
+  // 8. Sync tag usage counts in ContentTags table
+  if (normalizedTags !== undefined && tables.contentTagsTable) {
+    await syncTagsOnEdit(oldTags, normalizedTags, dynamoClient, tables.contentTagsTable);
   }
 
   return { success: true, item: updatedItem };

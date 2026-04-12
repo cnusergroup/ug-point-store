@@ -6,6 +6,7 @@ import type { ContentItem, ContentItemSummary } from '@points-mall/shared';
 
 export interface ListContentItemsOptions {
   categoryId?: string;
+  tag?: string;
   pageSize?: number;
   lastKey?: string;
 }
@@ -28,7 +29,7 @@ export async function listContentItems(
   dynamoClient: DynamoDBDocumentClient,
   contentItemsTable: string,
 ): Promise<ListContentItemsResult> {
-  const { categoryId, pageSize = 20, lastKey } = options;
+  const { categoryId, tag, pageSize = 20, lastKey } = options;
 
   const exclusiveStartKey = lastKey ? JSON.parse(Buffer.from(lastKey, 'base64').toString('utf-8')) : undefined;
 
@@ -36,20 +37,29 @@ export async function listContentItems(
 
   if (categoryId) {
     // Use categoryId-createdAt-index GSI + filter for approved status
+    const filterParts = ['#status = :approved'];
+    const exprNames: Record<string, string> = {
+      '#categoryId': 'categoryId',
+      '#status': 'status',
+    };
+    const exprValues: Record<string, string> = {
+      ':categoryId': categoryId,
+      ':approved': 'approved',
+    };
+
+    if (tag) {
+      filterParts.push('contains(tags, :tag)');
+      exprValues[':tag'] = tag;
+    }
+
     result = await dynamoClient.send(
       new QueryCommand({
         TableName: contentItemsTable,
         IndexName: 'categoryId-createdAt-index',
         KeyConditionExpression: '#categoryId = :categoryId',
-        FilterExpression: '#status = :approved',
-        ExpressionAttributeNames: {
-          '#categoryId': 'categoryId',
-          '#status': 'status',
-        },
-        ExpressionAttributeValues: {
-          ':categoryId': categoryId,
-          ':approved': 'approved',
-        },
+        FilterExpression: filterParts.join(' AND '),
+        ExpressionAttributeNames: exprNames,
+        ExpressionAttributeValues: exprValues,
         ScanIndexForward: false,
         Limit: pageSize,
         ...(exclusiveStartKey ? { ExclusiveStartKey: exclusiveStartKey } : {}),
@@ -57,13 +67,23 @@ export async function listContentItems(
     );
   } else {
     // Use status-createdAt-index GSI, query status=approved directly
+    const exprNames: Record<string, string> = { '#status': 'status' };
+    const exprValues: Record<string, string> = { ':approved': 'approved' };
+    let filterExpression: string | undefined;
+
+    if (tag) {
+      filterExpression = 'contains(tags, :tag)';
+      exprValues[':tag'] = tag;
+    }
+
     result = await dynamoClient.send(
       new QueryCommand({
         TableName: contentItemsTable,
         IndexName: 'status-createdAt-index',
         KeyConditionExpression: '#status = :approved',
-        ExpressionAttributeNames: { '#status': 'status' },
-        ExpressionAttributeValues: { ':approved': 'approved' },
+        ExpressionAttributeNames: exprNames,
+        ExpressionAttributeValues: exprValues,
+        ...(filterExpression ? { FilterExpression: filterExpression } : {}),
         ScanIndexForward: false,
         Limit: pageSize,
         ...(exclusiveStartKey ? { ExclusiveStartKey: exclusiveStartKey } : {}),
@@ -82,6 +102,7 @@ export async function listContentItems(
     commentCount: item.commentCount,
     reservationCount: item.reservationCount,
     createdAt: item.createdAt,
+    tags: item.tags ?? [],
   }));
 
   const responseLastKey = result.LastEvaluatedKey

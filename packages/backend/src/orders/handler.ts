@@ -1,11 +1,12 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { ErrorHttpStatus, hasAdminAccess } from '@points-mall/shared';
+import { ErrorHttpStatus, hasAdminAccess, isSuperAdmin } from '@points-mall/shared';
 import type { UserRole, ShippingStatus } from '@points-mall/shared';
 import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware';
 import { createOrder, createDirectOrder, getOrders, getOrderDetail } from './order';
 import { getAdminOrders, getAdminOrderDetail, updateShipping, getOrderStats } from './admin-order';
+import { getFeatureToggles } from '../settings/feature-toggles';
 import type { OrderTableNames } from './order';
 
 // Create client outside handler for Lambda container reuse
@@ -75,6 +76,14 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
   if (path.startsWith('/api/admin/')) {
     if (!isAdmin(event)) {
       return errorResponse('FORBIDDEN', '需要管理员权限', 403);
+    }
+
+    // Non-SuperAdmin: check adminOrdersEnabled toggle
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+      if (!toggles.adminOrdersEnabled) {
+        return errorResponse('FORBIDDEN', '管理员暂无订单管理权限', 403);
+      }
     }
 
     // GET /api/admin/orders/stats (must be checked before the detail regex)

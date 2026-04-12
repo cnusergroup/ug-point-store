@@ -159,6 +159,85 @@ describe('listContentItems', () => {
     expect(summary).not.toHaveProperty('fileKey');
     expect(summary).not.toHaveProperty('status');
   });
+
+  // ── Tag filtering tests ──────────────────────────────────
+
+  it('should filter by tag when tag option is provided', async () => {
+    const item = makeApprovedItem({ tags: ['react', 'typescript'] });
+    const dynamo = {
+      send: vi.fn().mockResolvedValue({
+        Items: [item],
+        LastEvaluatedKey: undefined,
+      }),
+    } as any;
+
+    const result = await listContentItems({ tag: 'react' }, dynamo, contentItemsTable);
+
+    expect(result.success).toBe(true);
+    expect(result.items).toHaveLength(1);
+
+    // Verify the query includes tag filter expression
+    const sentCmd = dynamo.send.mock.calls[0][0];
+    expect(sentCmd.input.FilterExpression).toContain('contains(tags, :tag)');
+    expect(sentCmd.input.ExpressionAttributeValues[':tag']).toBe('react');
+  });
+
+  it('should support combined tag and categoryId filtering', async () => {
+    const item = makeApprovedItem({ categoryId: 'cat-2', categoryName: 'Design', tags: ['figma'] });
+    const dynamo = {
+      send: vi.fn().mockResolvedValue({
+        Items: [item],
+        LastEvaluatedKey: undefined,
+      }),
+    } as any;
+
+    const result = await listContentItems({ categoryId: 'cat-2', tag: 'figma' }, dynamo, contentItemsTable);
+
+    expect(result.success).toBe(true);
+    expect(result.items).toHaveLength(1);
+
+    // Verify the query uses categoryId GSI with both status and tag filters
+    const sentCmd = dynamo.send.mock.calls[0][0];
+    expect(sentCmd.input.IndexName).toBe('categoryId-createdAt-index');
+    expect(sentCmd.input.FilterExpression).toContain('#status = :approved');
+    expect(sentCmd.input.FilterExpression).toContain('contains(tags, :tag)');
+    expect(sentCmd.input.ExpressionAttributeValues[':tag']).toBe('figma');
+  });
+
+  it('should return tags as empty array for old content without tags field', async () => {
+    // Simulate old content item that has no tags field
+    const oldItem = makeApprovedItem();
+    delete (oldItem as any).tags;
+
+    const dynamo = {
+      send: vi.fn().mockResolvedValue({
+        Items: [oldItem],
+        LastEvaluatedKey: undefined,
+      }),
+    } as any;
+
+    const result = await listContentItems({}, dynamo, contentItemsTable);
+
+    expect(result.success).toBe(true);
+    expect(result.items).toHaveLength(1);
+    expect(result.items![0].tags).toEqual([]);
+  });
+
+  it('should include tags in summary fields', async () => {
+    const item = makeApprovedItem({ tags: ['react', 'aws'] });
+    const dynamo = {
+      send: vi.fn().mockResolvedValue({
+        Items: [item],
+        LastEvaluatedKey: undefined,
+      }),
+    } as any;
+
+    const result = await listContentItems({}, dynamo, contentItemsTable);
+    const summary = result.items![0];
+
+    expect(summary).toHaveProperty('tags');
+    expect(summary.tags).toEqual(['react', 'aws']);
+  });
 });
 
 // ─── getContentDetail ──────────────────────────────────────

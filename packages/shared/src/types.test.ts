@@ -12,20 +12,20 @@ import type {
   ErrorResponse,
   InviteRecord,
 } from './types';
-import { ADMIN_ROLES, REGULAR_ROLES, ALL_ROLES, hasAdminAccess, isSuperAdmin, isAdminRole, getInviteRoles, isValidContentFileType, isValidVideoUrl } from './types';
+import { ADMIN_ROLES, REGULAR_ROLES, ALL_ROLES, hasAdminAccess, isSuperAdmin, isAdminRole, getInviteRoles, isValidContentFileType, isValidVideoUrl, validateTagsArray, normalizeTagName, validateTagName } from './types';
 import { ErrorCodes, ErrorHttpStatus, ErrorMessages } from './errors';
 
 describe('shared types', () => {
   it('UserRole type accepts valid roles', () => {
     const roles: UserRole[] = [
       'UserGroupLeader',
-      'CommunityBuilder',
+      // [DISABLED] CommunityBuilder
       'Speaker',
       'Volunteer',
       'Admin',
       'SuperAdmin',
     ];
-    expect(roles).toHaveLength(6);
+    expect(roles).toHaveLength(5);
   });
 
   it('UserProfile interface has correct shape', () => {
@@ -156,13 +156,13 @@ describe('role classification constants', () => {
     expect(ADMIN_ROLES).toEqual(['Admin', 'SuperAdmin']);
   });
 
-  it('REGULAR_ROLES contains the four non-admin roles', () => {
-    expect(REGULAR_ROLES).toEqual(['UserGroupLeader', 'CommunityBuilder', 'Speaker', 'Volunteer']);
+  it('REGULAR_ROLES contains the non-admin roles', () => {
+    expect(REGULAR_ROLES).toEqual(['UserGroupLeader', 'Speaker', 'Volunteer']);
   });
 
   it('ALL_ROLES is the union of REGULAR_ROLES and ADMIN_ROLES', () => {
     expect(ALL_ROLES).toEqual([...REGULAR_ROLES, ...ADMIN_ROLES]);
-    expect(ALL_ROLES).toHaveLength(6);
+    expect(ALL_ROLES).toHaveLength(5);
   });
 });
 
@@ -217,7 +217,7 @@ describe('isSuperAdmin', () => {
 describe('error codes', () => {
   it('defines all error codes', () => {
     const codes = Object.keys(ErrorCodes);
-    expect(codes).toHaveLength(76);
+    expect(codes).toHaveLength(87);
   });
 
   it('each error code has a corresponding HTTP status', () => {
@@ -254,6 +254,7 @@ describe('error codes', () => {
   it('403 errors are mapped correctly', () => {
     expect(ErrorHttpStatus[ErrorCodes.NO_REDEMPTION_PERMISSION]).toBe(403);
     expect(ErrorHttpStatus[ErrorCodes.ACCOUNT_LOCKED]).toBe(403);
+    expect(ErrorHttpStatus[ErrorCodes.FEATURE_DISABLED]).toBe(403);
   });
 
   it('409 errors are mapped correctly', () => {
@@ -456,6 +457,259 @@ describe('Feature: content-hub, Property 2: 视频 URL 格式校验正确性', (
         }
       ),
       { numRuns: 100 }
+    );
+  });
+});
+
+// Feature: content-tags, Property 1: 标签数组校验正确性
+// **Validates: Requirements 1.4, 1.5, 2.1, 2.2, 2.6, 2.8, 3.1, 9.1**
+describe('Feature: content-tags, Property 1: 标签数组校验正确性', () => {
+  // Generator: random string with length 0~30, may include leading/trailing whitespace
+  const tagStringArb = fc.oneof(
+    fc.string({ minLength: 0, maxLength: 30 }),
+    // Whitespace variants: wrap a core string with spaces/tabs
+    fc.string({ minLength: 0, maxLength: 26 }).map((s) => `  ${s}  `),
+    fc.string({ minLength: 0, maxLength: 28 }).map((s) => ` ${s}`),
+    fc.string({ minLength: 0, maxLength: 28 }).map((s) => `${s} `),
+    // Pure whitespace
+    fc.constant(''),
+    fc.constant('   '),
+    fc.constant('\t'),
+  );
+
+  // Generator: random string array with length 0~10
+  const tagArrayArb = fc.array(tagStringArb, { minLength: 0, maxLength: 10 });
+
+  it('数组长度 > 5 时返回 TOO_MANY_TAGS', () => {
+    fc.assert(
+      fc.property(
+        fc.array(tagStringArb, { minLength: 6, maxLength: 10 }),
+        (tags) => {
+          const result = validateTagsArray(tags);
+          expect(result.valid).toBe(false);
+          expect(result.error).toBe('TOO_MANY_TAGS');
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
+  it('任一元素规范化后长度不在 2~20 范围时返回 INVALID_TAG_NAME', () => {
+    // Generate an array of length 1~5 where at least one element has invalid normalized length
+    const invalidTagArb = tagStringArb.filter((s) => {
+      const n = normalizeTagName(s);
+      return n.length < 2 || n.length > 20;
+    });
+    const validTagArb = tagStringArb.filter((s) => {
+      const n = normalizeTagName(s);
+      return n.length >= 2 && n.length <= 20;
+    });
+
+    fc.assert(
+      fc.property(
+        fc.array(validTagArb, { minLength: 0, maxLength: 4 }),
+        invalidTagArb,
+        fc.nat({ max: 4 }),
+        (validTags, invalidTag, insertIdx) => {
+          // Insert the invalid tag at a random position
+          const idx = Math.min(insertIdx, validTags.length);
+          const tags = [...validTags.slice(0, idx), invalidTag, ...validTags.slice(idx)];
+          // Ensure total length <= 5 so we don't hit TOO_MANY_TAGS first
+          if (tags.length > 5) return; // skip this case
+          const result = validateTagsArray(tags);
+          expect(result.valid).toBe(false);
+          expect(result.error).toBe('INVALID_TAG_NAME');
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
+  it('存在规范化后重复元素时返回 DUPLICATE_TAG_NAME', () => {
+    // Generate a valid tag, then create an array with duplicates (after normalization)
+    const validTagArb = tagStringArb.filter((s) => {
+      const n = normalizeTagName(s);
+      return n.length >= 2 && n.length <= 20;
+    });
+
+    fc.assert(
+      fc.property(
+        validTagArb,
+        fc.array(validTagArb, { minLength: 0, maxLength: 3 }),
+        (dupTag, otherTags) => {
+          // Build array with the duplicate tag appearing at least twice
+          // Use case variants to test case-insensitive dedup
+          const tags = [dupTag, ...otherTags, dupTag];
+          // Ensure no TOO_MANY_TAGS (max 5)
+          if (tags.length > 5) return;
+          // Ensure the duplicate is actually a duplicate after normalization
+          // (it always will be since we use the same string)
+          const normalized = tags.map(normalizeTagName);
+          const unique = new Set(normalized);
+          if (unique.size === normalized.length) return; // skip if somehow no dup
+          const result = validateTagsArray(tags);
+          expect(result.valid).toBe(false);
+          expect(result.error).toBe('DUPLICATE_TAG_NAME');
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
+  it('全部合法时返回 valid: true 且 normalizedTags 正确', () => {
+    // Generate 0~5 unique valid tags (no duplicates after normalization)
+    const validTagArb = tagStringArb.filter((s) => {
+      const n = normalizeTagName(s);
+      return n.length >= 2 && n.length <= 20;
+    });
+
+    fc.assert(
+      fc.property(
+        fc.array(validTagArb, { minLength: 0, maxLength: 5 }),
+        (tags) => {
+          // Ensure no duplicates after normalization
+          const normalized = tags.map(normalizeTagName);
+          const unique = new Set(normalized);
+          if (unique.size !== normalized.length) return; // skip duplicates
+
+          const result = validateTagsArray(tags);
+          expect(result.valid).toBe(true);
+          expect(result.error).toBeUndefined();
+          expect(result.normalizedTags).toEqual(normalized);
+          // Verify each normalized tag is in valid range
+          for (const t of result.normalizedTags) {
+            expect(t.length).toBeGreaterThanOrEqual(2);
+            expect(t.length).toBeLessThanOrEqual(20);
+          }
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
+  it('对任意随机数组，validateTagsArray 的结果与手动校验一致', () => {
+    fc.assert(
+      fc.property(
+        tagArrayArb,
+        (tags) => {
+          const result = validateTagsArray(tags);
+
+          // Manual validation logic
+          if (tags.length > 5) {
+            expect(result.valid).toBe(false);
+            expect(result.error).toBe('TOO_MANY_TAGS');
+            return;
+          }
+
+          const normalized = tags.map(normalizeTagName);
+          const hasInvalid = normalized.some((t) => t.length < 2 || t.length > 20);
+          if (hasInvalid) {
+            expect(result.valid).toBe(false);
+            expect(result.error).toBe('INVALID_TAG_NAME');
+            return;
+          }
+
+          const unique = new Set(normalized);
+          if (unique.size !== normalized.length) {
+            expect(result.valid).toBe(false);
+            expect(result.error).toBe('DUPLICATE_TAG_NAME');
+            return;
+          }
+
+          expect(result.valid).toBe(true);
+          expect(result.normalizedTags).toEqual(normalized);
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+});
+
+// Feature: content-tags, Property 2: 标签名规范化正确性
+// **Validates: Requirements 2.7, 9.2**
+describe('Feature: content-tags, Property 2: 标签名规范化正确性', () => {
+  // Generator: random strings with leading/trailing whitespace and mixed case
+  const stringWithWhitespaceArb = fc.oneof(
+    fc.string({ minLength: 0, maxLength: 50 }),
+    fc.string({ minLength: 0, maxLength: 46 }).map((s) => `  ${s}  `),
+    fc.string({ minLength: 0, maxLength: 48 }).map((s) => ` ${s}`),
+    fc.string({ minLength: 0, maxLength: 48 }).map((s) => `${s} `),
+    fc.string({ minLength: 0, maxLength: 46 }).map((s) => `\t${s}\t`),
+    // Mixed case variants
+    fc.string({ minLength: 0, maxLength: 50 }).map((s) =>
+      s.split('').map((c, i) => (i % 2 === 0 ? c.toUpperCase() : c.toLowerCase())).join(''),
+    ),
+  );
+
+  it('normalizeTagName(s) === s.trim().toLowerCase() 对任意字符串成立', () => {
+    fc.assert(
+      fc.property(
+        stringWithWhitespaceArb,
+        (s) => {
+          const result = normalizeTagName(s);
+          const expected = s.trim().toLowerCase();
+          expect(result).toBe(expected);
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+});
+
+// Feature: content-tags, Property 3: 标签名规范化幂等性
+// **Validates: Requirements 9.5**
+describe('Feature: content-tags, Property 3: 标签名规范化幂等性', () => {
+  const arbitraryStringArb = fc.oneof(
+    fc.string({ minLength: 0, maxLength: 50 }),
+    fc.string({ minLength: 0, maxLength: 46 }).map((s) => `  ${s}  `),
+    fc.string({ minLength: 0, maxLength: 48 }).map((s) => ` ${s}`),
+    fc.string({ minLength: 0, maxLength: 50 }).map((s) =>
+      s.split('').map((c, i) => (i % 2 === 0 ? c.toUpperCase() : c.toLowerCase())).join(''),
+    ),
+  );
+
+  it('normalizeTagName(normalizeTagName(s)) === normalizeTagName(s) 对任意字符串成立', () => {
+    fc.assert(
+      fc.property(
+        arbitraryStringArb,
+        (s) => {
+          const once = normalizeTagName(s);
+          const twice = normalizeTagName(once);
+          expect(twice).toBe(once);
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+});
+
+// Feature: content-tags, Property 4: 规范化与校验可交换性
+// **Validates: Requirements 9.4**
+describe('Feature: content-tags, Property 4: 规范化与校验可交换性', () => {
+  const arbitraryStringArb = fc.oneof(
+    fc.string({ minLength: 0, maxLength: 50 }),
+    fc.string({ minLength: 0, maxLength: 46 }).map((s) => `  ${s}  `),
+    fc.string({ minLength: 0, maxLength: 48 }).map((s) => ` ${s}`),
+    fc.string({ minLength: 0, maxLength: 50 }).map((s) =>
+      s.split('').map((c, i) => (i % 2 === 0 ? c.toUpperCase() : c.toLowerCase())).join(''),
+    ),
+  );
+
+  it('validateTagName(normalizeTagName(s)) 结果一致，规范化不改变校验结果', () => {
+    fc.assert(
+      fc.property(
+        arbitraryStringArb,
+        (s) => {
+          const normalized = normalizeTagName(s);
+          // Validating the normalized string should be the same whether we
+          // pass the original or the normalized version to validateTagName,
+          // because validateTagName internally normalizes.
+          const validateOriginal = validateTagName(s);
+          const validateNormalized = validateTagName(normalized);
+          expect(validateOriginal).toBe(validateNormalized);
+        },
+      ),
+      { numRuns: 100 },
     );
   });
 });

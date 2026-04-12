@@ -67,16 +67,18 @@ export async function assignRoles(
   }
 
   const now = new Date().toISOString();
+  const rolesVersion = Date.now(); // ms timestamp — used by auth-middleware to detect stale tokens
 
   await dynamoClient.send(
     new UpdateCommand({
       TableName: tableName,
       Key: { userId },
-      UpdateExpression: 'SET #roles = :roles, updatedAt = :now',
+      UpdateExpression: 'SET #roles = :roles, updatedAt = :now, rolesVersion = :rv',
       ExpressionAttributeNames: { '#roles': 'roles' },
       ExpressionAttributeValues: {
         ':roles': roles,
         ':now': now,
+        ':rv': rolesVersion,
       },
     }),
   );
@@ -109,6 +111,7 @@ export async function revokeRole(
   }
 
   const now = new Date().toISOString();
+  const rolesVersion = Date.now();
 
   // Use list_append/remove approach: filter out the role from the list
   // Since we can't easily remove from a list by value in a single expression,
@@ -125,11 +128,12 @@ export async function revokeRole(
     new UpdateCommand({
       TableName: tableName,
       Key: { userId },
-      UpdateExpression: 'SET #roles = :roles, updatedAt = :now',
+      UpdateExpression: 'SET #roles = :roles, updatedAt = :now, rolesVersion = :rv',
       ExpressionAttributeNames: { '#roles': 'roles' },
       ExpressionAttributeValues: {
         ':roles': newRoles,
         ':now': now,
+        ':rv': rolesVersion,
       },
     }),
   );

@@ -3,9 +3,11 @@ import { View, Text, Picker } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
 import { useAppStore } from '../../store';
 import { request } from '../../utils/request';
+import { uploadWithRetry, UploadError } from '../../utils/upload';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
-import type { ContentCategory, ContentItem } from '@points-mall/shared';
+import TagInput from '../../components/TagInput';
+import type { ContentCategory, ContentItem, ContentStatus } from '@points-mall/shared';
 import './upload.scss';
 
 /** Allowed file extensions and their MIME types */
@@ -77,10 +79,15 @@ export default function ContentUploadPage() {
   const [categories, setCategories] = useState<ContentCategory[]>([]);
   const [selectedCategoryIndex, setSelectedCategoryIndex] = useState<number>(-1);
   const [videoUrl, setVideoUrl] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
 
   // File state — selectedFile is a newly chosen file; existingFile is the original file in edit mode
   const [selectedFile, setSelectedFile] = useState<{ name: string; size: number; path: string } | null>(null);
   const [existingFile, setExistingFile] = useState<{ name: string; size: number } | null>(null);
+
+  // Content status state (edit mode)
+  const [contentStatus, setContentStatus] = useState<ContentStatus | null>(null);
+  const [rejectReason, setRejectReason] = useState<string>('');
 
   // UI state
   const [submitting, setSubmitting] = useState(false);
@@ -114,6 +121,9 @@ export default function ContentUploadPage() {
       setDescription(item.description);
       setVideoUrl(item.videoUrl || '');
       setExistingFile({ name: item.fileName, size: item.fileSize });
+      setContentStatus(item.status);
+      setRejectReason(item.rejectReason || '');
+      setTags(item.tags ?? []);
 
       // Set category index based on fetched categories
       const catIndex = cats.findIndex((c) => c.categoryId === item.categoryId);
@@ -271,7 +281,7 @@ export default function ContentUploadPage() {
     if (env === Taro.ENV_TYPE.WEB) {
       const rawFile = (window as any).__uploadFile as File;
       if (!rawFile) throw new Error(t('contentHub.upload.fileLost'));
-      await fetch(uploadUrl, {
+      await uploadWithRetry(uploadUrl, {
         method: 'PUT',
         headers: { 'Content-Type': contentType },
         body: rawFile,
@@ -317,6 +327,7 @@ export default function ContentUploadPage() {
         fileName: selectedFile.name,
         fileSize: selectedFile.size,
         ...(trimmedVideoUrl ? { videoUrl: trimmedVideoUrl } : {}),
+        ...(tags.length > 0 ? { tags } : {}),
       },
     });
 
@@ -357,6 +368,13 @@ export default function ContentUploadPage() {
       data.videoUrl = trimmedVideoUrl; // empty string means clear
     }
 
+    // Compare tags with original and include if changed
+    const originalTags = original.tags ?? [];
+    const tagsChanged = tags.length !== originalTags.length || tags.some((t, i) => t !== originalTags[i]);
+    if (tagsChanged) {
+      data.tags = tags;
+    }
+
     // If a new file was selected, upload it first
     if (selectedFile) {
       const { fileKey } = await uploadFileToS3(selectedFile);
@@ -392,6 +410,20 @@ export default function ContentUploadPage() {
         await handleCreateSubmit();
       }
     } catch (err: any) {
+      if (err instanceof UploadError) {
+        switch (err.type) {
+          case 'TOKEN_EXPIRED':
+            Taro.showToast({ title: t('upload.tokenExpired'), icon: 'none' });
+            break;
+          case 'NETWORK_ERROR':
+            Taro.showToast({ title: t('upload.networkUnstable'), icon: 'none' });
+            break;
+          case 'SERVER_ERROR':
+            Taro.showToast({ title: t('upload.serverError'), icon: 'none' });
+            break;
+        }
+        return;
+      }
       const failMsg = isEditMode
         ? t('contentHub.upload.editSubmitFailed')
         : t('contentHub.upload.submitFailed');
@@ -452,6 +484,22 @@ export default function ContentUploadPage() {
       </View>
 
       <View className='upload-body'>
+        {/* Status notice banner (edit mode only) */}
+        {isEditMode && contentStatus === 'rejected' && (
+          <View className='upload-status-notice upload-status-notice--error'>
+            <Text>
+              {rejectReason
+                ? t('contentHub.upload.statusRejectedNotice', { reason: rejectReason })
+                : t('contentHub.upload.statusRejectedGenericNotice')}
+            </Text>
+          </View>
+        )}
+        {isEditMode && contentStatus === 'pending' && (
+          <View className='upload-status-notice upload-status-notice--warning'>
+            <Text>{t('contentHub.upload.statusPendingNotice')}</Text>
+          </View>
+        )}
+
         {/* Title */}
         <View className='upload-field'>
           <Text className='upload-field__label'>{t('contentHub.upload.titleLabel')} <Text className='upload-field__required'>{t('contentHub.upload.requiredMark')}</Text></Text>
@@ -539,6 +587,12 @@ export default function ContentUploadPage() {
             onInput={(e: any) => setVideoUrl(e.target.value || e.detail?.value || '')}
           />
           {errors.videoUrl && <Text className='upload-field__error'>{errors.videoUrl}</Text>}
+        </View>
+
+        {/* Tags */}
+        <View className='upload-field'>
+          <Text className='upload-field__label'>标签 <Text className='upload-field__optional'>{t('contentHub.upload.videoUrlOptional')}</Text></Text>
+          <TagInput value={tags} onChange={setTags} />
         </View>
 
         {/* Submit Button */}

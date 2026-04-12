@@ -67,6 +67,9 @@ export default function ClaimsPage() {
   const [loading, setLoading] = useState(true);
   const [lastKey, setLastKey] = useState<string | null>(null);
 
+  // Feature toggle state
+  const [featureDisabled, setFeatureDisabled] = useState(false);
+
   // Detail modal
   const [detailClaim, setDetailClaim] = useState<ClaimRecord | null>(null);
 
@@ -102,6 +105,21 @@ export default function ClaimsPage() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  // Check feature toggle on mount
+  useEffect(() => {
+    request<{ pointsClaimEnabled: boolean }>({
+      url: '/api/settings/feature-toggles',
+      skipAuth: true,
+    })
+      .then((res) => {
+        setFeatureDisabled(!res.pointsClaimEnabled);
+      })
+      .catch(() => {
+        // Frontend degradation: default to showing all functionality on failure
+        setFeatureDisabled(false);
+      });
   }, []);
 
   useEffect(() => {
@@ -285,10 +303,55 @@ export default function ClaimsPage() {
           <Text>{t('claims.backButton')}</Text>
         </View>
         <Text className='claims-page__title'>{t('claims.title')}</Text>
-        <View className='claims-page__new-btn' onClick={openForm}>
-          <Text>{t('claims.newClaim')}</Text>
-        </View>
+        {!featureDisabled ? (
+          <View className='claims-page__new-btn' onClick={openForm}>
+            <Text>{t('claims.newClaim')}</Text>
+          </View>
+        ) : (
+          <View className='claims-page__new-btn' style={{ visibility: 'hidden' }}>
+            <Text>{t('claims.newClaim')}</Text>
+          </View>
+        )}
       </View>
+
+      {/* Feature disabled message */}
+      {featureDisabled && (
+        <View style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 'var(--space-48) var(--space-24)',
+          textAlign: 'center',
+        }}>
+          <Text style={{
+            fontSize: '48px',
+            marginBottom: 'var(--space-16)',
+            opacity: 0.5,
+          }}>🔒</Text>
+          <Text style={{
+            fontFamily: 'var(--font-display)',
+            fontSize: '18px',
+            fontWeight: 600,
+            color: 'var(--text-primary)',
+            marginBottom: 'var(--space-8)',
+          }}>{t('featureToggle.featureDisabled')}</Text>
+          <Text style={{
+            fontFamily: 'var(--font-body)',
+            fontSize: '14px',
+            color: 'var(--text-secondary)',
+            marginBottom: 'var(--space-32)',
+            lineHeight: 1.5,
+          }}>{t('featureToggle.featureDisabledDesc')}</Text>
+          <View
+            className='btn-secondary'
+            style={{ padding: 'var(--space-12) var(--space-32)', cursor: 'pointer' }}
+            onClick={handleBack}
+          >
+            <Text>{t('featureToggle.backButton')}</Text>
+          </View>
+        </View>
+      )}
 
       {/* Status Filter Tabs */}
       <View className='claim-tabs'>

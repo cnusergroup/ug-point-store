@@ -1,4 +1,6 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { ErrorCodes, ErrorMessages } from '@points-mall/shared';
 import { verifyToken } from '../auth/token';
 
@@ -14,10 +16,17 @@ export interface AuthenticatedEvent extends APIGatewayProxyEvent {
 
 type LambdaHandler = (event: AuthenticatedEvent) => Promise<APIGatewayProxyResult>;
 
+const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const USERS_TABLE = process.env.USERS_TABLE ?? '';
+
 function errorResponse(statusCode: number, code: string, message: string): APIGatewayProxyResult {
   return {
     statusCode,
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+    },
     body: JSON.stringify({ code, message }),
   };
 }
@@ -40,11 +49,61 @@ export function withAuth(handler: LambdaHandler) {
       return errorResponse(401, 'INVALID_TOKEN', '无效的访问令牌');
     }
 
+    const payload = result.payload!;
+    let roles: string[] = payload.roles || [];
+
+    // Only read DB if rolesVersion is missing (old token) or roles were updated after token was issued.
+    // assignRoles writes rolesVersion (ms timestamp) to DynamoDB; token carries the same value.
+    // If they match, skip the DB read — saves ~5-20ms per request.
+    if (USERS_TABLE) {
+      const tokenRolesVersion: number = payload.rolesVersion ?? 0;
+      let needsDbRead = tokenRolesVersion === 0; // old token without rolesVersion always reads DB
+
+      if (!needsDbRead) {
+        // Quick check: read only rolesVersion from DB (single attribute, minimal cost)
+        try {
+          const versionRecord = await dynamoClient.send(
+            new GetCommand({
+              TableName: USERS_TABLE,
+              Key: { userId: payload.userId },
+              ProjectionExpression: 'rolesVersion, #r',
+              ExpressionAttributeNames: { '#r': 'roles' },
+            }),
+          );
+          const dbRolesVersion: number = versionRecord.Item?.rolesVersion ?? 0;
+          if (dbRolesVersion > tokenRolesVersion) {
+            // Roles were updated after this token was issued — use DB roles
+            roles = (versionRecord.Item?.roles as string[]) ?? roles;
+          }
+          // else: token roles are current, no extra read needed
+        } catch {
+          // Fallback to token roles if DB read fails
+        }
+      } else {
+        // Old token: read full roles from DB
+        try {
+          const userRecord = await dynamoClient.send(
+            new GetCommand({
+              TableName: USERS_TABLE,
+              Key: { userId: payload.userId },
+              ProjectionExpression: '#r',
+              ExpressionAttributeNames: { '#r': 'roles' },
+            }),
+          );
+          if (userRecord.Item?.roles) {
+            roles = userRecord.Item.roles as string[];
+          }
+        } catch {
+          // Fallback to token roles
+        }
+      }
+    }
+
     const authenticatedEvent = event as AuthenticatedEvent;
     authenticatedEvent.user = {
-      userId: result.payload!.userId,
-      email: result.payload!.email,
-      roles: result.payload!.roles || [],
+      userId: payload.userId,
+      email: payload.email,
+      roles,
     };
 
     return handler(authenticatedEvent);

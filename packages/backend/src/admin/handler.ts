@@ -11,8 +11,13 @@ import { createPointsProduct, createCodeExclusiveProduct, updateProduct, setProd
 import { getUploadUrl, getTempUploadUrl, deleteImage } from './images';
 import { batchGenerateInvites, listInvites, revokeInvite } from './invites';
 import { listUsers, setUserStatus, deleteUser } from './users';
+import { executeBatchDistribution, validateBatchDistributionInput, listDistributionHistory, getDistributionDetail } from './batch-points';
 import { reviewClaim, listAllClaims } from '../claims/review';
 import { reviewContent, listAllContent, deleteContent, createCategory, updateCategory, deleteCategory } from '../content/admin';
+import { listAllTags, mergeTags, deleteTag } from '../content/admin-tags';
+import { updateFeatureToggles, getFeatureToggles } from '../settings/feature-toggles';
+import { updateTravelSettings, validateTravelSettingsInput } from '../travel/settings';
+import { reviewTravelApplication, listAllTravelApplications } from '../travel/review';
 
 // Create client outside handler for Lambda container reuse
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -31,6 +36,9 @@ const CONTENT_CATEGORIES_TABLE = process.env.CONTENT_CATEGORIES_TABLE ?? '';
 const CONTENT_COMMENTS_TABLE = process.env.CONTENT_COMMENTS_TABLE ?? '';
 const CONTENT_LIKES_TABLE = process.env.CONTENT_LIKES_TABLE ?? '';
 const CONTENT_RESERVATIONS_TABLE = process.env.CONTENT_RESERVATIONS_TABLE ?? '';
+const BATCH_DISTRIBUTIONS_TABLE = process.env.BATCH_DISTRIBUTIONS_TABLE ?? '';
+const CONTENT_TAGS_TABLE = process.env.CONTENT_TAGS_TABLE ?? '';
+const TRAVEL_APPLICATIONS_TABLE = process.env.TRAVEL_APPLICATIONS_TABLE ?? '';
 
 const CORS_HEADERS = {
   'Content-Type': 'application/json',
@@ -77,6 +85,9 @@ const CONTENT_REVIEW_REGEX = /^\/api\/admin\/content\/([^/]+)\/review$/;
 const CONTENT_DELETE_REGEX = /^\/api\/admin\/content\/([^/]+)$/;
 const CONTENT_CATEGORIES_UPDATE_REGEX = /^\/api\/admin\/content\/categories\/([^/]+)$/;
 const CONTENT_CATEGORIES_DELETE_REGEX = /^\/api\/admin\/content\/categories\/([^/]+)$/;
+const BATCH_POINTS_HISTORY_DETAIL_REGEX = /^\/api\/admin\/batch-points\/history\/([^/]+)$/;
+const TRAVEL_REVIEW_REGEX = /^\/api\/admin\/travel\/([^/]+)\/review$/;
+const TAGS_DELETE_REGEX = /^\/api\/admin\/tags\/([^/]+)$/;
 
 /**
  * Check if the authenticated user has admin privileges.
@@ -105,6 +116,10 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     // PUT /api/admin/products/{id}
     const productsMatch = path.match(PRODUCTS_UPDATE_REGEX);
     if (productsMatch) {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+        if (!toggles.adminProductsEnabled) return errorResponse('FORBIDDEN', '管理员暂无商品管理权限', 403);
+      }
       return await handleUpdateProduct(productsMatch[1], event);
     }
 
@@ -113,17 +128,35 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     if (contentCategoriesUpdateMatch) {
       return await handleUpdateCategory(contentCategoriesUpdateMatch[1], event);
     }
+
+    // PUT /api/admin/settings/feature-toggles
+    if (path === '/api/admin/settings/feature-toggles') {
+      return await handleUpdateFeatureToggles(event);
+    }
+
+    // PUT /api/admin/settings/travel-sponsorship
+    if (path === '/api/admin/settings/travel-sponsorship') {
+      return await handleUpdateTravelSettings(event);
+    }
   }
 
   // POST routes
   if (method === 'POST') {
     // POST /api/admin/images/upload-url — temp upload for product creation (no productId needed)
     if (path === '/api/admin/images/upload-url') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+        if (!toggles.adminProductsEnabled) return errorResponse('FORBIDDEN', '管理员暂无商品管理权限', 403);
+      }
       return await handleGetTempUploadUrl(event);
     }
 
     const uploadUrlMatch = path.match(PRODUCTS_UPLOAD_URL_REGEX);
     if (uploadUrlMatch) {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+        if (!toggles.adminProductsEnabled) return errorResponse('FORBIDDEN', '管理员暂无商品管理权限', 403);
+      }
       return await handleGetUploadUrl(uploadUrlMatch[1], event);
     }
     if (path === '/api/admin/codes/batch-generate') {
@@ -133,6 +166,10 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
       return await handleGenerateProductCodes(event);
     }
     if (path === '/api/admin/products') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+        if (!toggles.adminProductsEnabled) return errorResponse('FORBIDDEN', '管理员暂无商品管理权限', 403);
+      }
       return await handleCreateProduct(event);
     }
     if (path === '/api/admin/invites/batch') {
@@ -141,9 +178,29 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     if (path === '/api/admin/content/categories') {
       return await handleCreateCategory(event);
     }
+    if (path === '/api/admin/tags/merge') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限');
+      }
+      return await handleMergeTags(event);
+    }
+    if (path === '/api/admin/batch-points') {
+      return await handleBatchDistribution(event);
+    }
   }
 
   // GET routes
+  if (method === 'GET' && path === '/api/admin/batch-points/history') {
+    return await handleListDistributionHistory(event);
+  }
+
+  if (method === 'GET') {
+    const batchPointsDetailMatch = path.match(BATCH_POINTS_HISTORY_DETAIL_REGEX);
+    if (batchPointsDetailMatch) {
+      return await handleGetDistributionDetail(batchPointsDetailMatch[1], event);
+    }
+  }
+
   if (method === 'GET' && path === '/api/admin/codes') {
     return await handleListCodes(event);
   }
@@ -160,8 +217,16 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     return await handleListAllClaims(event);
   }
 
+  if (method === 'GET' && path === '/api/admin/tags') {
+    return await handleListAllTags();
+  }
+
   if (method === 'GET' && path === '/api/admin/content') {
     return await handleListAllContent(event);
+  }
+
+  if (method === 'GET' && path === '/api/admin/travel/applications') {
+    return await handleListAllTravelApplications(event);
   }
 
   // PATCH routes
@@ -173,6 +238,10 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
 
     const statusMatch = path.match(PRODUCTS_STATUS_REGEX);
     if (statusMatch) {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+        if (!toggles.adminProductsEnabled) return errorResponse('FORBIDDEN', '管理员暂无商品管理权限', 403);
+      }
       return await handleSetProductStatus(statusMatch[1], event);
     }
 
@@ -195,12 +264,30 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     if (contentReviewMatch) {
       return await handleReviewContent(contentReviewMatch[1], event);
     }
+
+    const travelReviewMatch = path.match(TRAVEL_REVIEW_REGEX);
+    if (travelReviewMatch) {
+      return await handleReviewTravelApplication(travelReviewMatch[1], event);
+    }
   }
 
   // DELETE routes
   if (method === 'DELETE') {
+    // DELETE /api/admin/tags/:id — must check before generic content delete
+    const tagsDeleteMatch = path.match(TAGS_DELETE_REGEX);
+    if (tagsDeleteMatch && path.startsWith('/api/admin/tags/')) {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限');
+      }
+      return await handleDeleteTag(tagsDeleteMatch[1]);
+    }
+
     const deleteImageMatch = path.match(PRODUCTS_DELETE_IMAGE_REGEX);
     if (deleteImageMatch) {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+        if (!toggles.adminProductsEnabled) return errorResponse('FORBIDDEN', '管理员暂无商品管理权限', 403);
+      }
       return await handleDeleteImage(deleteImageMatch[1], deleteImageMatch[2]);
     }
 
@@ -681,6 +768,91 @@ async function handleReviewClaim(claimId: string, event: AuthenticatedEvent): Pr
   return jsonResponse(200, { claim: result.claim });
 }
 
+// ---- Batch Points Route Handlers ----
+
+async function handleBatchDistribution(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  const validation = validateBatchDistributionInput(body);
+  if (!validation.valid) {
+    return errorResponse(validation.error.code, validation.error.message, 400);
+  }
+
+  const { userIds, points, reason, targetRole } = body as Record<string, unknown>;
+
+  // Fetch distributor's nickname from Users table
+  const distributorResult = await dynamoClient.send(
+    new GetCommand({ TableName: USERS_TABLE, Key: { userId: event.user.userId }, ProjectionExpression: 'nickname' }),
+  );
+  const distributorNickname = distributorResult.Item?.nickname ?? '';
+
+  const result = await executeBatchDistribution(
+    {
+      userIds: userIds as string[],
+      points: points as number,
+      reason: reason as string,
+      targetRole: targetRole as 'UserGroupLeader' | 'Speaker' | 'Volunteer',
+      distributorId: event.user.userId,
+      distributorNickname,
+    },
+    dynamoClient,
+    {
+      usersTable: USERS_TABLE,
+      pointsRecordsTable: POINTS_RECORDS_TABLE,
+      batchDistributionsTable: BATCH_DISTRIBUTIONS_TABLE,
+    },
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message);
+  }
+
+  return jsonResponse(201, {
+    distributionId: result.distributionId,
+    successCount: result.successCount,
+    totalPoints: result.totalPoints,
+  });
+}
+
+async function handleListDistributionHistory(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  // SuperAdmin permission check
+  if (!isSuperAdmin(event.user.roles as UserRole[])) {
+    return errorResponse('FORBIDDEN', '需要超级管理员权限', 403);
+  }
+
+  const pageSize = event.queryStringParameters?.pageSize
+    ? parseInt(event.queryStringParameters.pageSize, 10)
+    : undefined;
+  const lastKey = event.queryStringParameters?.lastKey;
+
+  const result = await listDistributionHistory(
+    { pageSize, lastKey },
+    dynamoClient,
+    BATCH_DISTRIBUTIONS_TABLE,
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 400);
+  }
+
+  return jsonResponse(200, { distributions: result.distributions, lastKey: result.lastKey });
+}
+
+async function handleGetDistributionDetail(distributionId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  // SuperAdmin permission check
+  if (!isSuperAdmin(event.user.roles as UserRole[])) {
+    return errorResponse('FORBIDDEN', '需要超级管理员权限', 403);
+  }
+
+  const result = await getDistributionDetail(distributionId, dynamoClient, BATCH_DISTRIBUTIONS_TABLE);
+
+  if (!result.success) {
+    const statusCode = result.error!.code === 'DISTRIBUTION_NOT_FOUND' ? 404 : 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { distribution: result.distribution });
+}
+
 // ---- Content Management Route Handlers ----
 
 async function handleListAllContent(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
@@ -789,6 +961,36 @@ async function handleDeleteCategory(categoryId: string): Promise<APIGatewayProxy
   return jsonResponse(200, { message: '分类已删除' });
 }
 
+async function handleUpdateFeatureToggles(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  // SuperAdmin permission check
+  if (!isSuperAdmin(event.user.roles as UserRole[])) {
+    return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限');
+  }
+
+  const body = parseBody(event);
+  if (!body) {
+    return errorResponse('INVALID_REQUEST', '请求参数无效', 400);
+  }
+
+  const result = await updateFeatureToggles(
+    {
+      codeRedemptionEnabled: body.codeRedemptionEnabled as boolean,
+      pointsClaimEnabled: body.pointsClaimEnabled as boolean,
+      adminProductsEnabled: body.adminProductsEnabled !== false, // default true if not provided
+      adminOrdersEnabled: body.adminOrdersEnabled !== false,     // default true if not provided
+      updatedBy: event.user.userId,
+    },
+    dynamoClient,
+    USERS_TABLE,
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 400);
+  }
+
+  return jsonResponse(200, { settings: result.settings });
+}
+
 async function handleGetTempUploadUrl(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
   const body = parseBody(event);
   if (!body || !body.fileName || !body.contentType) {
@@ -809,4 +1011,144 @@ async function handleGetTempUploadUrl(event: AuthenticatedEvent): Promise<APIGat
   }
 
   return jsonResponse(200, result.data);
+}
+
+// ---- Travel Sponsorship Route Handlers ----
+
+async function handleUpdateTravelSettings(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  // SuperAdmin permission check
+  if (!isSuperAdmin(event.user.roles as UserRole[])) {
+    return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限');
+  }
+
+  const body = parseBody(event);
+  const validation = validateTravelSettingsInput(body);
+  if (!validation.valid) {
+    return errorResponse(validation.error.code, validation.error.message, 400);
+  }
+
+  const result = await updateTravelSettings(
+    {
+      travelSponsorshipEnabled: (body as Record<string, unknown>).travelSponsorshipEnabled as boolean,
+      domesticThreshold: (body as Record<string, unknown>).domesticThreshold as number,
+      internationalThreshold: (body as Record<string, unknown>).internationalThreshold as number,
+      updatedBy: event.user.userId,
+    },
+    dynamoClient,
+    USERS_TABLE,
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 400);
+  }
+
+  return jsonResponse(200, { settings: result.settings });
+}
+
+async function handleListAllTravelApplications(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  // SuperAdmin permission check
+  if (!isSuperAdmin(event.user.roles as UserRole[])) {
+    return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限');
+  }
+
+  const status = event.queryStringParameters?.status as 'pending' | 'approved' | 'rejected' | undefined;
+  const pageSize = event.queryStringParameters?.pageSize
+    ? parseInt(event.queryStringParameters.pageSize, 10)
+    : undefined;
+  const lastKey = event.queryStringParameters?.lastKey;
+
+  const result = await listAllTravelApplications(
+    { status, pageSize, lastKey },
+    dynamoClient,
+    TRAVEL_APPLICATIONS_TABLE,
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 400);
+  }
+
+  return jsonResponse(200, { applications: result.applications, lastKey: result.lastKey });
+}
+
+async function handleReviewTravelApplication(applicationId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  // SuperAdmin permission check
+  if (!isSuperAdmin(event.user.roles as UserRole[])) {
+    return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限');
+  }
+
+  const body = parseBody(event);
+  if (!body || !body.action) {
+    return errorResponse('INVALID_REQUEST', 'Missing required field: action', 400);
+  }
+
+  // Fetch reviewer nickname from Users table
+  const reviewerResult = await dynamoClient.send(
+    new GetCommand({ TableName: USERS_TABLE, Key: { userId: event.user.userId }, ProjectionExpression: 'nickname' }),
+  );
+  const reviewerNickname = reviewerResult.Item?.nickname ?? '';
+
+  const result = await reviewTravelApplication(
+    {
+      applicationId,
+      reviewerId: event.user.userId,
+      reviewerNickname,
+      action: body.action as 'approve' | 'reject',
+      rejectReason: body.rejectReason as string | undefined,
+    },
+    dynamoClient,
+    { usersTable: USERS_TABLE, travelApplicationsTable: TRAVEL_APPLICATIONS_TABLE },
+  );
+
+  if (!result.success) {
+    const statusCode = (ErrorHttpStatus as Record<string, number>)[result.error!.code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { application: result.application });
+}
+
+// ---- Tag Management Route Handlers ----
+
+async function handleListAllTags(): Promise<APIGatewayProxyResult> {
+  const result = await listAllTags(dynamoClient, CONTENT_TAGS_TABLE);
+
+  return jsonResponse(200, { tags: result.tags });
+}
+
+async function handleMergeTags(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || !body.sourceTagId || !body.targetTagId) {
+    return errorResponse('INVALID_REQUEST', 'Missing required fields: sourceTagId, targetTagId', 400);
+  }
+
+  const result = await mergeTags(
+    {
+      sourceTagId: body.sourceTagId as string,
+      targetTagId: body.targetTagId as string,
+    },
+    dynamoClient,
+    { contentTagsTable: CONTENT_TAGS_TABLE, contentItemsTable: CONTENT_ITEMS_TABLE },
+  );
+
+  if (!result.success) {
+    const statusCode = (ErrorHttpStatus as Record<string, number>)[result.error!.code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { message: '标签合并成功' });
+}
+
+async function handleDeleteTag(tagId: string): Promise<APIGatewayProxyResult> {
+  const result = await deleteTag(
+    tagId,
+    dynamoClient,
+    { contentTagsTable: CONTENT_TAGS_TABLE, contentItemsTable: CONTENT_ITEMS_TABLE },
+  );
+
+  if (!result.success) {
+    const statusCode = (ErrorHttpStatus as Record<string, number>)[result.error!.code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { message: '标签已删除' });
 }

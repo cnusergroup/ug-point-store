@@ -396,6 +396,7 @@ export interface ContentItem {
   reservationCount: number;
   createdAt: string;
   updatedAt: string;
+  tags?: string[];
 }
 
 /** 内容列表摘要 */
@@ -404,6 +405,20 @@ export interface ContentItemSummary {
   title: string;
   categoryName: string;
   uploaderNickname: string;
+  likeCount: number;
+  commentCount: number;
+  reservationCount: number;
+  createdAt: string;
+  tags?: string[];
+}
+
+/** 我的内容列表摘要（含状态与驳回原因） */
+export interface MyContentItemSummary {
+  contentId: string;
+  title: string;
+  categoryName: string;
+  status: ContentStatus;
+  rejectReason?: string;
   likeCount: number;
   commentCount: number;
   reservationCount: number;
@@ -437,6 +452,51 @@ export interface ContentReservation {
 }
 
 // ============================================================
+// 标签（Tag）相关类型与校验函数
+// ============================================================
+
+/** 标签记录 */
+export interface TagRecord {
+  tagId: string;
+  tagName: string;
+  usageCount: number;
+  createdAt: string;
+}
+
+/** 标签名规范化：trim + toLowerCase */
+export function normalizeTagName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+/** 校验单个标签名（规范化后 2~20 字符） */
+export function validateTagName(name: string): boolean {
+  const normalized = normalizeTagName(name);
+  return normalized.length >= 2 && normalized.length <= 20;
+}
+
+/** 校验标签数组（0~5 个，每个合法，无重复） */
+export function validateTagsArray(tags: string[]): {
+  valid: boolean;
+  normalizedTags: string[];
+  error?: string;
+} {
+  if (tags.length > 5) {
+    return { valid: false, normalizedTags: [], error: 'TOO_MANY_TAGS' };
+  }
+  const normalized = tags.map(normalizeTagName);
+  for (const tag of normalized) {
+    if (tag.length < 2 || tag.length > 20) {
+      return { valid: false, normalizedTags: [], error: 'INVALID_TAG_NAME' };
+    }
+  }
+  const unique = new Set(normalized);
+  if (unique.size !== normalized.length) {
+    return { valid: false, normalizedTags: [], error: 'DUPLICATE_TAG_NAME' };
+  }
+  return { valid: true, normalizedTags: normalized };
+}
+
+// ============================================================
 // 内容中心校验辅助函数
 // ============================================================
 
@@ -462,4 +522,75 @@ export function isValidVideoUrl(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+// ============================================================
+// 批量积分发放相关类型定义
+// ============================================================
+
+/** 批量发放记录 */
+export interface DistributionRecord {
+  distributionId: string;
+  distributorId: string;
+  distributorNickname: string;
+  targetRole: 'UserGroupLeader' | 'Speaker' | 'Volunteer';
+  recipientIds: string[];
+  recipientDetails?: { userId: string; nickname: string; email: string }[];
+  points: number;
+  reason: string;
+  successCount: number;
+  totalPoints: number;
+  createdAt: string;
+}
+
+// ============================================================
+// 差旅赞助（Travel Sponsorship）相关类型定义
+// ============================================================
+
+/** 差旅类别 */
+export type TravelCategory = 'domestic' | 'international';
+
+/** 社区角色选项（表单信息，非系统角色） */
+export type CommunityRole = 'Hero' | 'CommunityBuilder' | 'UGL';
+
+/** 差旅申请状态 */
+export type TravelApplicationStatus = 'pending' | 'approved' | 'rejected';
+
+/** 差旅申请记录 */
+export interface TravelApplication {
+  applicationId: string;
+  userId: string;
+  applicantNickname: string;
+  category: TravelCategory;
+  communityRole: CommunityRole;
+  eventLink: string;
+  cfpScreenshotUrl: string;
+  flightCost: number;
+  hotelCost: number;
+  totalCost: number;
+  status: TravelApplicationStatus;
+  earnDeducted: number;
+  rejectReason?: string;
+  reviewerId?: string;
+  reviewerNickname?: string;
+  reviewedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 差旅赞助设置 */
+export interface TravelSponsorshipSettings {
+  travelSponsorshipEnabled: boolean;
+  domesticThreshold: number;
+  internationalThreshold: number;
+}
+
+/** 差旅配额信息 */
+export interface TravelQuota {
+  earnTotal: number;
+  travelEarnUsed: number;
+  domesticAvailable: number;
+  internationalAvailable: number;
+  domesticThreshold: number;
+  internationalThreshold: number;
 }

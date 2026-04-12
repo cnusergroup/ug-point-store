@@ -20,7 +20,6 @@ export async function resetPassword(
       TableName: tableName,
       FilterExpression: 'resetToken = :token',
       ExpressionAttributeValues: { ':token': token },
-      Limit: 1,
     }),
   );
 

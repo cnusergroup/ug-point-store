@@ -5,11 +5,14 @@ export interface TokenPayload {
   userId: string;
   email?: string;
   roles: string[];
+  /** Timestamp (ms) when roles were last written into this token.
+   *  Used to detect stale roles without a DB read on every request. */
+  rolesVersion?: number;
 }
 
 export interface VerifyTokenResult {
   valid: boolean;
-  payload?: jwt.JwtPayload;
+  payload?: jwt.JwtPayload & TokenPayload;
   error?: string;
 }
 
@@ -53,7 +56,12 @@ async function getJwtSecret(): Promise<string> {
 export async function generateToken(payload: TokenPayload): Promise<string> {
   const secret = await getJwtSecret();
   return jwt.sign(
-    { userId: payload.userId, email: payload.email, roles: payload.roles },
+    {
+      userId: payload.userId,
+      email: payload.email,
+      roles: payload.roles,
+      rolesVersion: payload.rolesVersion ?? Date.now(),
+    },
     secret,
     { expiresIn: TOKEN_EXPIRY },
   );
@@ -62,7 +70,7 @@ export async function generateToken(payload: TokenPayload): Promise<string> {
 export async function verifyToken(token: string): Promise<VerifyTokenResult> {
   try {
     const secret = await getJwtSecret();
-    const decoded = jwt.verify(token, secret) as jwt.JwtPayload;
+    const decoded = jwt.verify(token, secret) as jwt.JwtPayload & TokenPayload;
     return { valid: true, payload: decoded };
   } catch (err) {
     if (err instanceof jwt.TokenExpiredError) {

@@ -2,14 +2,23 @@ import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { S3Client } from '@aws-sdk/client-s3';
-import { ErrorHttpStatus } from '@points-mall/shared';
+import { ErrorHttpStatus, ErrorCodes, ErrorMessages } from '@points-mall/shared';
 import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware';
+import { getFeatureToggles } from '../settings/feature-toggles';
 import { redeemCode } from './redeem-code';
 import { getPointsBalance } from './balance';
 import { getPointsRecords } from './records';
 import { getUserProfile } from '../user/profile';
 import { submitClaim, listMyClaims } from '../claims/submit';
 import { getClaimUploadUrl } from '../claims/images';
+import { getTravelSettings } from '../travel/settings';
+import {
+  getTravelQuota,
+  submitTravelApplication,
+  listMyTravelApplications,
+  resubmitTravelApplication,
+  validateTravelApplicationInput,
+} from '../travel/apply';
 
 // Create client outside handler for Lambda container reuse
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -20,6 +29,9 @@ const CODES_TABLE = process.env.CODES_TABLE ?? '';
 const POINTS_RECORDS_TABLE = process.env.POINTS_RECORDS_TABLE ?? '';
 const CLAIMS_TABLE = process.env.CLAIMS_TABLE ?? '';
 const IMAGES_BUCKET = process.env.IMAGES_BUCKET ?? '';
+const TRAVEL_APPLICATIONS_TABLE = process.env.TRAVEL_APPLICATIONS_TABLE ?? '';
+
+const TRAVEL_APPLICATIONS_RESUBMIT_REGEX = /^\/api\/travel\/applications\/([^/]+)$/;
 
 const CORS_HEADERS = {
   'Content-Type': 'application/json',
@@ -56,6 +68,10 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
 
   // POST /api/points/redeem-code
   if (method === 'POST' && path === '/api/points/redeem-code') {
+    const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+    if (!toggles.codeRedemptionEnabled) {
+      return errorResponse(ErrorCodes.FEATURE_DISABLED, ErrorMessages[ErrorCodes.FEATURE_DISABLED], 403);
+    }
     return await handleRedeemCode(event);
   }
 
@@ -76,6 +92,10 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
 
   // POST /api/claims
   if (method === 'POST' && path === '/api/claims') {
+    const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+    if (!toggles.pointsClaimEnabled) {
+      return errorResponse(ErrorCodes.FEATURE_DISABLED, ErrorMessages[ErrorCodes.FEATURE_DISABLED], 403);
+    }
     return await handleSubmitClaim(event);
   }
 
@@ -89,6 +109,43 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     return await handleListMyClaims(event);
   }
 
+  // GET /api/travel/quota
+  if (method === 'GET' && path === '/api/travel/quota') {
+    if (!event.user.roles.includes('Speaker')) {
+      return errorResponse(ErrorCodes.TRAVEL_SPEAKER_ONLY, ErrorMessages[ErrorCodes.TRAVEL_SPEAKER_ONLY], 403);
+    }
+    return await handleGetTravelQuota(event);
+  }
+
+  // POST /api/travel/apply
+  if (method === 'POST' && path === '/api/travel/apply') {
+    if (!event.user.roles.includes('Speaker')) {
+      return errorResponse(ErrorCodes.TRAVEL_SPEAKER_ONLY, ErrorMessages[ErrorCodes.TRAVEL_SPEAKER_ONLY], 403);
+    }
+    const travelSettings = await getTravelSettings(dynamoClient, USERS_TABLE);
+    if (!travelSettings.travelSponsorshipEnabled) {
+      return errorResponse(ErrorCodes.FEATURE_DISABLED, ErrorMessages[ErrorCodes.FEATURE_DISABLED], 403);
+    }
+    return await handleSubmitTravelApplication(event);
+  }
+
+  // GET /api/travel/my-applications
+  if (method === 'GET' && path === '/api/travel/my-applications') {
+    if (!event.user.roles.includes('Speaker')) {
+      return errorResponse(ErrorCodes.TRAVEL_SPEAKER_ONLY, ErrorMessages[ErrorCodes.TRAVEL_SPEAKER_ONLY], 403);
+    }
+    return await handleListMyTravelApplications(event);
+  }
+
+  // PUT /api/travel/applications/{id}
+  const resubmitMatch = path.match(TRAVEL_APPLICATIONS_RESUBMIT_REGEX);
+  if (method === 'PUT' && resubmitMatch) {
+    if (!event.user.roles.includes('Speaker')) {
+      return errorResponse(ErrorCodes.TRAVEL_SPEAKER_ONLY, ErrorMessages[ErrorCodes.TRAVEL_SPEAKER_ONLY], 403);
+    }
+    return await handleResubmitTravelApplication(event, resubmitMatch[1]);
+  }
+
   return errorResponse('NOT_FOUND', 'Route not found', 404);
 });
 
@@ -96,6 +153,28 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
   // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
     return jsonResponse(200, {});
+  }
+
+  // Public route: GET /api/settings/feature-toggles (no auth required)
+  if (event.httpMethod === 'GET' && event.path === '/api/settings/feature-toggles') {
+    try {
+      const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+      return jsonResponse(200, toggles);
+    } catch (err) {
+      console.error('Failed to get feature toggles:', err);
+      return errorResponse('INTERNAL_ERROR', 'Internal server error', 500);
+    }
+  }
+
+  // Public route: GET /api/settings/travel-sponsorship (no auth required)
+  if (event.httpMethod === 'GET' && event.path === '/api/settings/travel-sponsorship') {
+    try {
+      const settings = await getTravelSettings(dynamoClient, USERS_TABLE);
+      return jsonResponse(200, settings);
+    } catch (err) {
+      console.error('Failed to get travel sponsorship settings:', err);
+      return errorResponse('INTERNAL_ERROR', 'Internal server error', 500);
+    }
   }
 
   try {
@@ -254,4 +333,114 @@ async function handleClaimUploadUrl(event: AuthenticatedEvent): Promise<APIGatew
   }
 
   return jsonResponse(200, result.data);
+}
+
+
+async function handleGetTravelQuota(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const quota = await getTravelQuota(
+    event.user.userId,
+    dynamoClient,
+    { usersTable: USERS_TABLE, pointsRecordsTable: POINTS_RECORDS_TABLE },
+  );
+
+  return jsonResponse(200, quota);
+}
+
+async function handleSubmitTravelApplication(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  const validation = validateTravelApplicationInput(body);
+  if (!validation.valid) {
+    return errorResponse(validation.error.code, validation.error.message, 400);
+  }
+
+  // Fetch user profile to get nickname
+  const profileResult = await getUserProfile(event.user.userId, dynamoClient, USERS_TABLE);
+  const nickname = profileResult.success && profileResult.profile
+    ? profileResult.profile.nickname
+    : '';
+
+  const result = await submitTravelApplication(
+    {
+      userId: event.user.userId,
+      userNickname: nickname,
+      category: validation.data.category,
+      communityRole: validation.data.communityRole,
+      eventLink: validation.data.eventLink,
+      cfpScreenshotUrl: validation.data.cfpScreenshotUrl,
+      flightCost: validation.data.flightCost,
+      hotelCost: validation.data.hotelCost,
+    },
+    dynamoClient,
+    {
+      usersTable: USERS_TABLE,
+      pointsRecordsTable: POINTS_RECORDS_TABLE,
+      travelApplicationsTable: TRAVEL_APPLICATIONS_TABLE,
+    },
+  );
+
+  if (!result.success) {
+    const code = result.error!.code;
+    const status = (ErrorHttpStatus as Record<string, number>)[code] ?? 400;
+    return jsonResponse(status, result.error);
+  }
+
+  return jsonResponse(201, { success: true, application: result.application });
+}
+
+async function handleListMyTravelApplications(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const status = event.queryStringParameters?.status as 'pending' | 'approved' | 'rejected' | undefined;
+  const pageSize = event.queryStringParameters?.pageSize
+    ? parseInt(event.queryStringParameters.pageSize, 10)
+    : undefined;
+  const lastKey = event.queryStringParameters?.lastKey ?? undefined;
+
+  const result = await listMyTravelApplications(
+    { userId: event.user.userId, status, pageSize, lastKey },
+    dynamoClient,
+    TRAVEL_APPLICATIONS_TABLE,
+  );
+
+  return jsonResponse(200, { applications: result.applications, lastKey: result.lastKey });
+}
+
+async function handleResubmitTravelApplication(event: AuthenticatedEvent, applicationId: string): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  const validation = validateTravelApplicationInput(body);
+  if (!validation.valid) {
+    return errorResponse(validation.error.code, validation.error.message, 400);
+  }
+
+  // Fetch user profile to get nickname
+  const profileResult = await getUserProfile(event.user.userId, dynamoClient, USERS_TABLE);
+  const nickname = profileResult.success && profileResult.profile
+    ? profileResult.profile.nickname
+    : '';
+
+  const result = await resubmitTravelApplication(
+    {
+      applicationId,
+      userId: event.user.userId,
+      userNickname: nickname,
+      category: validation.data.category,
+      communityRole: validation.data.communityRole,
+      eventLink: validation.data.eventLink,
+      cfpScreenshotUrl: validation.data.cfpScreenshotUrl,
+      flightCost: validation.data.flightCost,
+      hotelCost: validation.data.hotelCost,
+    },
+    dynamoClient,
+    {
+      usersTable: USERS_TABLE,
+      pointsRecordsTable: POINTS_RECORDS_TABLE,
+      travelApplicationsTable: TRAVEL_APPLICATIONS_TABLE,
+    },
+  );
+
+  if (!result.success) {
+    const code = result.error!.code;
+    const status = (ErrorHttpStatus as Record<string, number>)[code] ?? 400;
+    return jsonResponse(status, result.error);
+  }
+
+  return jsonResponse(200, { success: true, application: result.application });
 }

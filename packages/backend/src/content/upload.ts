@@ -2,11 +2,17 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { DynamoDBDocumentClient, PutCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { ulid } from 'ulid';
-import { ErrorCodes, ErrorMessages, isValidContentFileType, isValidVideoUrl } from '@points-mall/shared';
+import { ErrorCodes, ErrorMessages, isValidContentFileType, isValidVideoUrl, validateTagsArray, normalizeTagName } from '@points-mall/shared';
 import type { ContentItem } from '@points-mall/shared';
+import { generateUploadToken } from '../utils/upload-token';
+import { syncTagsOnCreate } from './tags';
 
 const PRESIGNED_URL_EXPIRES_IN = 300; // 5 minutes
 const MAX_CONTENT_LENGTH = 50 * 1024 * 1024; // 50MB
+
+const UPLOAD_VIA_CLOUDFRONT = process.env.UPLOAD_VIA_CLOUDFRONT === 'true';
+const UPLOAD_TOKEN_SECRET = process.env.UPLOAD_TOKEN_SECRET || '';
+const CLOUDFRONT_DOMAIN = process.env.CLOUDFRONT_DOMAIN || 'https://store.awscommunity.cn';
 
 // ─── Upload URL ────────────────────────────────────────────
 
@@ -23,8 +29,30 @@ export interface GetContentUploadUrlResult {
 }
 
 /**
+ * Generate a CloudFront upload URL with an HMAC token for the given S3 key.
+ * Throws if UPLOAD_TOKEN_SECRET is not configured.
+ */
+function generateCloudFrontUploadUrl(key: string): string {
+  if (!UPLOAD_TOKEN_SECRET) {
+    throw new Error('UPLOAD_TOKEN_SECRET must be configured when UPLOAD_VIA_CLOUDFRONT is enabled');
+  }
+  const { token } = generateUploadToken({ key, expiresIn: PRESIGNED_URL_EXPIRES_IN }, UPLOAD_TOKEN_SECRET);
+  return `${CLOUDFRONT_DOMAIN}/${key}?token=${token}`;
+}
+
+/**
+ * Extract file extension from a filename, normalized to lowercase.
+ */
+function getFileExtension(fileName: string): string {
+  const dotIndex = fileName.lastIndexOf('.');
+  if (dotIndex === -1 || dotIndex === fileName.length - 1) return '';
+  return fileName.slice(dotIndex + 1).toLowerCase();
+}
+
+/**
  * Generate a presigned PUT URL for uploading a content document to S3.
- * Key format: content/{userId}/{ulid}/{fileName}
+ * Key format: content/{userId}/{ulid}.{ext} (original filename stored in DynamoDB only)
+ * When UPLOAD_VIA_CLOUDFRONT is enabled, generates a CloudFront URL with an HMAC token.
  */
 export async function getContentUploadUrl(
   input: GetContentUploadUrlInput,
@@ -38,15 +66,20 @@ export async function getContentUploadUrl(
     };
   }
 
-  const fileKey = `content/${input.userId}/${ulid()}/${input.fileName}`;
+  const ext = getFileExtension(input.fileName) || 'bin';
+  const fileKey = `content/${input.userId}/${ulid()}.${ext}`;
 
-  const command = new PutObjectCommand({
-    Bucket: bucket,
-    Key: fileKey,
-    ContentType: input.contentType,
-  });
-
-  const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: PRESIGNED_URL_EXPIRES_IN });
+  let uploadUrl: string;
+  if (UPLOAD_VIA_CLOUDFRONT) {
+    uploadUrl = generateCloudFrontUploadUrl(fileKey);
+  } else {
+    const command = new PutObjectCommand({
+      Bucket: bucket,
+      Key: fileKey,
+      ContentType: input.contentType,
+    });
+    uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: PRESIGNED_URL_EXPIRES_IN });
+  }
 
   return { success: true, data: { uploadUrl, fileKey } };
 }
@@ -65,6 +98,7 @@ export interface CreateContentItemInput {
   fileName: string;
   fileSize: number;
   videoUrl?: string;
+  tags?: string[];
 }
 
 export interface CreateContentItemResult {
@@ -84,7 +118,7 @@ export interface CreateContentItemResult {
 export async function createContentItem(
   input: CreateContentItemInput,
   dynamoClient: DynamoDBDocumentClient,
-  tables: { contentItemsTable: string; categoriesTable: string },
+  tables: { contentItemsTable: string; categoriesTable: string; contentTagsTable?: string },
 ): Promise<CreateContentItemResult> {
   // Validate title
   if (!input.title || input.title.length > 100) {
@@ -121,6 +155,20 @@ export async function createContentItem(
     };
   }
 
+  // Validate and normalize tags (optional)
+  let normalizedTags: string[] = [];
+  if (input.tags && input.tags.length > 0) {
+    const tagValidation = validateTagsArray(input.tags);
+    if (!tagValidation.valid) {
+      const errorCode = tagValidation.error as string;
+      return {
+        success: false,
+        error: { code: errorCode, message: ErrorMessages[errorCode as keyof typeof ErrorMessages] },
+      };
+    }
+    normalizedTags = tagValidation.normalizedTags;
+  }
+
   const now = new Date().toISOString();
   const contentId = ulid();
   const categoryName = (categoryResult.Item as { name: string }).name;
@@ -139,6 +187,7 @@ export async function createContentItem(
     fileSize: input.fileSize,
     ...(input.videoUrl ? { videoUrl: input.videoUrl } : {}),
     status: 'pending',
+    tags: normalizedTags,
     likeCount: 0,
     commentCount: 0,
     reservationCount: 0,
@@ -149,6 +198,11 @@ export async function createContentItem(
   await dynamoClient.send(
     new PutCommand({ TableName: tables.contentItemsTable, Item: item }),
   );
+
+  // Sync tag usage counts in ContentTags table
+  if (normalizedTags.length > 0 && tables.contentTagsTable) {
+    await syncTagsOnCreate(normalizedTags, dynamoClient, tables.contentTagsTable);
+  }
 
   return { success: true, item };
 }

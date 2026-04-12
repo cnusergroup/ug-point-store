@@ -404,4 +404,68 @@ describe('editContentItem', () => {
     expect(result.item!.categoryName).toBe('Tech');
     expect(result.item!.fileKey).toBe('content/user-1/OLD123/slides.pptx');
   });
+
+  // ── Tag-related tests ──────────────────────────────────────
+
+  // 18. Editing tags successfully
+  it('should update tags when valid tags are provided', async () => {
+    const item = makePendingItem({ tags: ['react'] });
+    const dynamo = createMockDynamoClient(item);
+    const s3 = createMockS3Client();
+
+    const result = await editContentItem(
+      { contentId: 'content-1', userId: 'user-1', tags: ['TypeScript', 'AWS'] },
+      dynamo, s3, tables, bucket,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.item!.tags).toEqual(['typescript', 'aws']);
+  });
+
+  // 19. Edit round-trip: tags in response match submitted normalized tags
+  it('should return normalized tags in the response after edit (round-trip)', async () => {
+    const item = makePendingItem({ tags: [] });
+    const dynamo = createMockDynamoClient(item);
+    const s3 = createMockS3Client();
+
+    const inputTags = ['  React  ', 'TYPESCRIPT', 'aws'];
+    const result = await editContentItem(
+      { contentId: 'content-1', userId: 'user-1', tags: inputTags },
+      dynamo, s3, tables, bucket,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.item!.tags).toEqual(['react', 'typescript', 'aws']);
+  });
+
+  // 20. Reject invalid tags during edit
+  it('should reject invalid tags during edit (too many)', async () => {
+    const item = makePendingItem();
+    const dynamo = createMockDynamoClient(item);
+    const s3 = createMockS3Client();
+
+    const result = await editContentItem(
+      { contentId: 'content-1', userId: 'user-1', tags: ['t1', 't2', 't3', 't4', 't5', 't6'] },
+      dynamo, s3, tables, bucket,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error!.code).toBe(ErrorCodes.TOO_MANY_TAGS);
+  });
+
+  // 21. Editing without tags field should not change existing tags
+  it('should not change tags when tags field is not provided in edit', async () => {
+    const item = makePendingItem({ tags: ['react', 'aws'] });
+    const dynamo = createMockDynamoClient(item);
+    const s3 = createMockS3Client();
+
+    const result = await editContentItem(
+      { contentId: 'content-1', userId: 'user-1', title: 'New Title' },
+      dynamo, s3, tables, bucket,
+    );
+
+    expect(result.success).toBe(true);
+    // tags should remain unchanged from the original item
+    expect(result.item!.tags).toEqual(['react', 'aws']);
+  });
 });

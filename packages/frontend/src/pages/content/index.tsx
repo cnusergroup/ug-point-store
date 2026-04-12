@@ -3,10 +3,19 @@ import { View, Text, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useAppStore } from '../../store';
 import { request } from '../../utils/request';
-import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
+import TagCloud from '../../components/TagCloud';
 import type { ContentItemSummary, ContentCategory } from '@points-mall/shared';
 import './index.scss';
+
+function HomeIcon({ size = 20, color = 'currentColor' }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      <polyline points="9 22 9 12 15 12 15 22" />
+    </svg>
+  );
+}
 
 interface ContentListResponse {
   success: boolean;
@@ -27,6 +36,7 @@ export default function ContentListPage() {
   const [items, setItems] = useState<ContentItemSummary[]>([]);
   const [categories, setCategories] = useState<ContentCategory[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -52,6 +62,7 @@ export default function ContentListPage() {
     try {
       let url = '/api/content?pageSize=20';
       if (selectedCategory) url += `&categoryId=${selectedCategory}`;
+      if (selectedTag) url += `&tag=${encodeURIComponent(selectedTag)}`;
       if (!reset && lastKeyRef.current) url += `&lastKey=${encodeURIComponent(lastKeyRef.current)}`;
 
       const res = await request<ContentListResponse>({ url });
@@ -71,7 +82,7 @@ export default function ContentListPage() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [selectedCategory]);
+  }, [selectedCategory, selectedTag]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -85,7 +96,7 @@ export default function ContentListPage() {
     if (isAuthenticated) {
       fetchContent(true);
     }
-  }, [isAuthenticated, selectedCategory, fetchContent]);
+  }, [isAuthenticated, selectedCategory, selectedTag, fetchContent]);
 
   const handleCategoryChange = (categoryId: string) => {
     setSelectedCategory(categoryId);
@@ -106,7 +117,7 @@ export default function ContentListPage() {
   };
 
   const handleBack = () => {
-    goBack('/pages/index/index');
+    Taro.redirectTo({ url: '/pages/hub/index' });
   };
 
   const formatTime = (iso: string) => {
@@ -121,7 +132,9 @@ export default function ContentListPage() {
       {/* Header */}
       <View className='content-header'>
         <View className='content-header__left'>
-          <Text className='content-header__back' onClick={handleBack}>{t('contentHub.list.backButton')}</Text>
+          <View className='content-header__home' onClick={handleBack}>
+            <HomeIcon size={20} color='var(--text-secondary)' />
+          </View>
         </View>
         <Text className='content-header__title'>{t('contentHub.list.title')}</Text>
         <View className='content-header__right'>
@@ -154,6 +167,9 @@ export default function ContentListPage() {
           ))}
         </View>
       </ScrollView>
+
+      {/* Tag Cloud Filter */}
+      <TagCloud selectedTag={selectedTag} onTagSelect={setSelectedTag} />
 
       {/* Content List */}
       {loading ? (
