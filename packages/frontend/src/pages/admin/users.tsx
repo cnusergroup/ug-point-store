@@ -198,10 +198,10 @@ export default function AdminUsersPage() {
     if (!editingUser) return false;
     // SuperAdmin role is ALWAYS locked for everyone — it uses a dedicated transfer flow
     if (role === 'SuperAdmin' && editingUser.roles.includes('SuperAdmin')) return true;
-    // Admin role is locked for non-SuperAdmin callers
+    // Admin and OrderAdmin roles are locked for non-SuperAdmin callers
     if (!isSuperAdmin) {
-      const adminLevelRoles = ['Admin', 'SuperAdmin'];
-      return adminLevelRoles.includes(role) && editingUser.roles.includes(role);
+      const protectedRoles = ['Admin', 'SuperAdmin', 'OrderAdmin'];
+      return protectedRoles.includes(role) && editingUser.roles.includes(role);
     }
     return false;
   };

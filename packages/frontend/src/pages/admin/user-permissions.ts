@@ -5,6 +5,6 @@
 export function canManageUser(viewerRoles: string[], targetRoles: string[]): boolean {
   const viewerIsSuperAdmin = viewerRoles.includes('SuperAdmin');
   if (viewerIsSuperAdmin) return true;
-  const targetHasAdminRole = targetRoles.includes('Admin') || targetRoles.includes('SuperAdmin');
-  return !targetHasAdminRole;
+  const targetHasProtectedRole = targetRoles.includes('Admin') || targetRoles.includes('SuperAdmin') || targetRoles.includes('OrderAdmin');
+  return !targetHasProtectedRole;
 }
