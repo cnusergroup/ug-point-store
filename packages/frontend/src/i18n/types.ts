@@ -664,6 +664,7 @@ export interface TranslationDict {
       currentRolesLabel: string;
       noRolesLabel: string;
       assignableRolesLabel: string;
+      roleLocked: string;
       rolesUpdated: string;
       rolesUpdateFailed: string;
       saving: string;
@@ -804,6 +805,38 @@ export interface TranslationDict {
       thresholdPlaceholder: string;
       thresholdError: string;
       thresholdRequiredBeforeEnable: string;
+      inviteExpiryTitle: string;
+      inviteExpiryDesc: string;
+      inviteExpiryDays1: string;
+      inviteExpiryDays3: string;
+      inviteExpiryDays7: string;
+      transferTitle: string;
+      transferDesc: string;
+      selectTargetLabel: string;
+      noEligibleTargets: string;
+      passwordLabel: string;
+      passwordPlaceholder: string;
+      confirmTransfer: string;
+      transferring: string;
+      transferSuccess: string;
+      errorPasswordRequired: string;
+      errorSelectTarget: string;
+      errorPasswordIncorrect: string;
+      errorTargetNotAdmin: string;
+      errorTargetNotFound: string;
+      adminContentReviewLabel: string;
+      adminContentReviewDesc: string;
+      adminCategoriesLabel: string;
+      adminCategoriesDesc: string;
+      contentRolePermissionsTitle: string;
+      contentRolePermissionsDesc: string;
+      permissionCanAccess: string;
+      permissionCanUpload: string;
+      permissionCanDownload: string;
+      permissionCanReserve: string;
+      roleSpeaker: string;
+      roleUserGroupLeader: string;
+      roleVolunteer: string;
     };
   };
   contentHub: {
@@ -1023,6 +1056,9 @@ export interface TranslationDict {
       mergeSelfError: string;
       tagNotFound: string;
     };
+    noAccessTitle: string;
+    noAccessDesc: string;
+    noAccessBack: string;
   };
   hub: {
     greeting: string;
@@ -1039,6 +1075,7 @@ export interface TranslationDict {
     profileAction: string;
     settingsAction: string;
     adminAction: string;
+    orderManagement: string;
   };
   featureToggle: {
     featureDisabled: string;
@@ -1220,5 +1257,8 @@ export interface TranslationDict {
       collapseDetail: string;
       detailLoading: string;
     };
+  };
+  roles: {
+    orderAdmin: string;
   };
 }

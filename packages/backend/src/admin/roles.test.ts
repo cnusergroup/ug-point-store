@@ -1,9 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { assignRoles, revokeRole, validateRoles, validateRoleAssignment } from './roles';
 
-function createMockDynamoClient() {
+function createMockDynamoClient(targetRoles: string[] = []) {
   return {
-    send: vi.fn().mockResolvedValue({}),
+    send: vi.fn().mockImplementation((command: any) => {
+      const commandName = command.constructor.name;
+      if (commandName === 'GetCommand') {
+        return Promise.resolve({
+          Item: { roles: targetRoles },
+        });
+      }
+      return Promise.resolve({});
+    }),
   } as any;
 }
 
@@ -62,6 +70,17 @@ describe('validateRoleAssignment', () => {
     const result = validateRoleAssignment([], ['Speaker']);
     expect(result.success).toBe(true);
   });
+
+  it('should reject assigning OrderAdmin when caller is not SuperAdmin', () => {
+    const result = validateRoleAssignment(['Admin'], ['OrderAdmin']);
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('ORDER_ADMIN_REQUIRES_SUPERADMIN');
+  });
+
+  it('should allow assigning OrderAdmin when caller is SuperAdmin', () => {
+    const result = validateRoleAssignment(['SuperAdmin'], ['OrderAdmin']);
+    expect(result.success).toBe(true);
+  });
 });
 
 describe('assignRoles', () => {
@@ -72,8 +91,11 @@ describe('assignRoles', () => {
     expect(result.success).toBe(true);
     expect(result.error).toBeUndefined();
 
-    expect(client.send).toHaveBeenCalledTimes(1);
-    const command = client.send.mock.calls[0][0];
+    // Non-SuperAdmin caller: GetCommand (read current roles) + UpdateCommand (write)
+    expect(client.send).toHaveBeenCalledTimes(2);
+    const getCommand = client.send.mock.calls[0][0];
+    expect(getCommand.constructor.name).toBe('GetCommand');
+    const command = client.send.mock.calls[1][0];
     expect(command.constructor.name).toBe('UpdateCommand');
     expect(command.input.Key).toEqual({ userId: 'user-1' });
     expect(command.input.UpdateExpression).toContain('SET');
@@ -109,22 +131,25 @@ describe('assignRoles', () => {
     expect(client.send).not.toHaveBeenCalled();
   });
 
-  it('should reject assigning SuperAdmin via API', async () => {
+  it('should strip SuperAdmin from submission and reject if no valid roles remain', async () => {
     const client = createMockDynamoClient();
     const result = await assignRoles('user-1', ['SuperAdmin'], client, tableName, ['SuperAdmin']);
 
+    // SuperAdmin is stripped → empty roles after stripping → validateRoles fails on empty
     expect(result.success).toBe(false);
-    expect(result.error?.code).toBe('SUPERADMIN_ASSIGN_FORBIDDEN');
-    expect(client.send).not.toHaveBeenCalled();
+    expect(result.error?.code).toBe('INVALID_ROLES');
   });
 
-  it('should reject assigning Admin when caller is not SuperAdmin', async () => {
-    const client = createMockDynamoClient();
+  it('should silently strip Admin from non-SuperAdmin submission and preserve existing roles', async () => {
+    const client = createMockDynamoClient(['Admin', 'Speaker']);
     const result = await assignRoles('user-1', ['Admin'], client, tableName, ['Admin']);
 
-    expect(result.success).toBe(false);
-    expect(result.error?.code).toBe('ADMIN_ROLE_REQUIRES_SUPERADMIN');
-    expect(client.send).not.toHaveBeenCalled();
+    // Non-SuperAdmin submitting ['Admin'] → Admin stripped from submission (regular roles = []),
+    // existing admin roles merged back from DB. Result succeeds with preserved roles.
+    expect(result.success).toBe(true);
+    expect(client.send).toHaveBeenCalledTimes(2); // GetCommand + UpdateCommand
+    const writtenRoles = client.send.mock.calls[1][0].input.ExpressionAttributeValues[':roles'];
+    expect(writtenRoles).toContain('Admin');
   });
 
   it('should allow assigning Admin when caller is SuperAdmin', async () => {
@@ -132,17 +157,99 @@ describe('assignRoles', () => {
     const result = await assignRoles('user-1', ['Admin'], client, tableName, ['SuperAdmin']);
 
     expect(result.success).toBe(true);
-    expect(client.send).toHaveBeenCalledTimes(1);
+    // SuperAdmin caller now also does read-before-write (GetCommand + UpdateCommand)
+    expect(client.send).toHaveBeenCalledTimes(2);
   });
 
   it('should set updatedAt timestamp', async () => {
     const client = createMockDynamoClient();
     await assignRoles('user-1', ['Speaker'], client, tableName, ['Admin']);
 
-    const command = client.send.mock.calls[0][0];
+    // Non-SuperAdmin caller: calls[0] = GetCommand, calls[1] = UpdateCommand
+    const command = client.send.mock.calls[1][0];
     expect(command.input.UpdateExpression).toContain('updatedAt');
     const now = command.input.ExpressionAttributeValues[':now'];
     expect(new Date(now).toISOString()).toBe(now);
+  });
+});
+
+describe('assignRoles — OrderAdmin exclusivity', () => {
+  it('should assign OrderAdmin alone successfully when caller is SuperAdmin', async () => {
+    const client = createMockDynamoClient();
+    const result = await assignRoles('user-1', ['OrderAdmin'], client, tableName, ['SuperAdmin']);
+
+    expect(result.success).toBe(true);
+    expect(client.send).toHaveBeenCalledTimes(2); // GetCommand + UpdateCommand
+    const writtenRoles = client.send.mock.calls[1][0].input.ExpressionAttributeValues[':roles'];
+    expect(writtenRoles).toEqual(['OrderAdmin']);
+  });
+
+  it('should reject OrderAdmin combined with other roles (EXCLUSIVE_ROLE_CONFLICT)', async () => {
+    const client = createMockDynamoClient();
+    const result = await assignRoles('user-1', ['OrderAdmin', 'Speaker'], client, tableName, ['SuperAdmin']);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('EXCLUSIVE_ROLE_CONFLICT');
+  });
+});
+
+describe('assignRoles — admin role preservation', () => {
+  it('should preserve Admin when non-SuperAdmin caller assigns roles to target with Admin', async () => {
+    const client = createMockDynamoClient(['Admin', 'Speaker']);
+    const result = await assignRoles('user-1', ['Speaker'], client, tableName, ['Admin']);
+
+    expect(result.success).toBe(true);
+    // calls[0] = GetCommand (read current roles), calls[1] = UpdateCommand (write)
+    expect(client.send).toHaveBeenCalledTimes(2);
+    const writtenRoles = client.send.mock.calls[1][0].input.ExpressionAttributeValues[':roles'];
+    expect(writtenRoles).toContain('Admin');
+    expect(writtenRoles).toContain('Speaker');
+  });
+
+  it('should preserve SuperAdmin when non-SuperAdmin caller assigns roles to target with SuperAdmin', async () => {
+    const client = createMockDynamoClient(['SuperAdmin', 'Volunteer']);
+    const result = await assignRoles('user-1', ['Volunteer'], client, tableName, ['Admin']);
+
+    expect(result.success).toBe(true);
+    expect(client.send).toHaveBeenCalledTimes(2);
+    const writtenRoles = client.send.mock.calls[1][0].input.ExpressionAttributeValues[':roles'];
+    expect(writtenRoles).toContain('SuperAdmin');
+    expect(writtenRoles).toContain('Volunteer');
+  });
+
+  it('should preserve both Admin and SuperAdmin when non-SuperAdmin caller assigns roles to target with both', async () => {
+    const client = createMockDynamoClient(['Admin', 'SuperAdmin', 'UserGroupLeader']);
+    const result = await assignRoles('user-1', ['UserGroupLeader'], client, tableName, ['Admin']);
+
+    expect(result.success).toBe(true);
+    expect(client.send).toHaveBeenCalledTimes(2);
+    const writtenRoles = client.send.mock.calls[1][0].input.ExpressionAttributeValues[':roles'];
+    expect(writtenRoles).toContain('Admin');
+    expect(writtenRoles).toContain('SuperAdmin');
+    expect(writtenRoles).toContain('UserGroupLeader');
+  });
+
+  it('should allow SuperAdmin caller to remove Admin from target (behavior unchanged)', async () => {
+    const client = createMockDynamoClient(['Admin', 'Speaker']);
+    const result = await assignRoles('user-1', ['Speaker'], client, tableName, ['SuperAdmin']);
+
+    expect(result.success).toBe(true);
+    // SuperAdmin caller now does read-before-write: GetCommand + UpdateCommand
+    expect(client.send).toHaveBeenCalledTimes(2);
+    const writtenRoles = client.send.mock.calls[1][0].input.ExpressionAttributeValues[':roles'];
+    expect(writtenRoles).toEqual(['Speaker']);
+    expect(writtenRoles).not.toContain('Admin');
+  });
+
+  it('should behave normally when target has no admin roles', async () => {
+    const client = createMockDynamoClient(['Speaker']);
+    const result = await assignRoles('user-1', ['Speaker', 'Volunteer'], client, tableName, ['Admin']);
+
+    expect(result.success).toBe(true);
+    expect(client.send).toHaveBeenCalledTimes(2);
+    const writtenRoles = client.send.mock.calls[1][0].input.ExpressionAttributeValues[':roles'];
+    expect(writtenRoles).toEqual(expect.arrayContaining(['Speaker', 'Volunteer']));
+    expect(writtenRoles).toHaveLength(2);
   });
 });
 

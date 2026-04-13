@@ -17,6 +17,9 @@ import './orders.scss';
 
 export default function AdminOrdersPage() {
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
+  const userRoles = useAppStore((s) => s.user?.roles || []);
+  const isSuperAdmin = userRoles.includes('SuperAdmin');
+  const isOrderAdmin = userRoles.includes('OrderAdmin');
   const { t } = useTranslation();
 
   const STATUS_LABELS: Record<ShippingStatus, string> = {
@@ -90,9 +93,29 @@ export default function AdminOrdersPage() {
       Taro.redirectTo({ url: '/pages/login/index' });
       return;
     }
-    fetchStats();
-    fetchOrders(activeTab, 1);
-  }, [isAuthenticated, fetchStats, fetchOrders, activeTab]);
+    // SuperAdmin and OrderAdmin always have access; only check toggle for Admin
+    if (!isSuperAdmin && !isOrderAdmin) {
+      request<{ adminOrdersEnabled: boolean }>({
+        url: '/api/settings/feature-toggles',
+        skipAuth: true,
+      })
+        .then((res) => {
+          if (!res.adminOrdersEnabled) {
+            Taro.redirectTo({ url: '/pages/admin/index' });
+          } else {
+            fetchStats();
+            fetchOrders(activeTab, 1);
+          }
+        })
+        .catch(() => {
+          fetchStats();
+          fetchOrders(activeTab, 1);
+        });
+    } else {
+      fetchStats();
+      fetchOrders(activeTab, 1);
+    }
+  }, [isAuthenticated, isSuperAdmin, isOrderAdmin, fetchStats, fetchOrders, activeTab]);
 
   const handleTabChange = (tab: ShippingStatus | 'all') => {
     setActiveTab(tab);
@@ -182,7 +205,13 @@ export default function AdminOrdersPage() {
     }
   };
 
-  const handleBack = () => goBack('/pages/admin/index');
+  const handleBack = () => {
+    if (isOrderAdmin) {
+      goBack('/pages/settings/index');
+    } else {
+      goBack('/pages/admin/index');
+    }
+  };
 
   const formatTime = (iso: string) => {
     const d = new Date(iso);

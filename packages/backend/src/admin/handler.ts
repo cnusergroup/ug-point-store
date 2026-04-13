@@ -2,7 +2,7 @@ import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { S3Client } from '@aws-sdk/client-s3';
-import { ErrorHttpStatus, isSuperAdmin, ErrorCodes, ErrorMessages } from '@points-mall/shared';
+import { ErrorHttpStatus, isSuperAdmin, ErrorCodes, ErrorMessages, isOrderAdmin } from '@points-mall/shared';
 import type { Product, UserRole } from '@points-mall/shared';
 import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware';
 import { assignRoles } from './roles';
@@ -15,7 +15,10 @@ import { executeBatchDistribution, validateBatchDistributionInput, listDistribut
 import { reviewClaim, listAllClaims } from '../claims/review';
 import { reviewContent, listAllContent, deleteContent, createCategory, updateCategory, deleteCategory } from '../content/admin';
 import { listAllTags, mergeTags, deleteTag } from '../content/admin-tags';
-import { updateFeatureToggles, getFeatureToggles } from '../settings/feature-toggles';
+import { updateFeatureToggles, getFeatureToggles, updateContentRolePermissions } from '../settings/feature-toggles';
+import { checkReviewPermission } from '../content/content-permission';
+import { getInviteSettings, updateInviteSettings } from '../settings/invite-settings';
+import { transferSuperAdmin } from './superadmin-transfer';
 import { updateTravelSettings, validateTravelSettingsInput } from '../travel/settings';
 import { reviewTravelApplication, listAllTravelApplications } from '../travel/review';
 
@@ -91,16 +94,23 @@ const TAGS_DELETE_REGEX = /^\/api\/admin\/tags\/([^/]+)$/;
 
 /**
  * Check if the authenticated user has admin privileges.
- * Only users with Admin or SuperAdmin role are considered admins.
+ * Users with Admin, SuperAdmin, or OrderAdmin role are considered admins.
  */
 function isAdmin(event: AuthenticatedEvent): boolean {
-  return event.user.roles.some(r => r === 'Admin' || r === 'SuperAdmin');
+  return event.user.roles.some(r => r === 'Admin' || r === 'SuperAdmin' || r === 'OrderAdmin');
 }
 
 const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise<APIGatewayProxyResult> => {
   // Admin role check
   if (!isAdmin(event)) {
     return errorResponse('FORBIDDEN', '需要管理员权限', 403);
+  }
+
+  // OrderAdmin 白名单：仅允许访问订单相关路由
+  // 订单路由由 orders handler 处理，不经过 admin handler
+  // admin handler 中没有订单路由，所以 OrderAdmin 在此一律 403
+  if (isOrderAdmin(event.user.roles as UserRole[])) {
+    return errorResponse('FORBIDDEN', 'OrderAdmin 仅可访问订单管理功能', 403);
   }
 
   const method = event.httpMethod;
@@ -137,6 +147,19 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     // PUT /api/admin/settings/travel-sponsorship
     if (path === '/api/admin/settings/travel-sponsorship') {
       return await handleUpdateTravelSettings(event);
+    }
+
+    // PUT /api/admin/settings/invite-settings — SuperAdmin only
+    if (path === '/api/admin/settings/invite-settings') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleUpdateInviteSettings(event);
+    }
+
+    // PUT /api/admin/settings/content-role-permissions — SuperAdmin only
+    if (path === '/api/admin/settings/content-role-permissions') {
+      return await handleUpdateContentRolePermissions(event);
     }
   }
 
@@ -183,6 +206,12 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
         return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限');
       }
       return await handleMergeTags(event);
+    }
+    if (path === '/api/admin/superadmin/transfer') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleTransferSuperAdmin(event);
     }
     if (path === '/api/admin/batch-points') {
       return await handleBatchDistribution(event);
@@ -304,7 +333,7 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     // DELETE /api/admin/content/categories/{id} — must check before CONTENT_DELETE_REGEX
     const contentCategoriesDeleteMatch = path.match(CONTENT_CATEGORIES_DELETE_REGEX);
     if (contentCategoriesDeleteMatch && path.includes('/categories/')) {
-      return await handleDeleteCategory(contentCategoriesDeleteMatch[1]);
+      return await handleDeleteCategory(contentCategoriesDeleteMatch[1], event);
     }
 
     // DELETE /api/admin/content/{id}
@@ -673,12 +702,23 @@ async function handleBatchGenerateInvites(event: AuthenticatedEvent): Promise<AP
     return errorResponse('INVALID_REQUEST', 'Missing required fields: count, roles (array)', 400);
   }
 
+  const roles = body.roles as UserRole[];
+
+  // OrderAdmin 邀请仅 SuperAdmin 可创建
+  if (roles.includes('OrderAdmin') && !isSuperAdmin(event.user.roles as UserRole[])) {
+    return errorResponse('FORBIDDEN', '仅 SuperAdmin 可创建 OrderAdmin 邀请', 403);
+  }
+
+  const inviteSettings = await getInviteSettings(dynamoClient, USERS_TABLE);
+  const expiryMs = inviteSettings.inviteExpiryDays * 86400000;
+
   const result = await batchGenerateInvites(
     body.count as number,
     body.roles as UserRole[],
     dynamoClient,
     INVITES_TABLE,
     REGISTER_BASE_URL,
+    expiryMs,
   );
 
   if (!result.success) {
@@ -868,9 +908,9 @@ async function handleListAllContent(event: AuthenticatedEvent): Promise<APIGatew
 }
 
 async function handleReviewContent(contentId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
-  // SuperAdmin permission check
-  if (!isSuperAdmin(event.user.roles as UserRole[])) {
-    return errorResponse(ErrorCodes.CONTENT_REVIEW_FORBIDDEN, ErrorMessages[ErrorCodes.CONTENT_REVIEW_FORBIDDEN]);
+  const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+  if (!checkReviewPermission(event.user.roles, toggles.adminContentReviewEnabled)) {
+    return errorResponse('PERMISSION_DENIED', '需要超级管理员权限才能审批内容', 403);
   }
 
   const body = parseBody(event);
@@ -920,6 +960,14 @@ async function handleDeleteContent(contentId: string): Promise<APIGatewayProxyRe
 }
 
 async function handleCreateCategory(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  // Category management permission guard
+  if (!isSuperAdmin(event.user.roles as UserRole[])) {
+    const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+    if (!toggles.adminCategoriesEnabled) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限才能管理分类', 403);
+    }
+  }
+
   const body = parseBody(event);
   if (!body || !body.name) {
     return errorResponse('INVALID_REQUEST', 'Missing required field: name', 400);
@@ -935,6 +983,14 @@ async function handleCreateCategory(event: AuthenticatedEvent): Promise<APIGatew
 }
 
 async function handleUpdateCategory(categoryId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  // Category management permission guard
+  if (!isSuperAdmin(event.user.roles as UserRole[])) {
+    const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+    if (!toggles.adminCategoriesEnabled) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限才能管理分类', 403);
+    }
+  }
+
   const body = parseBody(event);
   if (!body || !body.name) {
     return errorResponse('INVALID_REQUEST', 'Missing required field: name', 400);
@@ -950,7 +1006,15 @@ async function handleUpdateCategory(categoryId: string, event: AuthenticatedEven
   return jsonResponse(200, { category: result.category });
 }
 
-async function handleDeleteCategory(categoryId: string): Promise<APIGatewayProxyResult> {
+async function handleDeleteCategory(categoryId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  // Category management permission guard
+  if (!isSuperAdmin(event.user.roles as UserRole[])) {
+    const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+    if (!toggles.adminCategoriesEnabled) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限才能管理分类', 403);
+    }
+  }
+
   const result = await deleteCategory(categoryId, dynamoClient, CONTENT_CATEGORIES_TABLE);
 
   if (!result.success) {
@@ -978,6 +1042,8 @@ async function handleUpdateFeatureToggles(event: AuthenticatedEvent): Promise<AP
       pointsClaimEnabled: body.pointsClaimEnabled as boolean,
       adminProductsEnabled: body.adminProductsEnabled !== false, // default true if not provided
       adminOrdersEnabled: body.adminOrdersEnabled !== false,     // default true if not provided
+      adminContentReviewEnabled: body.adminContentReviewEnabled === true, // default false
+      adminCategoriesEnabled: body.adminCategoriesEnabled === true,       // default false
       updatedBy: event.user.userId,
     },
     dynamoClient,
@@ -1151,4 +1217,99 @@ async function handleDeleteTag(tagId: string): Promise<APIGatewayProxyResult> {
   }
 
   return jsonResponse(200, { message: '标签已删除' });
+}
+
+// ---- SuperAdmin Transfer Route Handler ----
+
+async function handleTransferSuperAdmin(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || !body.targetUserId || !body.password) {
+    return errorResponse('INVALID_REQUEST', 'Missing required fields: targetUserId, password', 400);
+  }
+
+  const result = await transferSuperAdmin(
+    {
+      callerId: event.user.userId,
+      targetUserId: body.targetUserId as string,
+      password: body.password as string,
+    },
+    dynamoClient,
+    USERS_TABLE,
+  );
+
+  if (!result.success) {
+    const statusCode = (ErrorHttpStatus as Record<string, number>)[result.error!.code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { success: true });
+}
+
+// ---- Invite Settings Route Handler ----
+
+async function handleUpdateInviteSettings(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || body.inviteExpiryDays === undefined) {
+    return errorResponse('INVALID_REQUEST', 'Missing required field: inviteExpiryDays', 400);
+  }
+
+  const result = await updateInviteSettings(
+    body.inviteExpiryDays as number,
+    event.user.userId,
+    dynamoClient,
+    USERS_TABLE,
+  );
+
+  if (!result.success) {
+    const statusCode = (ErrorHttpStatus as Record<string, number>)[result.error!.code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { inviteExpiryDays: body.inviteExpiryDays });
+}
+
+// ---- Content Role Permissions Route Handler ----
+
+async function handleUpdateContentRolePermissions(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  // SuperAdmin permission check
+  if (!isSuperAdmin(event.user.roles as UserRole[])) {
+    return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+  }
+
+  const body = parseBody(event);
+  if (!body) {
+    return errorResponse('INVALID_REQUEST', '请求参数无效', 400);
+  }
+
+  // Validate all 12 permission fields are booleans
+  const roles = ['Speaker', 'UserGroupLeader', 'Volunteer'] as const;
+  const perms = ['canAccess', 'canUpload', 'canDownload', 'canReserve'] as const;
+  const crp = body.contentRolePermissions as Record<string, Record<string, unknown>> | undefined;
+
+  if (!crp) {
+    return errorResponse('INVALID_REQUEST', '请求参数无效', 400);
+  }
+
+  for (const role of roles) {
+    for (const perm of perms) {
+      if (typeof crp[role]?.[perm] !== 'boolean') {
+        return errorResponse('INVALID_REQUEST', '请求参数无效', 400);
+      }
+    }
+  }
+
+  const result = await updateContentRolePermissions(
+    {
+      contentRolePermissions: crp as any,
+      updatedBy: event.user.userId,
+    },
+    dynamoClient,
+    USERS_TABLE,
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 400);
+  }
+
+  return jsonResponse(200, { contentRolePermissions: result.contentRolePermissions });
 }

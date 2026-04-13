@@ -1,7 +1,7 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { ErrorHttpStatus, hasAdminAccess, isSuperAdmin } from '@points-mall/shared';
+import { ErrorHttpStatus, hasAdminAccess, isSuperAdmin, isOrderAdmin } from '@points-mall/shared';
 import type { UserRole, ShippingStatus } from '@points-mall/shared';
 import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware';
 import { createOrder, createDirectOrder, getOrders, getOrderDetail } from './order';
@@ -65,7 +65,7 @@ const ADMIN_ORDER_DETAIL_REGEX = /^\/api\/admin\/orders\/([^/]+)$/;
 const ADMIN_ORDER_SHIPPING_REGEX = /^\/api\/admin\/orders\/([^/]+)\/shipping$/;
 
 function isAdmin(event: AuthenticatedEvent): boolean {
-  return hasAdminAccess(event.user.roles as UserRole[]);
+  return hasAdminAccess(event.user.roles as UserRole[]) || isOrderAdmin(event.user.roles as UserRole[]);
 }
 
 const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise<APIGatewayProxyResult> => {
@@ -78,8 +78,8 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
       return errorResponse('FORBIDDEN', '需要管理员权限', 403);
     }
 
-    // Non-SuperAdmin: check adminOrdersEnabled toggle
-    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+    // OrderAdmin and SuperAdmin bypass toggle
+    if (!isSuperAdmin(event.user.roles as UserRole[]) && !isOrderAdmin(event.user.roles as UserRole[])) {
       const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
       if (!toggles.adminOrdersEnabled) {
         return errorResponse('FORBIDDEN', '管理员暂无订单管理权限', 403);

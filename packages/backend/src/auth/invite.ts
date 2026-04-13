@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { ErrorCodes, ErrorMessages, getInviteRoles, InviteRecord, InviteStatus, REGULAR_ROLES, UserRole } from '@points-mall/shared';
+import { ErrorCodes, ErrorMessages, EXCLUSIVE_ROLES, getInviteRoles, InviteRecord, InviteStatus, REGULAR_ROLES, UserRole } from '@points-mall/shared';
 
 // ============================================================
 // Token 生成与链接构建
@@ -53,11 +53,12 @@ export async function createInviteRecord(
   dynamoClient: DynamoDBDocumentClient,
   invitesTable: string,
   registerBaseUrl: string,
+  expiryMs?: number,
 ): Promise<CreateInviteResult> {
   const token = generateInviteToken();
   const now = new Date();
   const createdAt = now.toISOString();
-  const expiresAt = new Date(now.getTime() + 86400 * 1000).toISOString();
+  const expiresAt = new Date(now.getTime() + (expiryMs ?? 86400000)).toISOString();
 
   const record: InviteRecord = {
     token,
@@ -89,6 +90,7 @@ export async function batchCreateInvites(
   dynamoClient: DynamoDBDocumentClient,
   invitesTable: string,
   registerBaseUrl: string,
+  expiryMs?: number,
 ): Promise<BatchCreateInvitesResult> {
   if (count < 1 || count > 100) {
     return {
@@ -116,21 +118,33 @@ export async function batchCreateInvites(
     };
   }
 
-  // 校验每个角色属于 REGULAR_ROLES
-  for (const role of uniqueRoles) {
-    if (!REGULAR_ROLES.includes(role)) {
+  // 独占角色校验
+  const hasExclusive = uniqueRoles.some(r => EXCLUSIVE_ROLES.includes(r));
+  if (hasExclusive) {
+    if (uniqueRoles.length !== 1) {
       return {
         success: false,
-        // [DISABLED] CommunityBuilder — error message still references old role list for backward compat
-        error: { code: 'INVALID_ROLE', message: '角色必须为普通角色之一（UserGroupLeader、Speaker、Volunteer）' },
+        error: { code: 'EXCLUSIVE_ROLE_CONFLICT', message: '独占角色不能与其他角色共存' },
       };
+    }
+    // 独占角色合法，跳过 REGULAR_ROLES 校验
+  } else {
+    // 校验每个角色属于 REGULAR_ROLES
+    for (const role of uniqueRoles) {
+      if (!REGULAR_ROLES.includes(role)) {
+        return {
+          success: false,
+          // [DISABLED] CommunityBuilder — error message still references old role list for backward compat
+          error: { code: 'INVALID_ROLE', message: '角色必须为普通角色之一（UserGroupLeader、Speaker、Volunteer）' },
+        };
+      }
     }
   }
 
   const results: Array<{ token: string; link: string; roles: UserRole[]; expiresAt: string }> = [];
 
   for (let i = 0; i < count; i++) {
-    const result = await createInviteRecord(uniqueRoles, dynamoClient, invitesTable, registerBaseUrl);
+    const result = await createInviteRecord(uniqueRoles, dynamoClient, invitesTable, registerBaseUrl, expiryMs);
     if (!result.success) {
       return result;
     }

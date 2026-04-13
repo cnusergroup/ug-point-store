@@ -50,6 +50,9 @@ export default function TravelApplyPage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
 
+  // Feature toggle state
+  const [travelFeatureDisabled, setTravelFeatureDisabled] = useState(false);
+
   // Parse URL params on mount
   useEffect(() => {
     const instance = Taro.getCurrentInstance();
@@ -91,6 +94,21 @@ export default function TravelApplyPage() {
       Taro.redirectTo({ url: '/pages/login/index' });
     }
   }, [isAuthenticated]);
+
+  // Check travel sponsorship feature toggle
+  useEffect(() => {
+    request<{ travelSponsorshipEnabled: boolean }>({
+      url: '/api/settings/travel-sponsorship',
+      skipAuth: true,
+    })
+      .then((res) => {
+        setTravelFeatureDisabled(!res.travelSponsorshipEnabled);
+      })
+      .catch(() => {
+        // On failure, allow access (conservative degradation)
+        setTravelFeatureDisabled(false);
+      });
+  }, []);
 
   const totalCost = useMemo(() => {
     const transport = parseFloat(transportCost) || 0;
@@ -228,6 +246,49 @@ export default function TravelApplyPage() {
   const categoryLabel = category === 'domestic' ? t('travel.apply.categoryDomestic') : t('travel.apply.categoryInternational');
   const CategoryIcon = category === 'domestic' ? LocationIcon : GlobeIcon;
   const categoryColor = category === 'domestic' ? 'var(--accent-primary)' : 'var(--success)';
+
+  if (travelFeatureDisabled) {
+    return (
+      <View className='ta-page'>
+        <View className='ta-toolbar'>
+          <View className='ta-toolbar__back' onClick={handleBack}><Text>{t('travel.apply.backButton')}</Text></View>
+          <Text className='ta-toolbar__title'>{isEditMode ? t('travel.apply.editTitle') : t('travel.apply.title')}</Text>
+          <View className='ta-toolbar__spacer' />
+        </View>
+        <View style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 'var(--space-48) var(--space-24)',
+          textAlign: 'center',
+        }}>
+          <Text style={{ fontSize: '48px', marginBottom: 'var(--space-16)', opacity: 0.5 }}>🔒</Text>
+          <Text style={{
+            fontFamily: 'var(--font-display)',
+            fontSize: '18px',
+            fontWeight: 600,
+            color: 'var(--text-primary)',
+            marginBottom: 'var(--space-8)',
+          }}>{t('featureToggle.featureDisabled')}</Text>
+          <Text style={{
+            fontFamily: 'var(--font-body)',
+            fontSize: '14px',
+            color: 'var(--text-secondary)',
+            marginBottom: 'var(--space-32)',
+            lineHeight: 1.5,
+          }}>{t('featureToggle.featureDisabledDesc')}</Text>
+          <View
+            className='btn-secondary'
+            style={{ padding: 'var(--space-12) var(--space-32)', cursor: 'pointer' }}
+            onClick={handleBack}
+          >
+            <Text>{t('featureToggle.backButton')}</Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   if (loading) {
     return (

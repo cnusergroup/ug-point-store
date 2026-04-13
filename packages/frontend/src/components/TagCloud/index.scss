@@ -1,68 +1,196 @@
 /* ============================================
-   TagCloud — Horizontal scrollable tag filter
-   Uses design system CSS variables from app.scss
+   TagCloud — Compact tag filter with scroll + expand
+   Inherits alignment from parent .content-container
    ============================================ */
 
 .tag-cloud {
   flex-shrink: 0;
-  background: var(--bg-surface);
+  position: relative;
   border-bottom: 1px solid var(--card-border);
+}
+
+/* ---- Collapsed: single-row scroll ---- */
+
+.tag-cloud__scroll-row {
+  display: flex;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.tag-cloud__scroll {
+  flex: 1;
+  min-width: 0;
+  /* Reserve space so chips don't go under the fade */
+  padding-right: 72px;
+}
+
+.tag-cloud__inner {
+  display: inline-flex;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
   white-space: nowrap;
+}
 
-  &__inner {
-    display: inline-flex;
-    gap: var(--space-2);
-    padding: var(--space-3) var(--space-5);
+/* Right fade gradient + expand button */
+.tag-cloud__fade-right {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    var(--bg-base) 45%
+  );
+  pointer-events: none;
+}
+
+.tag-cloud__expand-btn {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-elevated);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  pointer-events: all;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+  margin-right: var(--space-3);
+
+  &:hover {
+    border-color: var(--accent-primary);
+    background: rgba(124, 109, 240, 0.08);
   }
+}
 
-  &__chip {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    min-height: 32px;
-    padding: var(--space-1) var(--space-3);
-    background: var(--bg-elevated);
-    border: 1px solid var(--card-border);
-    border-radius: var(--radius-full);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    white-space: nowrap;
-    flex-shrink: 0;
+.tag-cloud__expand-text {
+  font-family: var(--font-body);
+  font-size: var(--text-overline);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
 
-    &:hover {
-      border-color: var(--card-border-hover);
-      background: var(--bg-hover);
+.tag-cloud__expand-icon {
+  font-size: 9px;
+  color: var(--text-tertiary);
+  line-height: 1;
+}
+
+/* ---- Expanded: wrap layout ---- */
+
+.tag-cloud__expanded-panel {
+  padding: var(--space-2) var(--space-4) var(--space-2);
+}
+
+.tag-cloud__wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+}
+
+.tag-cloud__collapse-row {
+  display: flex;
+  justify-content: center;
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--card-border);
+  margin-top: var(--space-1);
+}
+
+.tag-cloud__collapse-btn {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-1) var(--space-4);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    .tag-cloud__collapse-text {
+      color: var(--accent-primary);
     }
+  }
+}
 
-    &--selected {
-      background: rgba(124, 109, 240, 0.15);
-      border-color: rgba(124, 109, 240, 0.3);
+.tag-cloud__collapse-text {
+  font-family: var(--font-body);
+  font-size: var(--text-overline);
+  color: var(--text-tertiary);
+  transition: color var(--transition-fast);
+}
 
-      .tag-cloud__chip-text {
-        color: var(--accent-primary);
-      }
+.tag-cloud__collapse-icon {
+  font-size: 9px;
+  color: var(--text-tertiary);
+  line-height: 1;
+}
 
-      .tag-cloud__chip-count {
-        color: var(--accent-primary);
-        opacity: 0.7;
-      }
+/* ---- Shared chip styles — smaller than category tabs ---- */
+
+.tag-cloud__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 24px;
+  padding: 0 var(--space-2);
+  background: var(--bg-elevated);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+  flex-shrink: 0;
+
+  &:hover {
+    border-color: var(--card-border-hover);
+    background: var(--bg-hover);
+  }
+
+  &--selected {
+    background: rgba(124, 109, 240, 0.15);
+    border-color: var(--accent-primary);
+
+    .tag-cloud__chip-text {
+      color: var(--accent-primary);
+      font-weight: 600;
     }
   }
+}
 
-  &__chip-text {
-    font-family: var(--font-body);
-    font-size: var(--text-caption);
-    font-weight: 500;
-    color: var(--text-secondary);
-    white-space: nowrap;
-  }
+.tag-cloud__chip-text {
+  font-family: var(--font-body);
+  font-size: var(--text-overline);
+  font-weight: 500;
+  color: var(--text-secondary);
+  line-height: 1;
+}
 
-  &__chip-count {
-    font-family: var(--font-display);
-    font-size: var(--text-overline);
-    font-weight: 600;
-    color: var(--text-tertiary);
-    white-space: nowrap;
+.tag-cloud__chip-count {
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  opacity: 0.7;
+}
+
+/* Clear × button on selected chip */
+.tag-cloud__chip-clear {
+  font-size: 12px;
+  line-height: 1;
+  color: var(--accent-primary);
+  opacity: 0.7;
+  margin-left: 1px;
+  transition: opacity var(--transition-fast);
+
+  &:hover {
+    opacity: 1;
   }
 }
 
@@ -70,16 +198,25 @@
    Tablet (768px+)
    ============================================ */
 @media (min-width: 768px) {
+  .tag-cloud__inner {
+    padding: var(--space-2) var(--space-5);
+  }
+
   .tag-cloud__chip {
-    padding: var(--space-2) var(--space-4);
+    height: 26px;
+    padding: 0 var(--space-3);
   }
 
   .tag-cloud__chip-text {
-    font-size: var(--text-body-sm);
+    font-size: var(--text-caption);
   }
 
   .tag-cloud__chip-count {
-    font-size: var(--text-caption);
+    font-size: 10px;
+  }
+
+  .tag-cloud__expanded-panel {
+    padding: var(--space-3) var(--space-5) var(--space-2);
   }
 }
 
@@ -87,8 +224,12 @@
    Desktop (1024px+)
    ============================================ */
 @media (min-width: 1024px) {
+  .tag-cloud__inner {
+    padding: var(--space-2) var(--space-6);
+  }
+
   .tag-cloud__chip {
-    padding: var(--space-2) var(--space-4);
+    height: 28px;
 
     &:hover {
       box-shadow: var(--shadow-sm);
@@ -96,6 +237,19 @@
   }
 
   .tag-cloud__chip-text {
-    font-size: var(--text-body-sm);
+    font-size: var(--text-caption);
+  }
+
+  .tag-cloud__expanded-panel {
+    padding: var(--space-3) var(--space-6) var(--space-2);
+  }
+
+  /* On desktop, show more chips before fade */
+  .tag-cloud__scroll {
+    padding-right: 88px;
+  }
+
+  .tag-cloud__fade-right {
+    width: 100px;
   }
 }

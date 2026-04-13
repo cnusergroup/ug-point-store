@@ -30,6 +30,8 @@ const ROLE_CONFIG: Record<string, { label: string; className: string }> = {
 export default function AdminContentPage() {
   const { t } = useTranslation();
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
+  const userRoles = useAppStore((s) => s.user?.roles || []);
+  const isSuperAdmin = userRoles.includes('SuperAdmin');
 
   const STATUS_LABELS: Record<string, string> = {
     pending: t('contentHub.admin.statusPending'),
@@ -87,8 +89,25 @@ export default function AdminContentPage() {
       Taro.redirectTo({ url: '/pages/login/index' });
       return;
     }
-    fetchContent(statusFilter);
-  }, [isAuthenticated, fetchContent, statusFilter]);
+    if (!isSuperAdmin) {
+      request<{ adminContentReviewEnabled: boolean }>({
+        url: '/api/settings/feature-toggles',
+        skipAuth: true,
+      })
+        .then((res) => {
+          if (!res.adminContentReviewEnabled) {
+            Taro.redirectTo({ url: '/pages/admin/index' });
+          } else {
+            fetchContent(statusFilter);
+          }
+        })
+        .catch(() => {
+          fetchContent(statusFilter);
+        });
+    } else {
+      fetchContent(statusFilter);
+    }
+  }, [isAuthenticated, isSuperAdmin, fetchContent, statusFilter]);
 
   const handleTabChange = (tab: StatusFilter) => {
     setStatusFilter(tab);

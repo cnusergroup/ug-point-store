@@ -43,6 +43,15 @@ function createMockEvent(
             method,
             querystring,
             uri,
+            origin: {
+              s3: {
+                authMethod: 'none' as const,
+                customHeaders: {},
+                domainName: 'test-images-bucket.s3.ap-northeast-1.amazonaws.com',
+                path: '',
+                region: 'ap-northeast-1',
+              },
+            },
           },
         },
       },
@@ -78,10 +87,11 @@ describe('Feature: cloudfront-upload-proxy, Property 1: 仅对 PUT 请求执行�
    * **Validates: Requirements 2.1**
    *
    * For any non-PUT HTTP method, the Edge Signer should pass through the
-   * original request without adding an Authorization header.
+   * original request with SigV4 signing applied (all requests are signed).
+   * OPTIONS requests return a CORS preflight response instead.
    */
-  it('should pass through non-PUT requests without Authorization header', async () => {
-    const nonPutMethods = ['GET', 'HEAD', 'OPTIONS', 'DELETE', 'PATCH', 'POST'] as const;
+  it('should sign non-PUT requests with SigV4 (except OPTIONS which returns CORS)', async () => {
+    const nonPutMethods = ['GET', 'HEAD', 'DELETE', 'PATCH', 'POST'] as const;
 
     await fc.assert(
       fc.asyncProperty(
@@ -100,14 +110,13 @@ describe('Feature: cloudfront-upload-proxy, Property 1: 仅对 PUT 请求执行�
             expect(result.method).toBe(method);
             // URI should be unchanged
             expect(result.uri).toBe(uri);
-            // Should NOT have Authorization header added
-            expect(result.headers['authorization']).toBeUndefined();
-            // Host should remain unchanged (not rewritten to S3)
-            expect(result.headers['host'][0].value).toBe('store.awscommunity.cn');
-            // Should NOT have x-amz-date header added
-            expect(result.headers['x-amz-date']).toBeUndefined();
-            // Should NOT have x-amz-content-sha256 header added
-            expect(result.headers['x-amz-content-sha256']).toBeUndefined();
+            // SigV4 signing is applied to all requests
+            expect(result.headers['authorization']).toBeDefined();
+            expect(result.headers['authorization'][0].value).toMatch(/^AWS4-HMAC-SHA256 /);
+            // x-amz-date should be set
+            expect(result.headers['x-amz-date']).toBeDefined();
+            // x-amz-content-sha256 should be set
+            expect(result.headers['x-amz-content-sha256']).toBeDefined();
           }
         },
       ),

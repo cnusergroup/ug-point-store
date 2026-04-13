@@ -36,7 +36,7 @@ describe('batchGenerateInvites', () => {
     if (!result.success) {
       expect(result.error.code).toBe(ErrorCodes.INVALID_ROLES);
     }
-    expect(mockBatchCreateInvites).toHaveBeenCalledWith(5, [], mockDynamoClient, INVITES_TABLE, REGISTER_BASE_URL);
+    expect(mockBatchCreateInvites).toHaveBeenCalledWith(5, [], mockDynamoClient, INVITES_TABLE, REGISTER_BASE_URL, undefined);
   });
 
   /**
@@ -73,6 +73,7 @@ describe('batchGenerateInvites', () => {
       mockDynamoClient,
       INVITES_TABLE,
       REGISTER_BASE_URL,
+      undefined,
     );
   });
 
@@ -105,6 +106,7 @@ describe('batchGenerateInvites', () => {
       mockDynamoClient,
       INVITES_TABLE,
       REGISTER_BASE_URL,
+      undefined,
     );
   });
 
@@ -124,6 +126,69 @@ describe('batchGenerateInvites', () => {
       mockDynamoClient,
       INVITES_TABLE,
       REGISTER_BASE_URL,
+      undefined,
     );
+  });
+
+  /**
+   * Validates: Requirements 2.5
+   * OrderAdmin invite with roles: ['OrderAdmin'] succeeds
+   */
+  it('succeeds when creating OrderAdmin invite with roles: [OrderAdmin]', async () => {
+    const mockInvites = [
+      {
+        token: 'token-oa1',
+        link: 'https://example.com/register?token=token-oa1',
+        roles: ['OrderAdmin'] as UserRole[],
+        expiresAt: '2025-01-02T00:00:00.000Z',
+      },
+    ];
+    mockBatchCreateInvites.mockResolvedValue({ success: true, invites: mockInvites });
+
+    const result = await batchGenerateInvites(
+      1,
+      ['OrderAdmin'] as UserRole[],
+      mockDynamoClient,
+      INVITES_TABLE,
+      REGISTER_BASE_URL,
+    );
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.invites).toHaveLength(1);
+      expect(result.invites[0].roles).toEqual(['OrderAdmin']);
+    }
+    expect(mockBatchCreateInvites).toHaveBeenCalledWith(
+      1,
+      ['OrderAdmin'],
+      mockDynamoClient,
+      INVITES_TABLE,
+      REGISTER_BASE_URL,
+      undefined,
+    );
+  });
+
+  /**
+   * Validates: Requirements 10.3
+   * OrderAdmin + other roles invite fails with EXCLUSIVE_ROLE_CONFLICT
+   */
+  it('fails with EXCLUSIVE_ROLE_CONFLICT when OrderAdmin combined with other roles', async () => {
+    mockBatchCreateInvites.mockResolvedValue({
+      success: false,
+      error: { code: 'EXCLUSIVE_ROLE_CONFLICT', message: '独占角色不能与其他角色共存' },
+    });
+
+    const result = await batchGenerateInvites(
+      1,
+      ['OrderAdmin', 'Speaker'] as UserRole[],
+      mockDynamoClient,
+      INVITES_TABLE,
+      REGISTER_BASE_URL,
+    );
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.code).toBe('EXCLUSIVE_ROLE_CONFLICT');
+    }
   });
 });

@@ -47,6 +47,14 @@ vi.mock('./tags', () => ({
   getTagCloudTags: vi.fn(),
 }));
 
+// Mock feature toggles and content permission
+vi.mock('../settings/feature-toggles', () => ({
+  getFeatureToggles: vi.fn(),
+}));
+vi.mock('./content-permission', () => ({
+  checkContentPermission: vi.fn(),
+}));
+
 // Mock auth middleware
 vi.mock('../middleware/auth-middleware', () => ({
   withAuth: vi.fn((innerHandler: any) => {
@@ -62,6 +70,8 @@ vi.mock('../middleware/auth-middleware', () => ({
 }));
 
 import { handler } from './handler';
+import { getFeatureToggles } from '../settings/feature-toggles';
+import { checkContentPermission } from './content-permission';
 import { getContentUploadUrl, createContentItem } from './upload';
 import { listContentItems, getContentDetail } from './list';
 import { addComment, listComments } from './comment';
@@ -92,6 +102,24 @@ function makeEvent(overrides: Partial<APIGatewayProxyEvent> = {}): APIGatewayPro
 describe('Content Lambda Handler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: feature toggles with all permissions enabled
+    vi.mocked(getFeatureToggles).mockResolvedValue({
+      codeRedemptionEnabled: true,
+      pointsClaimEnabled: true,
+      adminProductsEnabled: true,
+      adminOrdersEnabled: true,
+      adminContentReviewEnabled: false,
+      adminCategoriesEnabled: true,
+      contentRolePermissions: {
+        Speaker:         { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+        UserGroupLeader: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+        Volunteer:       { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+      },
+      updatedAt: '2024-01-01T00:00:00.000Z',
+      updatedBy: 'system',
+    } as any);
+    // Default: permission check passes so existing tests are unaffected
+    vi.mocked(checkContentPermission).mockReturnValue(true);
   });
 
   describe('General routing', () => {
@@ -477,6 +505,94 @@ describe('Content Lambda Handler', () => {
       const body = JSON.parse(result.body);
       expect(body.tags).toHaveLength(1);
       expect(getTagCloudTags).toHaveBeenCalled();
+    });
+  });
+
+  // ── Permission Enforcement Tests ──────────────────────────────
+
+  describe('Permission enforcement', () => {
+    // Helper to make an event with a specific user role set via the auth middleware mock
+    // We control checkContentPermission directly via vi.mocked
+
+    it('Pure_Admin (only Admin role) calling GET /api/content → 403 PERMISSION_DENIED', async () => {
+      // Pure_Admin has no Content_Role → checkContentPermission returns false
+      vi.mocked(checkContentPermission).mockReturnValue(false);
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/content' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('PERMISSION_DENIED');
+    });
+
+    it('SuperAdmin calling GET /api/content → passes permission check (200)', async () => {
+      // SuperAdmin → checkContentPermission returns true
+      vi.mocked(checkContentPermission).mockReturnValue(true);
+      vi.mocked(listContentItems).mockResolvedValue({ success: true, items: [], lastKey: undefined });
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/content' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+    });
+
+    it('Speaker with canAccess: false calling GET /api/content → 403', async () => {
+      vi.mocked(checkContentPermission).mockReturnValue(false);
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/content' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('PERMISSION_DENIED');
+    });
+
+    it('Speaker with canAccess: false calling GET /api/content/:id → 403', async () => {
+      vi.mocked(checkContentPermission).mockReturnValue(false);
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/content/content-1' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('PERMISSION_DENIED');
+    });
+
+    it('Speaker with canUpload: false calling POST /api/content/upload-url → 403', async () => {
+      vi.mocked(checkContentPermission).mockReturnValue(false);
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/content/upload-url',
+        body: JSON.stringify({ fileName: 'doc.pdf', contentType: 'application/pdf' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('PERMISSION_DENIED');
+    });
+
+    it('Speaker with canUpload: false calling POST /api/content → 403', async () => {
+      vi.mocked(checkContentPermission).mockReturnValue(false);
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/content',
+        body: JSON.stringify({
+          title: 'Test',
+          description: 'Desc',
+          categoryId: 'cat-1',
+          fileKey: 'content/user-123/abc/doc.pdf',
+          fileName: 'doc.pdf',
+          fileSize: 1024,
+        }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('PERMISSION_DENIED');
+    });
+
+    it('Speaker with canDownload: false calling GET /api/content/:id/download → 403', async () => {
+      vi.mocked(checkContentPermission).mockReturnValue(false);
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/content/content-1/download' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('PERMISSION_DENIED');
+    });
+
+    it('Speaker with canReserve: false calling POST /api/content/:id/reserve → 403', async () => {
+      vi.mocked(checkContentPermission).mockReturnValue(false);
+      const event = makeEvent({ httpMethod: 'POST', path: '/api/content/content-1/reserve' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('PERMISSION_DENIED');
     });
   });
 });

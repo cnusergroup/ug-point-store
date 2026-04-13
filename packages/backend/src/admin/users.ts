@@ -146,6 +146,14 @@ export async function setUserStatus(
     };
   }
 
+  // Only SuperAdmin can manage OrderAdmin users
+  if (targetRoles.includes('OrderAdmin') && !callerRoles.includes('SuperAdmin')) {
+    return {
+      success: false,
+      error: { code: ErrorCodes.ONLY_SUPERADMIN_CAN_MANAGE_ORDER_ADMIN, message: ErrorMessages.ONLY_SUPERADMIN_CAN_MANAGE_ORDER_ADMIN },
+    };
+  }
+
   // Update status
   const now = new Date().toISOString();
   await dynamoClient.send(
@@ -223,6 +231,14 @@ export async function deleteUser(
     return {
       success: false,
       error: { code: ErrorCodes.ONLY_SUPERADMIN_CAN_MANAGE_ADMIN, message: ErrorMessages.ONLY_SUPERADMIN_CAN_MANAGE_ADMIN },
+    };
+  }
+
+  // Only SuperAdmin can delete OrderAdmin users
+  if (targetRoles.includes('OrderAdmin') && !callerRoles.includes('SuperAdmin')) {
+    return {
+      success: false,
+      error: { code: ErrorCodes.ONLY_SUPERADMIN_CAN_MANAGE_ORDER_ADMIN, message: ErrorMessages.ONLY_SUPERADMIN_CAN_MANAGE_ORDER_ADMIN },
     };
   }
 

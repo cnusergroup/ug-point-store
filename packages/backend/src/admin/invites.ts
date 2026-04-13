@@ -34,8 +34,9 @@ export async function batchGenerateInvites(
   dynamoClient: DynamoDBDocumentClient,
   invitesTable: string,
   registerBaseUrl: string,
+  expiryMs?: number,
 ): Promise<BatchGenerateInvitesResult> {
-  return batchCreateInvites(count, roles, dynamoClient, invitesTable, registerBaseUrl);
+  return batchCreateInvites(count, roles, dynamoClient, invitesTable, registerBaseUrl, expiryMs);
 }
 
 /**
@@ -51,6 +52,8 @@ export async function listInvites(
   dynamoClient: DynamoDBDocumentClient,
   invitesTable: string,
 ): Promise<ListInvitesResult> {
+  let invites: InviteRecord[];
+
   if (status) {
     const result = await dynamoClient.send(
       new QueryCommand({
@@ -65,8 +68,45 @@ export async function listInvites(
       }),
     );
 
+    invites = (result.Items ?? []) as InviteRecord[];
+
+    // Lazy-expire: update pending invites that have passed their expiresAt
+    const now = new Date();
+    const expiredTokens: string[] = [];
+    for (const invite of invites) {
+      if (invite.status === 'pending' && new Date(invite.expiresAt) < now) {
+        expiredTokens.push(invite.token);
+      }
+    }
+
+    // Batch update expired invites in the background (best-effort)
+    await Promise.allSettled(
+      expiredTokens.map((token) =>
+        dynamoClient.send(
+          new UpdateCommand({
+            TableName: invitesTable,
+            Key: { token },
+            UpdateExpression: 'SET #status = :expired',
+            ConditionExpression: '#status = :pending',
+            ExpressionAttributeNames: { '#status': 'status' },
+            ExpressionAttributeValues: {
+              ':expired': 'expired' as InviteStatus,
+              ':pending': 'pending' as InviteStatus,
+            },
+          }),
+        ),
+      ),
+    );
+
+    // Update local records to reflect the change
+    for (const invite of invites) {
+      if (expiredTokens.includes(invite.token)) {
+        invite.status = 'expired';
+      }
+    }
+
     return {
-      invites: (result.Items ?? []) as InviteRecord[],
+      invites,
       lastKey: result.LastEvaluatedKey ? JSON.stringify(result.LastEvaluatedKey) : undefined,
     };
   }
@@ -79,8 +119,43 @@ export async function listInvites(
     }),
   );
 
+  invites = (result.Items ?? []) as InviteRecord[];
+
+  // Lazy-expire for scan results too
+  const now = new Date();
+  const expiredTokens: string[] = [];
+  for (const invite of invites) {
+    if (invite.status === 'pending' && new Date(invite.expiresAt) < now) {
+      expiredTokens.push(invite.token);
+    }
+  }
+
+  await Promise.allSettled(
+    expiredTokens.map((token) =>
+      dynamoClient.send(
+        new UpdateCommand({
+          TableName: invitesTable,
+          Key: { token },
+          UpdateExpression: 'SET #status = :expired',
+          ConditionExpression: '#status = :pending',
+          ExpressionAttributeNames: { '#status': 'status' },
+          ExpressionAttributeValues: {
+            ':expired': 'expired' as InviteStatus,
+            ':pending': 'pending' as InviteStatus,
+          },
+        }),
+      ),
+    ),
+  );
+
+  for (const invite of invites) {
+    if (expiredTokens.includes(invite.token)) {
+      invite.status = 'expired';
+    }
+  }
+
   return {
-    invites: (result.Items ?? []) as InviteRecord[],
+    invites,
     lastKey: result.LastEvaluatedKey ? JSON.stringify(result.LastEvaluatedKey) : undefined,
   };
 }

@@ -29,6 +29,9 @@ vi.mock('../claims/submit', () => ({
 vi.mock('../settings/feature-toggles', () => ({
   getFeatureToggles: vi.fn(),
 }));
+vi.mock('../settings/invite-settings', () => ({
+  getInviteSettings: vi.fn(),
+}));
 vi.mock('../travel/settings', () => ({
   getTravelSettings: vi.fn(),
 }));
@@ -64,6 +67,7 @@ import { getUserProfile } from '../user/profile';
 import { submitClaim } from '../claims/submit';
 import { listMyClaims } from '../claims/submit';
 import { getFeatureToggles } from '../settings/feature-toggles';
+import { getInviteSettings } from '../settings/invite-settings';
 import { getTravelSettings } from '../travel/settings';
 import {
   getTravelQuota,
@@ -513,6 +517,35 @@ describe('Points Lambda Handler - Routing', () => {
       const event = makeEvent({
         httpMethod: 'GET',
         path: '/api/settings/travel-sponsorship',
+        headers: {},
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(500);
+      expect(JSON.parse(result.body).code).toBe('INTERNAL_ERROR');
+    });
+  });
+
+  // ── Invite Settings Routes ──────────────────────────────
+
+  describe('GET /api/settings/invite-settings (public route)', () => {
+    it('returns invite settings without auth', async () => {
+      vi.mocked(getInviteSettings).mockResolvedValue({ inviteExpiryDays: 3 });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/settings/invite-settings',
+        headers: {}, // no Authorization header
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.inviteExpiryDays).toBe(3);
+    });
+
+    it('returns 500 when getInviteSettings throws', async () => {
+      vi.mocked(getInviteSettings).mockRejectedValue(new Error('DB error'));
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/settings/invite-settings',
         headers: {},
       });
       const result = await handler(event);

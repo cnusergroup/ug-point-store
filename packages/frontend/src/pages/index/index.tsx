@@ -341,17 +341,20 @@ export default function IndexPage() {
       {/* Filter Bar */}
       <View className='filter-bar'>
         <View className='filter-bar__types'>
-          {([
-            { key: 'all' as TypeFilter, label: t('mall.filterAll') },
-            { key: 'points' as TypeFilter, label: t('mall.filterPoints') },
-            { key: 'code_exclusive' as TypeFilter, label: t('mall.filterCodeExclusive') },
-            { key: 'travel' as TypeFilter, label: t('mall.filterTravel') },
-          ] as const).filter((item) => {
-            // Hide code_exclusive tab until featureToggles loaded AND explicitly enabled
-            if (item.key === 'code_exclusive' && featureToggles?.codeRedemptionEnabled !== true) return false;
-            if (item.key === 'travel' && travelSettings?.travelSponsorshipEnabled !== true) return false;
-            return true;
-          }).map((item) => (
+          {(() => {
+            const visibleTypes = ([
+              { key: 'all' as TypeFilter, label: t('mall.filterAll') },
+              { key: 'points' as TypeFilter, label: t('mall.filterPoints') },
+              { key: 'code_exclusive' as TypeFilter, label: t('mall.filterCodeExclusive') },
+              { key: 'travel' as TypeFilter, label: t('mall.filterTravel') },
+            ] as const).filter((item) => {
+              if (item.key === 'code_exclusive' && featureToggles?.codeRedemptionEnabled !== true) return false;
+              if (item.key === 'travel' && travelSettings?.travelSponsorshipEnabled !== true) return false;
+              return true;
+            });
+            // Hide entire filter when only "all" + one type (nothing to filter between)
+            if (visibleTypes.length <= 2) return null;
+            return visibleTypes.map((item) => (
             <View
               key={item.key}
               className={`filter-tab ${typeFilter === item.key ? 'filter-tab--active' : ''}`}
@@ -359,7 +362,8 @@ export default function IndexPage() {
             >
               <Text>{item.label}</Text>
             </View>
-          ))}
+          ));
+          })()}
         </View>
 
         {typeFilter !== 'travel' && (

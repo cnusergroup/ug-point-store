@@ -3,7 +3,7 @@ import { View, Text } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useAppStore, UserRole } from '../../store';
 import { useTranslation } from '../../i18n';
-import { GiftIcon, GlobeIcon, ProfileIcon, SettingsIcon, AdminIcon } from '../../components/icons';
+import { GiftIcon, GlobeIcon, ProfileIcon, SettingsIcon, AdminIcon, OrderIcon } from '../../components/icons';
 import './index.scss';
 
 /** Trophy icon (inline — no separate file) */
@@ -30,13 +30,23 @@ function TrophyIcon({ size = 24, color = 'currentColor', className }: { size?: n
   );
 }
 
-/** Role display config */
-const ROLE_CONFIG: Record<UserRole, { label: string; className: string }> = {
-  UserGroupLeader: { label: 'Leader', className: 'role-badge--leader' },
-  Speaker: { label: 'Speaker', className: 'role-badge--speaker' },
-  Volunteer: { label: 'Volunteer', className: 'role-badge--volunteer' },
-  Admin: { label: 'Admin', className: 'role-badge--admin' },
-  SuperAdmin: { label: 'SuperAdmin', className: 'role-badge--superadmin' },
+/** Role display config (className only; labels resolved via i18n at render time) */
+const ROLE_CLASS: Record<UserRole, string> = {
+  UserGroupLeader: 'role-badge--leader',
+  Speaker: 'role-badge--speaker',
+  Volunteer: 'role-badge--volunteer',
+  Admin: 'role-badge--admin',
+  SuperAdmin: 'role-badge--superadmin',
+  OrderAdmin: 'role-badge--order-admin',
+};
+
+/** Static fallback labels for non-OrderAdmin roles */
+const ROLE_LABEL_FALLBACK: Record<string, string> = {
+  UserGroupLeader: 'Leader',
+  Speaker: 'Speaker',
+  Volunteer: 'Volunteer',
+  Admin: 'Admin',
+  SuperAdmin: 'SuperAdmin',
 };
 
 export default function HubPage() {
@@ -54,6 +64,13 @@ export default function HubPage() {
   }, [isAuthenticated, fetchProfile]);
 
   const isAdmin = user?.roles?.some((r) => r === 'Admin' || r === 'SuperAdmin');
+  const isOrderAdmin = user?.roles?.includes('OrderAdmin');
+
+  /** Resolve role label: OrderAdmin uses i18n, others use static fallback */
+  const getRoleLabel = (role: UserRole): string => {
+    if (role === 'OrderAdmin') return t('roles.orderAdmin');
+    return ROLE_LABEL_FALLBACK[role] || role;
+  };
 
   const handleMall = () => {
     Taro.redirectTo({ url: '/pages/index/index' });
@@ -75,6 +92,73 @@ export default function HubPage() {
     Taro.navigateTo({ url: '/pages/admin/index' });
   };
 
+  const handleOrders = () => {
+    Taro.redirectTo({ url: '/pages/admin/orders' });
+  };
+
+  // OrderAdmin: minimal layout with only Order Management and Settings
+  if (isOrderAdmin) {
+    return (
+      <View className='hub-page'>
+        <View className='hub-header'>
+          <View className='hub-header__left'>
+            <View className='hub-header__avatar'>
+              <Text className='hub-header__avatar-initial'>
+                {(user?.nickname || t('hub.userFallback'))[0]?.toUpperCase()}
+              </Text>
+            </View>
+            <View className='hub-header__info'>
+              <Text className='hub-header__greeting'>
+                {t('hub.greeting', { nickname: user?.nickname || t('hub.userFallback') })}
+              </Text>
+              {user?.roles && user.roles.length > 0 && (
+                <View className='hub-header__roles'>
+                  {user.roles.slice(0, 3).map((role) => (
+                    <Text key={role} className={`role-badge ${ROLE_CLASS[role] || ''}`}>
+                      {getRoleLabel(role)}
+                    </Text>
+                  ))}
+                </View>
+              )}
+            </View>
+          </View>
+        </View>
+
+        <View className='hub-grid'>
+          <View
+            className='hub-card hub-card--mall'
+            style={{ animationDelay: '0s' }}
+            onClick={handleOrders}
+          >
+            <View className='hub-card__icon'>
+              <OrderIcon size={40} color='var(--accent-primary)' />
+            </View>
+            <Text className='hub-card__title'>{t('admin.dashboard.ordersTitle')}</Text>
+            <Text className='hub-card__desc'>{t('admin.dashboard.ordersDesc')}</Text>
+          </View>
+
+          <View
+            className='hub-card'
+            style={{ animationDelay: '0.08s' }}
+            onClick={handleSettings}
+          >
+            <View className='hub-card__icon'>
+              <SettingsIcon size={40} color='var(--text-secondary)' />
+            </View>
+            <Text className='hub-card__title'>{t('hub.settingsAction')}</Text>
+          </View>
+        </View>
+
+        <View className='hub-footer'>
+          <View className='hub-footer__divider' />
+          <Text className='hub-footer__line1'>🎨 Design by <Text className='hub-footer__accent'>Yanglin Liu</Text></Text>
+          <Text className='hub-footer__line1'>Built with ❤️ by <Text className='hub-footer__accent'>Kiro</Text> & <Text className='hub-footer__accent'>Xiaofei Li</Text></Text>
+          <Text className='hub-footer__line2'>Powered by Amazon Web Services</Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View className='hub-page'>
       {/* Welcome Header */}
@@ -92,8 +176,8 @@ export default function HubPage() {
             {user?.roles && user.roles.length > 0 && (
               <View className='hub-header__roles'>
                 {user.roles.slice(0, 3).map((role) => (
-                  <Text key={role} className={`role-badge ${ROLE_CONFIG[role]?.className || ''}`}>
-                    {ROLE_CONFIG[role]?.label || role}
+                  <Text key={role} className={`role-badge ${ROLE_CLASS[role] || ''}`}>
+                    {getRoleLabel(role)}
                   </Text>
                 ))}
                 {user.roles.length > 3 && (

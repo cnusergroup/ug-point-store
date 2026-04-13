@@ -2,16 +2,32 @@ import { useState, useEffect, useCallback } from 'react';
 import { View, Text, Switch, Input } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useAppStore } from '../../store';
-import { request } from '../../utils/request';
+import { request, RequestError } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
 import './settings.scss';
+
+interface RolePermissions {
+  canAccess: boolean;
+  canUpload: boolean;
+  canDownload: boolean;
+  canReserve: boolean;
+}
+
+interface ContentRolePermissions {
+  Speaker: RolePermissions;
+  UserGroupLeader: RolePermissions;
+  Volunteer: RolePermissions;
+}
 
 interface FeatureToggles {
   codeRedemptionEnabled: boolean;
   pointsClaimEnabled: boolean;
   adminProductsEnabled: boolean;
   adminOrdersEnabled: boolean;
+  adminContentReviewEnabled: boolean;
+  adminCategoriesEnabled: boolean;
+  contentRolePermissions: ContentRolePermissions;
 }
 
 interface TravelSponsorshipSettings {
@@ -20,8 +36,20 @@ interface TravelSponsorshipSettings {
   internationalThreshold: number;
 }
 
+interface InviteSettings {
+  inviteExpiryDays: 1 | 3 | 7;
+}
+
+interface AdminUserItem {
+  userId: string;
+  nickname: string;
+  email: string;
+}
+
 export default function AdminSettingsPage() {
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
+  const userRoles = useAppStore((s) => s.user?.roles || []);
+  const isSuperAdmin = userRoles.includes('SuperAdmin');
   const { t } = useTranslation();
 
   const [loading, setLoading] = useState(true);
@@ -30,6 +58,19 @@ export default function AdminSettingsPage() {
     pointsClaimEnabled: false,
     adminProductsEnabled: true,
     adminOrdersEnabled: true,
+    adminContentReviewEnabled: false,
+    adminCategoriesEnabled: false,
+    contentRolePermissions: {
+      Speaker: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+      UserGroupLeader: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+      Volunteer: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+    },
+  });
+
+  const [contentRolePermissions, setContentRolePermissions] = useState<ContentRolePermissions>({
+    Speaker: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+    UserGroupLeader: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+    Volunteer: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
   });
 
   const [travelSettings, setTravelSettings] = useState<TravelSponsorshipSettings>({
@@ -41,6 +82,14 @@ export default function AdminSettingsPage() {
   const [domesticInput, setDomesticInput] = useState('');
   const [internationalInput, setInternationalInput] = useState('');
 
+  const [inviteSettings, setInviteSettings] = useState<InviteSettings>({ inviteExpiryDays: 1 });
+
+  const [adminUsers, setAdminUsers] = useState<AdminUserItem[]>([]);
+  const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
+  const [transferPassword, setTransferPassword] = useState('');
+  const [transferring, setTransferring] = useState(false);
+  const [transferError, setTransferError] = useState('');
+
   const fetchSettings = useCallback(async () => {
     setLoading(true);
     try {
@@ -49,6 +98,9 @@ export default function AdminSettingsPage() {
         skipAuth: true,
       });
       setSettings(res);
+      if (res.contentRolePermissions) {
+        setContentRolePermissions(res.contentRolePermissions);
+      }
     } catch {
       // On failure, keep defaults (false)
     } finally {
@@ -73,14 +125,46 @@ export default function AdminSettingsPage() {
     }
   }, []);
 
+  const fetchInviteSettings = useCallback(async () => {
+    try {
+      const res = await request<InviteSettings>({
+        url: '/api/settings/invite-settings',
+        skipAuth: true,
+      });
+      const days = res.inviteExpiryDays;
+      if (days === 1 || days === 3 || days === 7) {
+        setInviteSettings({ inviteExpiryDays: days });
+      }
+    } catch {
+      // On failure, keep default (1 day)
+    }
+  }, []);
+
+  const fetchAdminUsers = useCallback(async () => {
+    try {
+      const res = await request<{ users: AdminUserItem[] }>({
+        url: '/api/admin/users?role=Admin',
+      });
+      setAdminUsers(res.users || []);
+    } catch {
+      // On failure, keep empty list
+    }
+  }, []);
+
   useEffect(() => {
     if (!isAuthenticated) {
       Taro.redirectTo({ url: '/pages/login/index' });
       return;
     }
+    if (!isSuperAdmin) {
+      Taro.redirectTo({ url: '/pages/admin/index' });
+      return;
+    }
     fetchSettings();
     fetchTravelSettings();
-  }, [isAuthenticated, fetchSettings, fetchTravelSettings]);
+    fetchInviteSettings();
+    fetchAdminUsers();
+  }, [isAuthenticated, isSuperAdmin, fetchSettings, fetchTravelSettings, fetchInviteSettings, fetchAdminUsers]);
 
   const handleToggle = async (key: keyof FeatureToggles, newValue: boolean) => {
     const prev = { ...settings };
@@ -96,12 +180,39 @@ export default function AdminSettingsPage() {
           pointsClaimEnabled: updated.pointsClaimEnabled,
           adminProductsEnabled: updated.adminProductsEnabled,
           adminOrdersEnabled: updated.adminOrdersEnabled,
+          adminContentReviewEnabled: updated.adminContentReviewEnabled,
+          adminCategoriesEnabled: updated.adminCategoriesEnabled,
         },
       });
       Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
     } catch {
       // Revert on failure
       setSettings(prev);
+      Taro.showToast({ title: t('admin.settings.updateFailed'), icon: 'none' });
+    }
+  };
+
+  const handlePermissionToggle = async (
+    role: keyof ContentRolePermissions,
+    perm: keyof RolePermissions,
+    newValue: boolean,
+  ) => {
+    const prev = { ...contentRolePermissions };
+    const updated = {
+      ...contentRolePermissions,
+      [role]: { ...contentRolePermissions[role], [perm]: newValue },
+    };
+    setContentRolePermissions(updated);
+
+    try {
+      await request({
+        url: '/api/admin/settings/content-role-permissions',
+        method: 'PUT',
+        data: { contentRolePermissions: updated },
+      });
+      Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
+    } catch {
+      setContentRolePermissions(prev);
       Taro.showToast({ title: t('admin.settings.updateFailed'), icon: 'none' });
     }
   };
@@ -195,6 +306,69 @@ export default function AdminSettingsPage() {
     }
   };
 
+  const handleInviteExpiryChange = async (days: 1 | 3 | 7) => {
+    if (days === inviteSettings.inviteExpiryDays) return;
+    const prev = inviteSettings;
+    setInviteSettings({ inviteExpiryDays: days });
+    try {
+      await request({
+        url: '/api/admin/settings/invite-settings',
+        method: 'PUT',
+        data: { inviteExpiryDays: days },
+      });
+      Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
+    } catch {
+      setInviteSettings(prev);
+      Taro.showToast({ title: t('admin.settings.updateFailed'), icon: 'none' });
+    }
+  };
+
+  const handleTransfer = async () => {
+    setTransferError('');
+    if (!selectedTarget) {
+      setTransferError(t('admin.settings.errorSelectTarget'));
+      return;
+    }
+    if (!transferPassword) {
+      setTransferError(t('admin.settings.errorPasswordRequired'));
+      return;
+    }
+    setTransferring(true);
+    try {
+      await request({
+        url: '/api/admin/superadmin/transfer',
+        method: 'POST',
+        data: { targetUserId: selectedTarget, password: transferPassword },
+      });
+      // Update local store: remove SuperAdmin, keep Admin
+      const currentUser = useAppStore.getState().user;
+      if (currentUser) {
+        const newRoles = currentUser.roles.filter((r) => r !== 'SuperAdmin');
+        useAppStore.getState().updateUser({ roles: newRoles });
+      }
+      Taro.showToast({ title: t('admin.settings.transferSuccess'), icon: 'none' });
+      setTimeout(() => {
+        Taro.redirectTo({ url: '/pages/admin/index' });
+      }, 2000);
+    } catch (err) {
+      if (err instanceof RequestError) {
+        const errorKey = (() => {
+          switch (err.code) {
+            case 'INVALID_CURRENT_PASSWORD': return 'admin.settings.errorPasswordIncorrect';
+            case 'TRANSFER_TARGET_NOT_ADMIN': return 'admin.settings.errorTargetNotAdmin';
+            case 'TRANSFER_TARGET_NOT_FOUND': return 'admin.settings.errorTargetNotFound';
+            default: return null;
+          }
+        })();
+        setTransferError(errorKey ? t(errorKey as any) : err.message);
+      } else {
+        setTransferError(t('common.operationFailed'));
+      }
+    } finally {
+      setTransferring(false);
+    }
+  };
+
   const handleBack = () => goBack('/pages/admin/index');
 
   return (
@@ -273,7 +447,79 @@ export default function AdminSettingsPage() {
               />
             </View>
           </View>
+
+          {/* Admin Content Review Permission */}
+          <View className='toggle-item'>
+            <View className='toggle-item__info'>
+              <Text className='toggle-item__label'>{t('admin.settings.adminContentReviewLabel')}</Text>
+              <Text className='toggle-item__desc'>{t('admin.settings.adminContentReviewDesc')}</Text>
+            </View>
+            <View className='toggle-item__switch'>
+              <Switch
+                checked={settings.adminContentReviewEnabled}
+                onChange={(e) => handleToggle('adminContentReviewEnabled', e.detail.value)}
+                color='var(--accent-primary)'
+              />
+            </View>
+          </View>
+
+          {/* Admin Categories Permission */}
+          <View className='toggle-item'>
+            <View className='toggle-item__info'>
+              <Text className='toggle-item__label'>{t('admin.settings.adminCategoriesLabel')}</Text>
+              <Text className='toggle-item__desc'>{t('admin.settings.adminCategoriesDesc')}</Text>
+            </View>
+            <View className='toggle-item__switch'>
+              <Switch
+                checked={settings.adminCategoriesEnabled}
+                onChange={(e) => handleToggle('adminCategoriesEnabled', e.detail.value)}
+                color='var(--accent-primary)'
+              />
+            </View>
+          </View>
         </View>
+      )}
+      {/* Content Role Permissions Matrix — SuperAdmin only */}
+      {isSuperAdmin && (
+        <>
+          <View className='settings-section'>
+            <Text className='settings-section__title'>{t('admin.settings.contentRolePermissionsTitle')}</Text>
+          </View>
+          <View className='toggle-list'>
+            <View className='permissions-matrix'>
+              {/* Header row */}
+              <View className='permissions-matrix__header'>
+                <View className='permissions-matrix__role-col' />
+                {(['canAccess', 'canUpload', 'canDownload', 'canReserve'] as const).map((perm) => (
+                  <View key={perm} className='permissions-matrix__perm-col'>
+                    <Text className='permissions-matrix__perm-label'>
+                      {t(`admin.settings.permission${perm.charAt(0).toUpperCase() + perm.slice(1)}` as any)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+              {/* Role rows */}
+              {(['Speaker', 'UserGroupLeader', 'Volunteer'] as const).map((role) => (
+                <View key={role} className='permissions-matrix__row'>
+                  <View className='permissions-matrix__role-col'>
+                    <Text className='permissions-matrix__role-label'>
+                      {t(`admin.settings.role${role}` as any)}
+                    </Text>
+                  </View>
+                  {(['canAccess', 'canUpload', 'canDownload', 'canReserve'] as const).map((perm) => (
+                    <View key={perm} className='permissions-matrix__perm-col'>
+                      <Switch
+                        checked={contentRolePermissions[role][perm]}
+                        onChange={(e) => handlePermissionToggle(role, perm, e.detail.value)}
+                        color='var(--accent-primary)'
+                      />
+                    </View>
+                  ))}
+                </View>
+              ))}
+            </View>
+          </View>
+        </>
       )}
 
       {/* Travel Sponsorship Settings Section */}
@@ -339,6 +585,103 @@ export default function AdminSettingsPage() {
           </View>
         </View>
       )}
+
+      {/* Invite Expiry Section — SuperAdmin only */}
+      {isSuperAdmin && (
+        <>
+          <View className='settings-section'>
+            <Text className='settings-section__title'>{t('admin.settings.inviteExpiryTitle')}</Text>
+          </View>
+          <View className='toggle-list'>
+            <View className='invite-expiry-item'>
+              <Text className='invite-expiry-item__desc'>{t('admin.settings.inviteExpiryDesc')}</Text>
+              <View className='invite-expiry-item__options'>
+                {([1, 3, 7] as const).map((days) => (
+                  <View
+                    key={days}
+                    className={`invite-expiry-option${inviteSettings.inviteExpiryDays === days ? ' invite-expiry-option--active' : ''}`}
+                    onClick={() => handleInviteExpiryChange(days)}
+                  >
+                    <Text className='invite-expiry-option__label'>
+                      {t(`admin.settings.inviteExpiryDays${days}` as any)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </View>
+        </>
+      )}
+
+      {/* SuperAdmin Transfer Section — SuperAdmin only */}
+      {isSuperAdmin && (
+        <>
+          <View className='settings-section'>
+            <Text className='settings-section__title'>{t('admin.settings.transferTitle')}</Text>
+          </View>
+          <View className='toggle-list'>
+            <View className='transfer-section'>
+              <Text className='transfer-section__desc'>{t('admin.settings.transferDesc')}</Text>
+
+              {/* Admin user selector */}
+              {adminUsers.length === 0 ? (
+                <View className='transfer-section__empty'>
+                  <Text className='transfer-section__empty-text'>{t('admin.settings.noEligibleTargets')}</Text>
+                </View>
+              ) : (
+                <View className='transfer-user-list'>
+                  {adminUsers.map((user) => (
+                    <View
+                      key={user.userId}
+                      className={`transfer-user-item${selectedTarget === user.userId ? ' transfer-user-item--selected' : ''}`}
+                      onClick={() => setSelectedTarget(user.userId)}
+                    >
+                      <View className='transfer-user-item__check'>
+                        {selectedTarget === user.userId && <Text className='transfer-user-item__check-icon'>✓</Text>}
+                      </View>
+                      <View className='transfer-user-item__info'>
+                        <Text className='transfer-user-item__nickname'>{user.nickname}</Text>
+                        <Text className='transfer-user-item__email'>{user.email}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Password input */}
+              <View className='transfer-section__field'>
+                <Text className='transfer-section__label'>{t('admin.settings.passwordLabel')}</Text>
+                <Input
+                  type='text'
+                  password
+                  value={transferPassword}
+                  placeholder={t('admin.settings.passwordPlaceholder')}
+                  onInput={(e) => setTransferPassword(e.detail.value)}
+                  className='transfer-input'
+                />
+              </View>
+
+              {/* Error message */}
+              {transferError ? (
+                <View className='transfer-section__error'>
+                  <Text className='transfer-section__error-text'>{transferError}</Text>
+                </View>
+              ) : null}
+
+              {/* Confirm button */}
+              <View
+                className={`transfer-section__btn${(!selectedTarget || !transferPassword || transferring || adminUsers.length === 0) ? ' transfer-section__btn--disabled' : ''}`}
+                onClick={(!selectedTarget || !transferPassword || transferring || adminUsers.length === 0) ? undefined : handleTransfer}
+              >
+                <Text className='transfer-section__btn-text'>
+                  {transferring ? t('admin.settings.transferring') : t('admin.settings.confirmTransfer')}
+                </Text>
+              </View>
+            </View>
+          </View>
+        </>
+      )}
+
     </View>
   );
 }

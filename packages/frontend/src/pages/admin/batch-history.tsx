@@ -56,7 +56,10 @@ export default function BatchHistoryPage() {
       Taro.redirectTo({ url: '/pages/login/index' });
       return;
     }
-    if (!isSuperAdmin) return;
+    if (!isSuperAdmin) {
+      Taro.redirectTo({ url: '/pages/admin/index' });
+      return;
+    }
     fetchHistory();
   }, [isAuthenticated, isSuperAdmin, fetchHistory]);
 

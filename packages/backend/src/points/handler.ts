@@ -5,6 +5,7 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { ErrorHttpStatus, ErrorCodes, ErrorMessages } from '@points-mall/shared';
 import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware';
 import { getFeatureToggles } from '../settings/feature-toggles';
+import { getInviteSettings } from '../settings/invite-settings';
 import { redeemCode } from './redeem-code';
 import { getPointsBalance } from './balance';
 import { getPointsRecords } from './records';
@@ -173,6 +174,17 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return jsonResponse(200, settings);
     } catch (err) {
       console.error('Failed to get travel sponsorship settings:', err);
+      return errorResponse('INTERNAL_ERROR', 'Internal server error', 500);
+    }
+  }
+
+  // Public route: GET /api/settings/invite-settings (no auth required)
+  if (event.httpMethod === 'GET' && event.path === '/api/settings/invite-settings') {
+    try {
+      const settings = await getInviteSettings(dynamoClient, USERS_TABLE);
+      return jsonResponse(200, settings);
+    } catch (err) {
+      console.error('Failed to get invite settings:', err);
       return errorResponse('INTERNAL_ERROR', 'Internal server error', 500);
     }
   }

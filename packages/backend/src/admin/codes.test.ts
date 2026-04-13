@@ -20,14 +20,14 @@ const tableName = 'Codes';
 // ---- generateCodeValue ----
 
 describe('generateCodeValue', () => {
-  it('should generate a 12-character string', () => {
+  it('should generate a 19-character string', () => {
     const code = generateCodeValue();
-    expect(code).toHaveLength(12);
+    expect(code).toHaveLength(19);
   });
 
-  it('should only contain alphanumeric characters', () => {
+  it('should only contain alphanumeric characters separated by dashes', () => {
     const code = generateCodeValue();
-    expect(code).toMatch(/^[A-Za-z0-9]{12}$/);
+    expect(code).toMatch(/^[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}$/);
   });
 
   it('should generate unique values on successive calls', () => {
@@ -65,7 +65,7 @@ describe('batchGeneratePointsCodes', () => {
       expect(code.status).toBe('active');
       expect(code.usedBy).toEqual([]);
       expect(code.codeId).toBeDefined();
-      expect(code.codeValue).toHaveLength(12);
+      expect(code.codeValue).toHaveLength(19);
       expect(code.createdAt).toBeDefined();
     }
   });
@@ -153,7 +153,7 @@ describe('generateProductCodes', () => {
       expect(code.status).toBe('active');
       expect(code.usedBy).toEqual([]);
       expect(code.codeId).toBeDefined();
-      expect(code.codeValue).toHaveLength(12);
+      expect(code.codeValue).toHaveLength(19);
       expect(code.createdAt).toBeDefined();
     }
   });

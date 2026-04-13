@@ -4,6 +4,8 @@ import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { S3Client } from '@aws-sdk/client-s3';
 import { ErrorHttpStatus } from '@points-mall/shared';
 import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware';
+import { getFeatureToggles } from '../settings/feature-toggles';
+import { checkContentPermission } from './content-permission';
 import { getContentUploadUrl, createContentItem } from './upload';
 import { editContentItem } from './edit';
 import { listContentItems, getContentDetail } from './list';
@@ -185,6 +187,11 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
 // ── Route Handlers ─────────────────────────────────────────
 
 async function handleGetUploadUrl(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+  if (!checkContentPermission(event.user.roles, 'canUpload', toggles)) {
+    return errorResponse('PERMISSION_DENIED', '您没有上传内容的权限', 403);
+  }
+
   const body = parseBody(event);
   if (!body || !body.fileName || !body.contentType) {
     return errorResponse('INVALID_REQUEST', 'Missing required fields: fileName, contentType', 400);
@@ -208,6 +215,11 @@ async function handleGetUploadUrl(event: AuthenticatedEvent): Promise<APIGateway
 }
 
 async function handleCreateContentItem(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+  if (!checkContentPermission(event.user.roles, 'canUpload', toggles)) {
+    return errorResponse('PERMISSION_DENIED', '您没有上传内容的权限', 403);
+  }
+
   const body = parseBody(event);
   if (!body || !body.title || !body.description || !body.categoryId || !body.fileKey || !body.fileName) {
     return errorResponse('INVALID_REQUEST', 'Missing required fields: title, description, categoryId, fileKey, fileName', 400);
@@ -241,6 +253,11 @@ async function handleCreateContentItem(event: AuthenticatedEvent): Promise<APIGa
 }
 
 async function handleListContentItems(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+  if (!checkContentPermission(event.user.roles, 'canAccess', toggles)) {
+    return errorResponse('PERMISSION_DENIED', '您没有访问内容中心的权限', 403);
+  }
+
   const categoryId = event.queryStringParameters?.categoryId;
   const tag = event.queryStringParameters?.tag;
   const pageSize = event.queryStringParameters?.pageSize
@@ -279,6 +296,11 @@ async function handleListMyContent(event: AuthenticatedEvent): Promise<APIGatewa
 }
 
 async function handleGetContentDetail(contentId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+  if (!checkContentPermission(event.user.roles, 'canAccess', toggles)) {
+    return errorResponse('PERMISSION_DENIED', '您没有访问内容中心的权限', 403);
+  }
+
   const result = await getContentDetail(
     contentId,
     event.user.userId,
@@ -351,6 +373,11 @@ async function handleToggleLike(contentId: string, event: AuthenticatedEvent): P
 }
 
 async function handleCreateReservation(contentId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+  if (!checkContentPermission(event.user.roles, 'canReserve', toggles)) {
+    return errorResponse('PERMISSION_DENIED', '您没有预约内容的权限', 403);
+  }
+
   const result = await createReservation(
     { contentId, userId: event.user.userId },
     dynamoClient,
@@ -372,6 +399,11 @@ async function handleCreateReservation(contentId: string, event: AuthenticatedEv
 }
 
 async function handleGetDownloadUrl(contentId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+  if (!checkContentPermission(event.user.roles, 'canDownload', toggles)) {
+    return errorResponse('PERMISSION_DENIED', '您没有下载内容的权限', 403);
+  }
+
   const result = await getDownloadUrl(
     contentId,
     event.user.userId,

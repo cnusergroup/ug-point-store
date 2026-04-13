@@ -69,10 +69,11 @@ describe('Property 1: 默认值正确性', () => {
             const client = createEmptyClient();
             const result = await getFeatureToggles(client, tableName);
 
-            expect(result).toEqual({
-              codeRedemptionEnabled: false,
-              pointsClaimEnabled: false,
-            });
+            expect(result.codeRedemptionEnabled).toBe(false);
+            expect(result.pointsClaimEnabled).toBe(false);
+            // adminProductsEnabled and adminOrdersEnabled default to true
+            expect(result.adminProductsEnabled).toBe(true);
+            expect(result.adminOrdersEnabled).toBe(true);
           },
         ),
         {
@@ -114,6 +115,10 @@ describe('Property 3: 更新输入校验正确性', () => {
             {
               codeRedemptionEnabled: invalidValue as any,
               pointsClaimEnabled: validBool,
+              adminProductsEnabled: true,
+              adminOrdersEnabled: true,
+              adminContentReviewEnabled: false,
+              adminCategoriesEnabled: false,
               updatedBy: 'test-user',
             },
             client,
@@ -138,6 +143,10 @@ describe('Property 3: 更新输入校验正确性', () => {
             {
               codeRedemptionEnabled: validBool,
               pointsClaimEnabled: invalidValue as any,
+              adminProductsEnabled: true,
+              adminOrdersEnabled: true,
+              adminContentReviewEnabled: false,
+              adminCategoriesEnabled: false,
               updatedBy: 'test-user',
             },
             client,
@@ -162,6 +171,10 @@ describe('Property 3: 更新输入校验正确性', () => {
             {
               codeRedemptionEnabled: invalidA as any,
               pointsClaimEnabled: invalidB as any,
+              adminProductsEnabled: true,
+              adminOrdersEnabled: true,
+              adminContentReviewEnabled: false,
+              adminCategoriesEnabled: false,
               updatedBy: 'test-user',
             },
             client,
@@ -194,7 +207,9 @@ describe('Property 4: 更新幂等性', () => {
         fc.asyncProperty(
           fc.boolean(),
           fc.boolean(),
-          async (codeRedemption, pointsClaim) => {
+          fc.boolean(),
+          fc.boolean(),
+          async (codeRedemption, pointsClaim, adminProducts, adminOrders) => {
             const client = createInMemoryClient();
 
             // First update
@@ -202,6 +217,10 @@ describe('Property 4: 更新幂等性', () => {
               {
                 codeRedemptionEnabled: codeRedemption,
                 pointsClaimEnabled: pointsClaim,
+                adminProductsEnabled: adminProducts,
+                adminOrdersEnabled: adminOrders,
+                adminContentReviewEnabled: false,
+                adminCategoriesEnabled: false,
                 updatedBy: 'admin-1',
               },
               client,
@@ -217,6 +236,10 @@ describe('Property 4: 更新幂等性', () => {
               {
                 codeRedemptionEnabled: codeRedemption,
                 pointsClaimEnabled: pointsClaim,
+                adminProductsEnabled: adminProducts,
+                adminOrdersEnabled: adminOrders,
+                adminContentReviewEnabled: false,
+                adminCategoriesEnabled: false,
                 updatedBy: 'admin-1',
               },
               client,
@@ -230,6 +253,8 @@ describe('Property 4: 更新幂等性', () => {
             // Both reads should be identical on the toggle fields
             expect(read2.codeRedemptionEnabled).toBe(read1.codeRedemptionEnabled);
             expect(read2.pointsClaimEnabled).toBe(read1.pointsClaimEnabled);
+            expect(read2.adminProductsEnabled).toBe(read1.adminProductsEnabled);
+            expect(read2.adminOrdersEnabled).toBe(read1.adminOrdersEnabled);
           },
         ),
         { numRuns: 100 },
@@ -255,7 +280,9 @@ describe('Property 6: 读写一致性（Round-trip）', () => {
         fc.asyncProperty(
           fc.boolean(),
           fc.boolean(),
-          async (codeRedemption, pointsClaim) => {
+          fc.boolean(),
+          fc.boolean(),
+          async (codeRedemption, pointsClaim, adminProducts, adminOrders) => {
             const client = createInMemoryClient();
 
             // Write
@@ -263,6 +290,10 @@ describe('Property 6: 读写一致性（Round-trip）', () => {
               {
                 codeRedemptionEnabled: codeRedemption,
                 pointsClaimEnabled: pointsClaim,
+                adminProductsEnabled: adminProducts,
+                adminOrdersEnabled: adminOrders,
+                adminContentReviewEnabled: false,
+                adminCategoriesEnabled: false,
                 updatedBy: 'admin-1',
               },
               client,
@@ -276,6 +307,8 @@ describe('Property 6: 读写一致性（Round-trip）', () => {
             // Round-trip: read values must match written values
             expect(readResult.codeRedemptionEnabled).toBe(codeRedemption);
             expect(readResult.pointsClaimEnabled).toBe(pointsClaim);
+            expect(readResult.adminProductsEnabled).toBe(adminProducts);
+            expect(readResult.adminOrdersEnabled).toBe(adminOrders);
           },
         ),
         { numRuns: 100 },
@@ -333,7 +366,15 @@ describe('Property 5: 功能开关拦截正确性', () => {
 
             // Write the toggle state
             await updateFeatureToggles(
-              { codeRedemptionEnabled, pointsClaimEnabled, updatedBy: 'admin' },
+              {
+                codeRedemptionEnabled,
+                pointsClaimEnabled,
+                adminProductsEnabled: true,
+                adminOrdersEnabled: true,
+                adminContentReviewEnabled: false,
+                adminCategoriesEnabled: false,
+                updatedBy: 'admin',
+              },
               client,
               TABLE,
             );
@@ -368,7 +409,15 @@ describe('Property 5: 功能开关拦截正确性', () => {
 
             // Write the toggle state
             await updateFeatureToggles(
-              { codeRedemptionEnabled, pointsClaimEnabled, updatedBy: 'admin' },
+              {
+                codeRedemptionEnabled,
+                pointsClaimEnabled,
+                adminProductsEnabled: true,
+                adminOrdersEnabled: true,
+                adminContentReviewEnabled: false,
+                adminCategoriesEnabled: false,
+                updatedBy: 'admin',
+              },
               client,
               TABLE,
             );
@@ -482,4 +531,327 @@ describe('Property 2: 更新权限校验正确性', () => {
       );
     },
   );
+});
+
+
+// ============================================================================
+// ---- In-memory DynamoDB mock with UpdateCommand support ----
+// Used by content-role-settings properties (Properties 1–4 below)
+// ============================================================================
+
+/**
+ * Creates an in-memory DynamoDB client that supports GetCommand, PutCommand,
+ * and UpdateCommand (simulating SET contentRolePermissions = :crp).
+ */
+function createInMemoryClientWithUpdate(initialItem?: Record<string, unknown>) {
+  const store = new Map<string, Record<string, unknown>>();
+  if (initialItem) {
+    store.set(initialItem.userId as string, { ...initialItem });
+  }
+
+  return {
+    send: vi.fn().mockImplementation((command: any) => {
+      const name = command.constructor.name;
+
+      if (name === 'GetCommand') {
+        const key = command.input.Key.userId as string;
+        const item = store.get(key);
+        return Promise.resolve({ Item: item ?? undefined });
+      }
+
+      if (name === 'PutCommand') {
+        const item = command.input.Item;
+        store.set(item.userId as string, { ...item });
+        return Promise.resolve({});
+      }
+
+      if (name === 'UpdateCommand') {
+        // Simulate: SET contentRolePermissions = :crp, updatedAt = :updatedAt, updatedBy = :updatedBy
+        const key = command.input.Key.userId as string;
+        const existing = store.get(key) ?? { userId: key };
+        const vals = command.input.ExpressionAttributeValues ?? {};
+        const updated = { ...existing };
+        if (':crp' in vals) updated.contentRolePermissions = vals[':crp'];
+        if (':updatedAt' in vals) updated.updatedAt = vals[':updatedAt'];
+        if (':updatedBy' in vals) updated.updatedBy = vals[':updatedBy'];
+        store.set(key, updated);
+        return Promise.resolve({});
+      }
+
+      return Promise.resolve({});
+    }),
+    _store: store,
+  } as any;
+}
+
+// Arbitrary for a valid ContentRolePermissions (12 booleans)
+const contentRolePermissionsArb = fc.record({
+  Speaker: fc.record({
+    canAccess: fc.boolean(),
+    canUpload: fc.boolean(),
+    canDownload: fc.boolean(),
+    canReserve: fc.boolean(),
+  }),
+  UserGroupLeader: fc.record({
+    canAccess: fc.boolean(),
+    canUpload: fc.boolean(),
+    canDownload: fc.boolean(),
+    canReserve: fc.boolean(),
+  }),
+  Volunteer: fc.record({
+    canAccess: fc.boolean(),
+    canUpload: fc.boolean(),
+    canDownload: fc.boolean(),
+    canReserve: fc.boolean(),
+  }),
+});
+
+// ============================================================================
+// Property 1 (content-role-settings): getFeatureToggles 始终返回完整的新字段
+// Feature: content-role-settings, Property 1: getFeatureToggles 始终返回完整的新字段
+// For any DynamoDB record state (missing, partial, complete), returned object
+// always has boolean adminContentReviewEnabled, boolean adminCategoriesEnabled,
+// and complete contentRolePermissions with all 12 boolean fields.
+// **Validates: Requirements 1.1–1.4, 2.1–2.5, 3.1–3.3**
+// ============================================================================
+
+describe('Property 1 (content-role-settings): getFeatureToggles 始终返回完整的新字段', () => {
+  it('record not found → all new fields present with correct defaults', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.string({ minLength: 1, maxLength: 50 }),
+        async (tableName) => {
+          const client = createEmptyClient();
+          const result = await getFeatureToggles(client, tableName);
+
+          // adminContentReviewEnabled must be boolean, default false
+          expect(typeof result.adminContentReviewEnabled).toBe('boolean');
+          expect(result.adminContentReviewEnabled).toBe(false);
+
+          // adminCategoriesEnabled must be boolean, default false
+          expect(typeof result.adminCategoriesEnabled).toBe('boolean');
+          expect(result.adminCategoriesEnabled).toBe(false);
+
+          // contentRolePermissions must be complete with all 12 boolean fields
+          const roles = ['Speaker', 'UserGroupLeader', 'Volunteer'] as const;
+          const perms = ['canAccess', 'canUpload', 'canDownload', 'canReserve'] as const;
+          for (const role of roles) {
+            for (const perm of perms) {
+              expect(typeof result.contentRolePermissions[role][perm]).toBe('boolean');
+              // default is true
+              expect(result.contentRolePermissions[role][perm]).toBe(true);
+            }
+          }
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
+  it('partial record (missing contentRolePermissions) → defaults to all-true matrix', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.boolean(),
+        fc.boolean(),
+        async (adminContentReview, adminCategories) => {
+          // Record exists but has no contentRolePermissions field
+          const client = createInMemoryClientWithUpdate({
+            userId: 'feature-toggles',
+            codeRedemptionEnabled: false,
+            pointsClaimEnabled: false,
+            adminProductsEnabled: true,
+            adminOrdersEnabled: true,
+            adminContentReviewEnabled: adminContentReview,
+            adminCategoriesEnabled: adminCategories,
+            // intentionally omit contentRolePermissions
+          });
+
+          const result = await getFeatureToggles(client, TABLE);
+
+          expect(typeof result.adminContentReviewEnabled).toBe('boolean');
+          expect(result.adminContentReviewEnabled).toBe(adminContentReview);
+
+          const roles = ['Speaker', 'UserGroupLeader', 'Volunteer'] as const;
+          const perms = ['canAccess', 'canUpload', 'canDownload', 'canReserve'] as const;
+          for (const role of roles) {
+            for (const perm of perms) {
+              expect(typeof result.contentRolePermissions[role][perm]).toBe('boolean');
+              expect(result.contentRolePermissions[role][perm]).toBe(true);
+            }
+          }
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
+  it('complete record → all 12 fields are booleans', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.boolean(),
+        contentRolePermissionsArb,
+        async (adminContentReview, crp) => {
+          const client = createInMemoryClientWithUpdate({
+            userId: 'feature-toggles',
+            codeRedemptionEnabled: false,
+            pointsClaimEnabled: false,
+            adminProductsEnabled: true,
+            adminOrdersEnabled: true,
+            adminContentReviewEnabled: adminContentReview,
+            adminCategoriesEnabled: false,
+            contentRolePermissions: crp,
+          });
+
+          const result = await getFeatureToggles(client, TABLE);
+
+          expect(typeof result.adminContentReviewEnabled).toBe('boolean');
+
+          const roles = ['Speaker', 'UserGroupLeader', 'Volunteer'] as const;
+          const perms = ['canAccess', 'canUpload', 'canDownload', 'canReserve'] as const;
+          for (const role of roles) {
+            for (const perm of perms) {
+              expect(typeof result.contentRolePermissions[role][perm]).toBe('boolean');
+            }
+          }
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+});
+
+// ============================================================================
+// Property 2 (content-role-settings): adminContentReviewEnabled 写入读取往返
+// Feature: content-role-settings, Property 2: adminContentReviewEnabled 写入读取往返
+// For any boolean v, write updateFeatureToggles({ adminContentReviewEnabled: v, ... }),
+// then read with getFeatureToggles, the returned adminContentReviewEnabled should equal v.
+// **Validates: Requirements 1.4, 4.1, 4.3**
+// ============================================================================
+
+describe('Property 2 (content-role-settings): adminContentReviewEnabled 写入读取往返', () => {
+  it('adminContentReviewEnabled round-trips correctly for any boolean value', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.boolean(),
+        fc.boolean(),
+        async (v, adminCategoriesEnabled) => {
+          const client = createInMemoryClientWithUpdate();
+
+          const writeResult = await updateFeatureToggles(
+            {
+              codeRedemptionEnabled: false,
+              pointsClaimEnabled: false,
+              adminProductsEnabled: true,
+              adminOrdersEnabled: true,
+              adminContentReviewEnabled: v,
+              adminCategoriesEnabled,
+              updatedBy: 'test-user',
+            },
+            client,
+            TABLE,
+          );
+          expect(writeResult.success).toBe(true);
+
+          const readResult = await getFeatureToggles(client, TABLE);
+          expect(readResult.adminContentReviewEnabled).toBe(v);
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+});
+
+// ============================================================================
+// Property 3 (content-role-settings): contentRolePermissions 写入读取往返
+// Feature: content-role-settings, Property 3: contentRolePermissions 写入读取往返
+// For any valid 12-boolean ContentRolePermissions matrix, call
+// updateContentRolePermissions, then read with getFeatureToggles, the returned
+// contentRolePermissions should equal the written value.
+// **Validates: Requirements 2.5, 5.5**
+// ============================================================================
+
+import { updateContentRolePermissions } from './feature-toggles';
+
+describe('Property 3 (content-role-settings): contentRolePermissions 写入读取往返', () => {
+  it('contentRolePermissions round-trips correctly for any valid 12-boolean matrix', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        contentRolePermissionsArb,
+        async (crp) => {
+          const client = createInMemoryClientWithUpdate();
+
+          const writeResult = await updateContentRolePermissions(
+            { contentRolePermissions: crp, updatedBy: 'test-user' },
+            client,
+            TABLE,
+          );
+          expect(writeResult.success).toBe(true);
+
+          const readResult = await getFeatureToggles(client, TABLE);
+
+          const roles = ['Speaker', 'UserGroupLeader', 'Volunteer'] as const;
+          const perms = ['canAccess', 'canUpload', 'canDownload', 'canReserve'] as const;
+          for (const role of roles) {
+            for (const perm of perms) {
+              expect(readResult.contentRolePermissions[role][perm]).toBe(crp[role][perm]);
+            }
+          }
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+});
+
+// ============================================================================
+// Property 4 (content-role-settings): contentRolePermissions 更新幂等性
+// Feature: content-role-settings, Property 4: contentRolePermissions 更新幂等性
+// For any valid ContentRolePermissions, calling updateContentRolePermissions twice
+// with the same input produces the same read result.
+// **Validates: Requirements 5.6**
+// ============================================================================
+
+describe('Property 4 (content-role-settings): contentRolePermissions 更新幂等性', () => {
+  it('two identical updateContentRolePermissions calls produce the same read result', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        contentRolePermissionsArb,
+        async (crp) => {
+          const client = createInMemoryClientWithUpdate();
+
+          // First write
+          const result1 = await updateContentRolePermissions(
+            { contentRolePermissions: crp, updatedBy: 'test-user' },
+            client,
+            TABLE,
+          );
+          expect(result1.success).toBe(true);
+
+          const read1 = await getFeatureToggles(client, TABLE);
+
+          // Second write with same input
+          const result2 = await updateContentRolePermissions(
+            { contentRolePermissions: crp, updatedBy: 'test-user' },
+            client,
+            TABLE,
+          );
+          expect(result2.success).toBe(true);
+
+          const read2 = await getFeatureToggles(client, TABLE);
+
+          // Both reads must be identical
+          const roles = ['Speaker', 'UserGroupLeader', 'Volunteer'] as const;
+          const perms = ['canAccess', 'canUpload', 'canDownload', 'canReserve'] as const;
+          for (const role of roles) {
+            for (const perm of perms) {
+              expect(read2.contentRolePermissions[role][perm]).toBe(
+                read1.contentRolePermissions[role][perm],
+              );
+            }
+          }
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
 });

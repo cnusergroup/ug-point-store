@@ -412,6 +412,12 @@
     font-weight: 500;
     margin-bottom: var(--space-2);
   }
+
+  &__divider {
+    height: 1px;
+    background: var(--card-border);
+    margin: var(--space-2) 0;
+  }
 }
 
 .role-edit-item {
@@ -435,6 +441,23 @@
     background: rgba(124, 109, 240, 0.06);
   }
 
+  &--locked {
+    cursor: not-allowed;
+    opacity: 0.6;
+    border-color: var(--card-border);
+    background: var(--bg-elevated);
+
+    &:hover {
+      border-color: var(--card-border);
+      background: var(--bg-elevated);
+    }
+  }
+
+  &--locked#{&}--active {
+    border-color: rgba(124, 109, 240, 0.2);
+    background: rgba(124, 109, 240, 0.04);
+  }
+
   &__check {
     width: 20px;
     height: 20px;
@@ -453,6 +476,13 @@
       background: var(--accent-primary);
       color: #fff;
     }
+
+    &--locked {
+      border-color: var(--text-tertiary);
+      background: var(--bg-hover);
+      color: var(--text-tertiary);
+      font-size: var(--text-overline);
+    }
   }
 
   &__name {
@@ -464,5 +494,17 @@
     .role-edit-item--active & {
       color: var(--text-primary);
     }
+
+    .role-edit-item--locked & {
+      color: var(--text-tertiary);
+    }
+  }
+
+  &__lock-hint {
+    margin-left: auto;
+    font-family: var(--font-body);
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    font-weight: 400;
   }
 }

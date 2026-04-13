@@ -38,7 +38,7 @@ function saveUser(user: UserState | null): void {
 }
 
 /** 用户角色（与后端 UserRole 保持一致） */
-export type UserRole = 'UserGroupLeader' | 'Speaker' | 'Volunteer' | 'Admin' | 'SuperAdmin';
+export type UserRole = 'UserGroupLeader' | 'Speaker' | 'Volunteer' | 'Admin' | 'SuperAdmin' | 'OrderAdmin';
 
 /** [DISABLED] CommunityBuilder — 过滤旧数据中残留的已禁用角色 */
 const DISABLED_ROLES = ['CommunityBuilder'];
@@ -199,6 +199,10 @@ export const useAppStore = create<AppState>((set) => ({
     const user = { ...res.user, roles: filterDisabledRoles(res.user.roles) };
     saveUser(user);
     set({ isAuthenticated: true, user });
+    // OrderAdmin 重定向到订单管理页
+    if (user.roles.includes('OrderAdmin')) {
+      Taro.redirectTo({ url: '/pages/admin/orders' });
+    }
   },
 
   register: async (email, password, nickname, inviteToken) => {
@@ -212,6 +216,10 @@ export const useAppStore = create<AppState>((set) => ({
     const user = { ...res.user, roles: filterDisabledRoles(res.user.roles) };
     saveUser(user);
     set({ isAuthenticated: true, user });
+    // OrderAdmin 重定向到订单管理页
+    if (user.roles.includes('OrderAdmin')) {
+      Taro.redirectTo({ url: '/pages/admin/orders' });
+    }
   },
 
   wechatLogin: async () => {

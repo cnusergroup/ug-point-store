@@ -1,4 +1,5 @@
-import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { validateRoleExclusivity } from '@points-mall/shared';
 import type { UserRole } from '@points-mall/shared';
 
 /** Valid roles that can be assigned via API (includes Admin, excludes SuperAdmin) */
@@ -9,6 +10,7 @@ const VALID_ROLES: UserRole[] = [
   'Speaker',
   'Volunteer',
   'Admin',
+  'OrderAdmin',
 ];
 
 export interface RoleOperationResult {
@@ -35,6 +37,9 @@ export function validateRoleAssignment(callerRoles: string[], targetRoles: strin
   if (targetRoles.includes('Admin') && !callerRoles.includes('SuperAdmin')) {
     return { success: false, error: { code: 'ADMIN_ROLE_REQUIRES_SUPERADMIN', message: '仅 SuperAdmin 可分配管理角色' } };
   }
+  if (targetRoles.includes('OrderAdmin') && !callerRoles.includes('SuperAdmin')) {
+    return { success: false, error: { code: 'ORDER_ADMIN_REQUIRES_SUPERADMIN', message: '仅 SuperAdmin 可分配 OrderAdmin 角色' } };
+  }
   return { success: true };
 }
 
@@ -53,17 +58,59 @@ export async function assignRoles(
     return { success: false, error: { code: 'INVALID_ROLES', message: '角色列表不能为空' } };
   }
 
-  // Permission check
-  const permCheck = validateRoleAssignment(callerRoles, roles);
+  // Filter out SuperAdmin from ALL submissions — SuperAdmin role is never assigned/removed
+  // via regular role editing (it uses a dedicated transfer flow instead).
+  // For non-SuperAdmin callers, also filter out Admin role.
+  const ADMIN_LEVEL_ROLES = ['Admin', 'SuperAdmin'];
+  const callerIsSuperAdmin = callerRoles.includes('SuperAdmin');
+  const submittedRegularRoles = callerIsSuperAdmin
+    ? roles.filter((r) => r !== 'SuperAdmin')  // SuperAdmin caller: only strip SuperAdmin, keep Admin
+    : roles.filter((r) => !ADMIN_LEVEL_ROLES.includes(r));  // Non-SuperAdmin: strip both
+
+  // Permission check: only validate the roles the caller is actually trying to assign
+  // For non-SuperAdmin callers, we strip admin roles from their submission and merge
+  // existing admin roles back later, so we only validate the regular roles here
+  const permCheck = validateRoleAssignment(callerRoles, submittedRegularRoles);
   if (!permCheck.success) {
     return permCheck;
   }
 
-  if (!validateRoles(roles)) {
+  if (!validateRoles(callerIsSuperAdmin ? roles : submittedRegularRoles)) {
     return {
       success: false,
       error: { code: 'INVALID_ROLES', message: `无效的角色，有效角色为: ${VALID_ROLES.join(', ')}` },
     };
+  }
+
+  // Read-before-write: fetch target user's current roles to preserve SuperAdmin role
+  // SuperAdmin callers: preserve target's SuperAdmin (if any), write submitted roles as-is otherwise
+  // Non-SuperAdmin callers: preserve all admin-level roles from target
+  let finalRoles: string[] = submittedRegularRoles;
+
+  const getResult = await dynamoClient.send(
+    new GetCommand({
+      TableName: tableName,
+      Key: { userId },
+      ProjectionExpression: '#roles',
+      ExpressionAttributeNames: { '#roles': 'roles' },
+    }),
+  );
+  const currentRoles: string[] = (getResult.Item?.roles as string[]) ?? [];
+
+  if (callerIsSuperAdmin) {
+    // SuperAdmin caller: preserve target's SuperAdmin role (if any), everything else is caller-controlled
+    const existingSuperAdmin = currentRoles.filter((r) => r === 'SuperAdmin');
+    finalRoles = [...new Set([...submittedRegularRoles, ...existingSuperAdmin])];
+  } else {
+    // Non-SuperAdmin caller: preserve all admin-level roles from target
+    const existingAdminRoles = currentRoles.filter((r) => ADMIN_LEVEL_ROLES.includes(r));
+    finalRoles = [...new Set([...submittedRegularRoles, ...existingAdminRoles])];
+  }
+
+  // Exclusive role check: OrderAdmin cannot coexist with other roles
+  const exclusivityCheck = validateRoleExclusivity(finalRoles as UserRole[]);
+  if (!exclusivityCheck.valid) {
+    return { success: false, error: { code: 'EXCLUSIVE_ROLE_CONFLICT', message: exclusivityCheck.message! } };
   }
 
   const now = new Date().toISOString();
@@ -76,7 +123,7 @@ export async function assignRoles(
       UpdateExpression: 'SET #roles = :roles, updatedAt = :now, rolesVersion = :rv',
       ExpressionAttributeNames: { '#roles': 'roles' },
       ExpressionAttributeValues: {
-        ':roles': roles,
+        ':roles': finalRoles,
         ':now': now,
         ':rv': rolesVersion,
       },

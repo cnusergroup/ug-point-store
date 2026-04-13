@@ -316,6 +316,33 @@ describe('setUserStatus', () => {
     );
     expect(updateCall![0].input.ExpressionAttributeValues[':status']).toBe('active');
   });
+
+  it('should return ONLY_SUPERADMIN_CAN_MANAGE_ORDER_ADMIN when non-SuperAdmin tries to disable OrderAdmin', async () => {
+    const client = createMockDynamoClientForStatus({
+      userId: 'oa1',
+      roles: ['OrderAdmin'],
+    });
+    const result = await setUserStatus('oa1', 'disabled', 'caller1', ['Admin'], client, tableName);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('ONLY_SUPERADMIN_CAN_MANAGE_ORDER_ADMIN');
+  });
+
+  it('should allow SuperAdmin to disable OrderAdmin user', async () => {
+    const client = createMockDynamoClientForStatus({
+      userId: 'oa1',
+      roles: ['OrderAdmin'],
+    });
+    const result = await setUserStatus('oa1', 'disabled', 'caller1', ['SuperAdmin'], client, tableName);
+
+    expect(result.success).toBe(true);
+
+    const updateCall = client.send.mock.calls.find(
+      (c: any) => c[0].constructor.name === 'UpdateCommand',
+    );
+    expect(updateCall).toBeDefined();
+    expect(updateCall![0].input.ExpressionAttributeValues[':status']).toBe('disabled');
+  });
 });
 
 
@@ -416,5 +443,33 @@ describe('deleteUser', () => {
     );
     expect(deleteCall).toBeDefined();
     expect(deleteCall![0].input.Key).toEqual({ userId: 'admin1' });
+  });
+
+  it('should return ONLY_SUPERADMIN_CAN_MANAGE_ORDER_ADMIN when non-SuperAdmin tries to delete OrderAdmin', async () => {
+    const client = createMockDynamoClientForDelete({
+      userId: 'oa1',
+      roles: ['OrderAdmin'],
+    });
+    const result = await deleteUser('oa1', 'caller1', ['Admin'], client, tableName);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('ONLY_SUPERADMIN_CAN_MANAGE_ORDER_ADMIN');
+  });
+
+  it('should allow SuperAdmin to delete OrderAdmin user', async () => {
+    const client = createMockDynamoClientForDelete({
+      userId: 'oa1',
+      roles: ['OrderAdmin'],
+    });
+    const result = await deleteUser('oa1', 'caller1', ['SuperAdmin'], client, tableName);
+
+    expect(result.success).toBe(true);
+    expect(result.error).toBeUndefined();
+
+    const deleteCall = client.send.mock.calls.find(
+      (c: any) => c[0].constructor.name === 'DeleteCommand',
+    );
+    expect(deleteCall).toBeDefined();
+    expect(deleteCall![0].input.Key).toEqual({ userId: 'oa1' });
   });
 });

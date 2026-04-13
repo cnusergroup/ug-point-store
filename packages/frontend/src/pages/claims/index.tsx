@@ -314,7 +314,7 @@ export default function ClaimsPage() {
         )}
       </View>
 
-      {/* Feature disabled message */}
+      {/* Feature disabled — full page block, no list rendered */}
       {featureDisabled && (
         <View style={{
           display: 'flex',
@@ -353,7 +353,8 @@ export default function ClaimsPage() {
         </View>
       )}
 
-      {/* Status Filter Tabs */}
+      {/* Status Filter Tabs + List + Modals — only shown when feature is enabled */}
+      {!featureDisabled && <>
       <View className='claim-tabs'>
         {STATUS_TABS.map((tab) => (
           <View
@@ -598,6 +599,7 @@ export default function ClaimsPage() {
           </View>
         </View>
       )}
+      </>}
     </View>
   );
 }

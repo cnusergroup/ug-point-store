@@ -32,6 +32,15 @@ function createMockEvent(method: string, uri: string, querystring: string = ''):
           method,
           querystring,
           uri,
+          origin: {
+            s3: {
+              authMethod: 'none' as const,
+              customHeaders: {},
+              domainName: `${TEST_BUCKET_NAME}.s3.${TEST_BUCKET_REGION}.amazonaws.com`,
+              path: '',
+              region: TEST_BUCKET_REGION,
+            },
+          },
         },
       },
     }],
@@ -63,7 +72,7 @@ describe('Edge Signer Lambda@Edge', () => {
   });
 
   describe('GET request passthrough', () => {
-    it('should pass through GET request without modifying headers', async () => {
+    it('should pass through GET request with SigV4 signing', async () => {
       const event = createMockEvent('GET', '/products/abc/image.jpg');
       const result = await handler(event);
 
@@ -71,10 +80,13 @@ describe('Edge Signer Lambda@Edge', () => {
       if (isCloudFrontRequest(result)) {
         expect(result.method).toBe('GET');
         expect(result.uri).toBe('/products/abc/image.jpg');
-        // Should not have Authorization header added
-        expect(result.headers['authorization']).toBeUndefined();
-        // Host should remain unchanged
-        expect(result.headers['host'][0].value).toBe('store.awscommunity.cn');
+        // SigV4 signing is applied to all requests (GET included)
+        expect(result.headers['authorization']).toBeDefined();
+        expect(result.headers['authorization'][0].value).toMatch(/^AWS4-HMAC-SHA256 /);
+        // Host should be rewritten to S3 endpoint
+        expect(result.headers['host'][0].value).toBe(
+          `${TEST_BUCKET_NAME}.s3.${TEST_BUCKET_REGION}.amazonaws.com`,
+        );
       }
     });
   });

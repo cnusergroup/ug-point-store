@@ -11,6 +11,8 @@ import './categories.scss';
 export default function AdminCategoriesPage() {
   const { t } = useTranslation();
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
+  const userRoles = useAppStore((s) => s.user?.roles || []);
+  const isSuperAdmin = userRoles.includes('SuperAdmin');
 
   const [categories, setCategories] = useState<ContentCategory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,8 +47,26 @@ export default function AdminCategoriesPage() {
       Taro.redirectTo({ url: '/pages/login/index' });
       return;
     }
-    fetchCategories();
-  }, [isAuthenticated, fetchCategories]);
+    if (!isSuperAdmin) {
+      // Check if Admin has categories permission
+      request<{ adminCategoriesEnabled: boolean }>({
+        url: '/api/settings/feature-toggles',
+        skipAuth: true,
+      })
+        .then((res) => {
+          if (!res.adminCategoriesEnabled) {
+            Taro.redirectTo({ url: '/pages/admin/index' });
+          } else {
+            fetchCategories();
+          }
+        })
+        .catch(() => {
+          fetchCategories();
+        });
+    } else {
+      fetchCategories();
+    }
+  }, [isAuthenticated, isSuperAdmin, fetchCategories]);
 
   // Open create modal
   const openCreate = () => {

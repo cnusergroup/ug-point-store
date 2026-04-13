@@ -8,6 +8,39 @@ import { useTranslation } from '../../i18n';
 import type { ContentItem, ContentComment } from '@points-mall/shared';
 import './detail.scss';
 
+interface RolePermissions {
+  canAccess: boolean;
+  canUpload: boolean;
+  canDownload: boolean;
+  canReserve: boolean;
+}
+
+interface ContentRolePermissions {
+  Speaker: RolePermissions;
+  UserGroupLeader: RolePermissions;
+  Volunteer: RolePermissions;
+}
+
+interface FeatureTogglesResponse {
+  contentRolePermissions?: ContentRolePermissions;
+}
+
+const CONTENT_ROLES = ['Speaker', 'UserGroupLeader', 'Volunteer'] as const;
+type ContentRole = typeof CONTENT_ROLES[number];
+
+function computePermission(
+  userRoles: string[],
+  permission: keyof RolePermissions,
+  crp: ContentRolePermissions,
+): boolean {
+  if (userRoles.includes('SuperAdmin')) return true;
+  const contentRoles = userRoles.filter((r): r is ContentRole =>
+    (CONTENT_ROLES as readonly string[]).includes(r),
+  );
+  if (contentRoles.length === 0) return false;
+  return contentRoles.some((role) => crp[role][permission]);
+}
+
 /** Role display config for badges */
 const ROLE_CONFIG: Record<string, { label: string; className: string }> = {
   UserGroupLeader: { label: 'Leader', className: 'role-badge--leader' },
@@ -98,6 +131,10 @@ export default function ContentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Permission state
+  const [canDownload, setCanDownload] = useState(true); // default true (conservative)
+  const [canReserve, setCanReserve] = useState(true); // default true (conservative)
+
   // Comments state
   const [comments, setComments] = useState<ContentComment[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
@@ -154,6 +191,29 @@ export default function ContentDetailPage() {
     }
   }, [contentId]);
 
+  const fetchPermissions = useCallback(async () => {
+    if (!user) return;
+    try {
+      const res = await request<FeatureTogglesResponse>({
+        url: '/api/settings/feature-toggles',
+        skipAuth: true,
+      });
+      const crp = res.contentRolePermissions;
+      if (!crp) {
+        setCanDownload(true);
+        setCanReserve(true);
+        return;
+      }
+      const roles = user.roles || [];
+      setCanDownload(computePermission(roles, 'canDownload', crp));
+      setCanReserve(computePermission(roles, 'canReserve', crp));
+    } catch {
+      // On fetch failure, degrade conservatively: hide both buttons
+      setCanDownload(false);
+      setCanReserve(false);
+    }
+  }, [user]);
+
   useEffect(() => {
     if (!isAuthenticated) {
       Taro.redirectTo({ url: '/pages/login/index' });
@@ -161,7 +221,8 @@ export default function ContentDetailPage() {
     }
     fetchDetail();
     fetchComments(true);
-  }, [isAuthenticated, fetchDetail, fetchComments]);
+    fetchPermissions();
+  }, [isAuthenticated, fetchDetail, fetchComments, fetchPermissions]);
 
   const isOwner = !!user && !!item && user.userId === item.uploaderId;
 
@@ -444,16 +505,17 @@ export default function ContentDetailPage() {
         {/* Actions: Reserve/Download + Like */}
         <View className='detail-actions'>
           <View className='detail-actions__reserve-btn'>
-            {hasReserved ? (
-              <View className='btn-primary' onClick={handleDownload}>
-                <Text>{t('contentHub.detail.downloadButton')}</Text>
-              </View>
-            ) : (
+            {canReserve && !hasReserved && (
               <View
                 className={`btn-primary ${reserving ? 'btn-primary--disabled' : ''}`}
                 onClick={handleReserve}
               >
                 <Text>{reserving ? t('contentHub.detail.reserving') : t('contentHub.detail.reserveButton')}</Text>
+              </View>
+            )}
+            {canDownload && hasReserved && (
+              <View className='btn-primary' onClick={handleDownload}>
+                <Text>{t('contentHub.detail.downloadButton')}</Text>
               </View>
             )}
           </View>

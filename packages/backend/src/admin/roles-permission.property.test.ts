@@ -9,7 +9,7 @@ import type { UserRole } from '@points-mall/shared';
 // 该用户对商品的兑换权限判定结果应与其当前角色集合是否包含商品允许角色一致。
 // Validates: Requirements 3.4, 5.3
 
-const ALL_ROLES: UserRole[] = ['UserGroupLeader', 'CommunityBuilder', 'Speaker', 'Volunteer'];
+const ALL_ROLES: UserRole[] = ['UserGroupLeader', 'Speaker', 'Volunteer'];
 
 const userIdArb = fc.string({
   minLength: 1,

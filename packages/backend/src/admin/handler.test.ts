@@ -61,8 +61,13 @@ vi.mock('../content/admin', () => ({
   updateCategory: vi.fn(),
   deleteCategory: vi.fn(),
 }));
+vi.mock('../content/content-permission', () => ({
+  checkReviewPermission: vi.fn(),
+}));
 vi.mock('../settings/feature-toggles', () => ({
   updateFeatureToggles: vi.fn(),
+  updateContentRolePermissions: vi.fn(),
+  getFeatureToggles: vi.fn(),
 }));
 vi.mock('../content/admin-tags', () => ({
   listAllTags: vi.fn(),
@@ -82,6 +87,10 @@ vi.mock('../travel/settings', () => ({
 vi.mock('../travel/review', () => ({
   reviewTravelApplication: vi.fn(),
   listAllTravelApplications: vi.fn(),
+}));
+vi.mock('../settings/invite-settings', () => ({
+  getInviteSettings: vi.fn(),
+  updateInviteSettings: vi.fn(),
 }));
 
 // Mock auth middleware - inject user with admin role by default
@@ -108,11 +117,13 @@ import { listUsers, setUserStatus, deleteUser } from './users';
 import { batchGenerateInvites } from './invites';
 import { reviewClaim, listAllClaims } from '../claims/review';
 import { reviewContent, listAllContent, deleteContent, createCategory, updateCategory, deleteCategory } from '../content/admin';
+import { checkReviewPermission } from '../content/content-permission';
 import { listAllTags, mergeTags, deleteTag } from '../content/admin-tags';
-import { updateFeatureToggles } from '../settings/feature-toggles';
+import { updateFeatureToggles, updateContentRolePermissions, getFeatureToggles } from '../settings/feature-toggles';
 import { executeBatchDistribution, validateBatchDistributionInput, listDistributionHistory, getDistributionDetail } from './batch-points';
 import { updateTravelSettings, validateTravelSettingsInput } from '../travel/settings';
 import { reviewTravelApplication, listAllTravelApplications } from '../travel/review';
+import { getInviteSettings } from '../settings/invite-settings';
 
 function makeEvent(overrides: Partial<APIGatewayProxyEvent> = {}): APIGatewayProxyEvent {
   return {
@@ -136,6 +147,28 @@ describe('Admin Lambda Handler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUserRoles = ['Admin'];
+    // Default getFeatureToggles mock — all toggles enabled so existing tests pass
+    vi.mocked(getFeatureToggles).mockResolvedValue({
+      codeRedemptionEnabled: true,
+      pointsClaimEnabled: true,
+      adminProductsEnabled: true,
+      adminOrdersEnabled: true,
+      adminContentReviewEnabled: false,
+      adminCategoriesEnabled: true,
+      contentRolePermissions: {
+        Speaker:         { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+        UserGroupLeader: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+        Volunteer:       { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+      },
+      updatedAt: '2024-01-01T00:00:00.000Z',
+      updatedBy: 'system',
+    } as any);
+    // Default checkReviewPermission: Admin is denied (adminContentReviewEnabled: false), SuperAdmin is allowed
+    vi.mocked(checkReviewPermission).mockImplementation((roles: string[]) =>
+      roles.includes('SuperAdmin'),
+    );
+    // Default getInviteSettings mock
+    vi.mocked(getInviteSettings).mockResolvedValue({ inviteExpiryDays: 1 });
   });
 
   describe('General routing', () => {
@@ -981,6 +1014,7 @@ describe('Admin Lambda Handler', () => {
         expect.anything(),
         '',
         '',
+        86400000,
       );
     });
 
@@ -1062,8 +1096,9 @@ describe('Admin Lambda Handler', () => {
   });
 
   describe('PATCH /api/admin/content/:id/review', () => {
-    it('requires SuperAdmin role', async () => {
+    it('Admin with adminContentReviewEnabled: false → 403 PERMISSION_DENIED', async () => {
       mockUserRoles = ['Admin'];
+      vi.mocked(checkReviewPermission).mockReturnValue(false);
       const event = makeEvent({
         httpMethod: 'PATCH',
         path: '/api/admin/content/content-1/review',
@@ -1071,11 +1106,33 @@ describe('Admin Lambda Handler', () => {
       });
       const result = await handler(event);
       expect(result.statusCode).toBe(403);
-      expect(JSON.parse(result.body).code).toBe('CONTENT_REVIEW_FORBIDDEN');
+      expect(JSON.parse(result.body).code).toBe('PERMISSION_DENIED');
     });
 
-    it('routes to reviewContent when user is SuperAdmin', async () => {
+    it('Admin with adminContentReviewEnabled: true → allowed (200)', async () => {
+      mockUserRoles = ['Admin'];
+      vi.mocked(checkReviewPermission).mockReturnValue(true);
+      vi.mocked(reviewContent).mockResolvedValue({
+        success: true,
+        item: { contentId: 'content-1', status: 'approved' } as any,
+      });
+      const event = makeEvent({
+        httpMethod: 'PATCH',
+        path: '/api/admin/content/content-1/review',
+        body: JSON.stringify({ action: 'approve' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(reviewContent).toHaveBeenCalledWith(
+        expect.objectContaining({ contentId: 'content-1', reviewerId: 'admin-user-id', action: 'approve' }),
+        expect.anything(),
+        '',
+      );
+    });
+
+    it('SuperAdmin with adminContentReviewEnabled: false → still allowed (200)', async () => {
       mockUserRoles = ['SuperAdmin'];
+      vi.mocked(checkReviewPermission).mockReturnValue(true);
       vi.mocked(reviewContent).mockResolvedValue({
         success: true,
         item: { contentId: 'content-1', status: 'approved' } as any,
@@ -1096,6 +1153,7 @@ describe('Admin Lambda Handler', () => {
 
     it('returns 400 when action field is missing', async () => {
       mockUserRoles = ['SuperAdmin'];
+      vi.mocked(checkReviewPermission).mockReturnValue(true);
       const event = makeEvent({
         httpMethod: 'PATCH',
         path: '/api/admin/content/content-1/review',
@@ -1337,6 +1395,15 @@ describe('Admin Lambda Handler', () => {
         settings: {
           codeRedemptionEnabled: true,
           pointsClaimEnabled: false,
+          adminProductsEnabled: true,
+          adminOrdersEnabled: true,
+          adminContentReviewEnabled: false,
+          adminCategoriesEnabled: false,
+          contentRolePermissions: {
+            Speaker:         { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+            UserGroupLeader: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+            Volunteer:       { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+          },
           updatedAt: '2024-01-01T00:00:00.000Z',
           updatedBy: 'admin-user-id',
         },
@@ -1355,6 +1422,10 @@ describe('Admin Lambda Handler', () => {
         {
           codeRedemptionEnabled: true,
           pointsClaimEnabled: false,
+          adminProductsEnabled: true,
+          adminOrdersEnabled: true,
+          adminContentReviewEnabled: false,
+          adminCategoriesEnabled: false,
           updatedBy: 'admin-user-id',
         },
         expect.anything(),
@@ -1952,6 +2023,331 @@ describe('Admin Lambda Handler', () => {
       const result = await handler(event);
       expect(result.statusCode).toBe(400);
       expect(JSON.parse(result.body).code).toBe('APPLICATION_ALREADY_REVIEWED');
+    });
+  });
+
+  // ── Content Role Permissions Routes ──────────────────────────────
+
+  describe('PUT /api/admin/settings/content-role-permissions', () => {
+    const validPermissions = {
+      contentRolePermissions: {
+        Speaker:         { canAccess: true,  canUpload: true,  canDownload: true,  canReserve: true  },
+        UserGroupLeader: { canAccess: true,  canUpload: false, canDownload: true,  canReserve: false },
+        Volunteer:       { canAccess: false, canUpload: false, canDownload: false, canReserve: false },
+      },
+    };
+
+    it('non-SuperAdmin gets 403 FORBIDDEN', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/settings/content-role-permissions',
+        body: JSON.stringify(validPermissions),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(updateContentRolePermissions).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 INVALID_REQUEST when a permission field is not boolean', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      const invalidPermissions = {
+        contentRolePermissions: {
+          Speaker:         { canAccess: 'yes', canUpload: true,  canDownload: true,  canReserve: true  },
+          UserGroupLeader: { canAccess: true,  canUpload: true,  canDownload: true,  canReserve: true  },
+          Volunteer:       { canAccess: true,  canUpload: true,  canDownload: true,  canReserve: true  },
+        },
+      };
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/settings/content-role-permissions',
+        body: JSON.stringify(invalidPermissions),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+      expect(updateContentRolePermissions).not.toHaveBeenCalled();
+    });
+
+    it('SuperAdmin with valid permissions gets 200 with updated matrix', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(updateContentRolePermissions).mockResolvedValue({
+        success: true,
+        contentRolePermissions: validPermissions.contentRolePermissions as any,
+      });
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/settings/content-role-permissions',
+        body: JSON.stringify(validPermissions),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.contentRolePermissions).toEqual(validPermissions.contentRolePermissions);
+      expect(updateContentRolePermissions).toHaveBeenCalledWith(
+        {
+          contentRolePermissions: validPermissions.contentRolePermissions,
+          updatedBy: 'admin-user-id',
+        },
+        expect.anything(),
+        '',
+      );
+    });
+  });
+
+  // ── Feature Toggles — new fields ──────────────────────────────
+
+  describe('PUT /api/admin/settings/feature-toggles — new fields', () => {
+    it('persists adminContentReviewEnabled when provided as true', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(updateFeatureToggles).mockResolvedValue({
+        success: true,
+        settings: {
+          codeRedemptionEnabled: true,
+          pointsClaimEnabled: true,
+          adminProductsEnabled: true,
+          adminOrdersEnabled: true,
+          adminContentReviewEnabled: true,
+          adminCategoriesEnabled: false,
+          contentRolePermissions: {
+            Speaker:         { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+            UserGroupLeader: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+            Volunteer:       { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+          },
+          updatedAt: '2024-01-01T00:00:00.000Z',
+          updatedBy: 'admin-user-id',
+        },
+      });
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/settings/feature-toggles',
+        body: JSON.stringify({ adminContentReviewEnabled: true }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(updateFeatureToggles).toHaveBeenCalledWith(
+        expect.objectContaining({ adminContentReviewEnabled: true }),
+        expect.anything(),
+        '',
+      );
+      expect(JSON.parse(result.body).settings.adminContentReviewEnabled).toBe(true);
+    });
+
+    it('persists adminCategoriesEnabled when provided as true', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(updateFeatureToggles).mockResolvedValue({
+        success: true,
+        settings: {
+          codeRedemptionEnabled: true,
+          pointsClaimEnabled: true,
+          adminProductsEnabled: true,
+          adminOrdersEnabled: true,
+          adminContentReviewEnabled: false,
+          adminCategoriesEnabled: true,
+          contentRolePermissions: {
+            Speaker:         { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+            UserGroupLeader: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+            Volunteer:       { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+          },
+          updatedAt: '2024-01-01T00:00:00.000Z',
+          updatedBy: 'admin-user-id',
+        },
+      });
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/settings/feature-toggles',
+        body: JSON.stringify({ adminCategoriesEnabled: true }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(updateFeatureToggles).toHaveBeenCalledWith(
+        expect.objectContaining({ adminCategoriesEnabled: true }),
+        expect.anything(),
+        '',
+      );
+      expect(JSON.parse(result.body).settings.adminCategoriesEnabled).toBe(true);
+    });
+  });
+
+  // ── Category management with adminCategoriesEnabled guard ──────────────────────────────
+
+  describe('POST /api/admin/content/categories — adminCategoriesEnabled guard', () => {
+    it('non-SuperAdmin gets 403 when adminCategoriesEnabled is false', async () => {
+      mockUserRoles = ['Admin'];
+      vi.mocked(getFeatureToggles).mockResolvedValue({
+        codeRedemptionEnabled: true,
+        pointsClaimEnabled: true,
+        adminProductsEnabled: true,
+        adminOrdersEnabled: true,
+        adminContentReviewEnabled: false,
+        adminCategoriesEnabled: false,
+        contentRolePermissions: {
+          Speaker:         { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+          UserGroupLeader: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+          Volunteer:       { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+        },
+        updatedAt: '2024-01-01T00:00:00.000Z',
+        updatedBy: 'admin-user-id',
+      } as any);
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/content/categories',
+        body: JSON.stringify({ name: 'Tech' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(createCategory).not.toHaveBeenCalled();
+    });
+
+    it('non-SuperAdmin is allowed when adminCategoriesEnabled is true', async () => {
+      mockUserRoles = ['Admin'];
+      vi.mocked(getFeatureToggles).mockResolvedValue({
+        codeRedemptionEnabled: true,
+        pointsClaimEnabled: true,
+        adminProductsEnabled: true,
+        adminOrdersEnabled: true,
+        adminContentReviewEnabled: false,
+        adminCategoriesEnabled: true,
+        contentRolePermissions: {
+          Speaker:         { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+          UserGroupLeader: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+          Volunteer:       { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+        },
+        updatedAt: '2024-01-01T00:00:00.000Z',
+        updatedBy: 'admin-user-id',
+      } as any);
+      vi.mocked(createCategory).mockResolvedValue({
+        success: true,
+        category: { categoryId: 'cat-1', name: 'Tech', createdAt: '2024-01-01' },
+      });
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/content/categories',
+        body: JSON.stringify({ name: 'Tech' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(201);
+      expect(createCategory).toHaveBeenCalledWith('Tech', expect.anything(), '');
+    });
+
+    it('SuperAdmin is always allowed even when adminCategoriesEnabled is false', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      // getFeatureToggles should NOT be called for SuperAdmin (guard is skipped)
+      vi.mocked(createCategory).mockResolvedValue({
+        success: true,
+        category: { categoryId: 'cat-2', name: 'Science', createdAt: '2024-01-01' },
+      });
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/content/categories',
+        body: JSON.stringify({ name: 'Science' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(201);
+      expect(createCategory).toHaveBeenCalledWith('Science', expect.anything(), '');
+      expect(getFeatureToggles).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('OrderAdmin rejection (all admin handler routes return 403)', () => {
+    beforeEach(() => {
+      mockUserRoles = ['OrderAdmin'];
+    });
+
+    it('rejects GET /api/admin/users with 403', async () => {
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/users' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      const body = JSON.parse(result.body);
+      expect(body.code).toBe('FORBIDDEN');
+      expect(body.message).toBe('OrderAdmin 仅可访问订单管理功能');
+    });
+
+    it('rejects POST /api/admin/invites/batch with 403', async () => {
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/invites/batch',
+        body: JSON.stringify({ count: 1, roles: ['Speaker'] }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      const body = JSON.parse(result.body);
+      expect(body.code).toBe('FORBIDDEN');
+      expect(body.message).toBe('OrderAdmin 仅可访问订单管理功能');
+    });
+
+    it('rejects PUT /api/admin/users/:id/roles with 403', async () => {
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/users/user-123/roles',
+        body: JSON.stringify({ roles: ['Speaker'] }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      const body = JSON.parse(result.body);
+      expect(body.code).toBe('FORBIDDEN');
+      expect(body.message).toBe('OrderAdmin 仅可访问订单管理功能');
+    });
+
+    it('rejects GET /api/admin/codes with 403', async () => {
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/codes' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      const body = JSON.parse(result.body);
+      expect(body.code).toBe('FORBIDDEN');
+      expect(body.message).toBe('OrderAdmin 仅可访问订单管理功能');
+    });
+
+    it('rejects POST /api/admin/products with 403', async () => {
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/products',
+        body: JSON.stringify({ type: 'points', name: 'Test' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      const body = JSON.parse(result.body);
+      expect(body.code).toBe('FORBIDDEN');
+      expect(body.message).toBe('OrderAdmin 仅可访问订单管理功能');
+    });
+
+    it('rejects GET /api/admin/claims with 403', async () => {
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/claims' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      const body = JSON.parse(result.body);
+      expect(body.code).toBe('FORBIDDEN');
+      expect(body.message).toBe('OrderAdmin 仅可访问订单管理功能');
+    });
+
+    it('rejects GET /api/admin/content with 403', async () => {
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/content' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      const body = JSON.parse(result.body);
+      expect(body.code).toBe('FORBIDDEN');
+      expect(body.message).toBe('OrderAdmin 仅可访问订单管理功能');
+    });
+
+    it('rejects PUT /api/admin/settings/feature-toggles with 403', async () => {
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/settings/feature-toggles',
+        body: JSON.stringify({ adminProductsEnabled: true }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      const body = JSON.parse(result.body);
+      expect(body.code).toBe('FORBIDDEN');
+      expect(body.message).toBe('OrderAdmin 仅可访问订单管理功能');
+    });
+
+    it('still allows OPTIONS preflight (no auth check)', async () => {
+      const event = makeEvent({ httpMethod: 'OPTIONS', path: '/api/admin/users' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
     });
   });
 });

@@ -6,7 +6,7 @@
 export type UserStatus = 'active' | 'disabled';
 
 /** 用户角色类型（扩展后） */
-export type UserRole = 'UserGroupLeader' | 'Speaker' | 'Volunteer' | 'Admin' | 'SuperAdmin';
+export type UserRole = 'UserGroupLeader' | 'Speaker' | 'Volunteer' | 'Admin' | 'SuperAdmin' | 'OrderAdmin';
 
 /** 管理角色 */
 export const ADMIN_ROLES: UserRole[] = ['Admin', 'SuperAdmin'];
@@ -14,8 +14,11 @@ export const ADMIN_ROLES: UserRole[] = ['Admin', 'SuperAdmin'];
 /** 普通角色 */
 export const REGULAR_ROLES: UserRole[] = ['UserGroupLeader', 'Speaker', 'Volunteer'];
 
+/** 独占角色（与其他所有角色互斥） */
+export const EXCLUSIVE_ROLES: UserRole[] = ['OrderAdmin'];
+
 /** 所有角色 */
-export const ALL_ROLES: UserRole[] = [...REGULAR_ROLES, ...ADMIN_ROLES];
+export const ALL_ROLES: UserRole[] = [...REGULAR_ROLES, ...ADMIN_ROLES, ...EXCLUSIVE_ROLES];
 
 /** 判断是否为管理角色 */
 export function isAdminRole(role: UserRole): boolean {
@@ -30,6 +33,25 @@ export function hasAdminAccess(roles: UserRole[]): boolean {
 /** 判断用户是否为 SuperAdmin */
 export function isSuperAdmin(roles: UserRole[]): boolean {
   return roles.includes('SuperAdmin');
+}
+
+/** 判断用户是否为 OrderAdmin */
+export function isOrderAdmin(roles: UserRole[]): boolean {
+  return roles.includes('OrderAdmin');
+}
+
+/** 判断角色是否为独占角色 */
+export function isExclusiveRole(role: UserRole): boolean {
+  return EXCLUSIVE_ROLES.includes(role);
+}
+
+/** 校验角色组合是否合法（独占角色不能与其他角色共存） */
+export function validateRoleExclusivity(roles: UserRole[]): { valid: boolean; message?: string } {
+  const hasExclusive = roles.some(r => EXCLUSIVE_ROLES.includes(r));
+  if (hasExclusive && roles.length > 1) {
+    return { valid: false, message: '独占角色不能与其他角色共存' };
+  }
+  return { valid: true };
 }
 
 /** 用户信息 */

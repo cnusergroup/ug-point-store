@@ -177,6 +177,20 @@ export const ErrorCodes = {
   TAG_MERGE_SELF_ERROR: 'TAG_MERGE_SELF_ERROR',
   /** 标签不存在 (404) - 需求 7.8 */
   TAG_NOT_FOUND: 'TAG_NOT_FOUND',
+  /** 转让目标用户不是管理员 (400) - 需求 3.5 */
+  TRANSFER_TARGET_NOT_ADMIN: 'TRANSFER_TARGET_NOT_ADMIN',
+  /** 转让目标用户不存在 (404) - 需求 3.5 */
+  TRANSFER_TARGET_NOT_FOUND: 'TRANSFER_TARGET_NOT_FOUND',
+  /** 转让目标不能是自身 (400) - 需求 2.5 */
+  TRANSFER_TARGET_IS_SELF: 'TRANSFER_TARGET_IS_SELF',
+  /** 邀请有效期值无效（必须为 1、3 或 7）(400) - 需求 5.5 */
+  INVALID_EXPIRY_VALUE: 'INVALID_EXPIRY_VALUE',
+  /** 独占角色不能与其他角色共存 (400) - 需求 10.3 */
+  EXCLUSIVE_ROLE_CONFLICT: 'EXCLUSIVE_ROLE_CONFLICT',
+  /** 仅 SuperAdmin 可分配 OrderAdmin 角色 (403) - 需求 10.3 */
+  ORDER_ADMIN_REQUIRES_SUPERADMIN: 'ORDER_ADMIN_REQUIRES_SUPERADMIN',
+  /** 仅 SuperAdmin 可管理 OrderAdmin 用户 (403) - 需求 9.2 */
+  ONLY_SUPERADMIN_CAN_MANAGE_ORDER_ADMIN: 'ONLY_SUPERADMIN_CAN_MANAGE_ORDER_ADMIN',
 } as const;
 
 /** 错误码类型 */
@@ -271,6 +285,13 @@ export const ErrorHttpStatus: Record<ErrorCode, number> = {
   [ErrorCodes.DUPLICATE_TAG_NAME]: 400,
   [ErrorCodes.TAG_MERGE_SELF_ERROR]: 400,
   [ErrorCodes.TAG_NOT_FOUND]: 404,
+  [ErrorCodes.TRANSFER_TARGET_NOT_ADMIN]: 400,
+  [ErrorCodes.TRANSFER_TARGET_NOT_FOUND]: 404,
+  [ErrorCodes.TRANSFER_TARGET_IS_SELF]: 400,
+  [ErrorCodes.INVALID_EXPIRY_VALUE]: 400,
+  [ErrorCodes.EXCLUSIVE_ROLE_CONFLICT]: 400,
+  [ErrorCodes.ORDER_ADMIN_REQUIRES_SUPERADMIN]: 403,
+  [ErrorCodes.ONLY_SUPERADMIN_CAN_MANAGE_ORDER_ADMIN]: 403,
 };
 
 /** 错误码对应的默认错误消息 */
@@ -362,4 +383,11 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.DUPLICATE_TAG_NAME]: '标签名重复',
   [ErrorCodes.TAG_MERGE_SELF_ERROR]: '不能将标签合并到自身',
   [ErrorCodes.TAG_NOT_FOUND]: '标签不存在',
+  [ErrorCodes.TRANSFER_TARGET_NOT_ADMIN]: '转让目标用户不是管理员',
+  [ErrorCodes.TRANSFER_TARGET_NOT_FOUND]: '转让目标用户不存在',
+  [ErrorCodes.TRANSFER_TARGET_IS_SELF]: '转让目标不能是自身',
+  [ErrorCodes.INVALID_EXPIRY_VALUE]: '邀请有效期值无效（必须为 1、3 或 7）',
+  [ErrorCodes.EXCLUSIVE_ROLE_CONFLICT]: '独占角色不能与其他角色共存',
+  [ErrorCodes.ORDER_ADMIN_REQUIRES_SUPERADMIN]: '仅 SuperAdmin 可分配 OrderAdmin 角色',
+  [ErrorCodes.ONLY_SUPERADMIN_CAN_MANAGE_ORDER_ADMIN]: '仅 SuperAdmin 可管理 OrderAdmin 用户',
 };

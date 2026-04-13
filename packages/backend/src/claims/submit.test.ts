@@ -51,7 +51,7 @@ describe('submitClaim', () => {
     expect(result.error?.code).toBe(ErrorCodes.CLAIM_ROLE_NOT_ALLOWED);
   });
 
-  it.each(['Speaker', 'UserGroupLeader', 'CommunityBuilder', 'Volunteer'])(
+  it.each(['Speaker', 'UserGroupLeader', 'Volunteer'])(
     'should accept when user has role %s',
     async (role) => {
       const result = await submitClaim(

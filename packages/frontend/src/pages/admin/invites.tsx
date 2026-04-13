@@ -6,6 +6,7 @@ import { request, RequestError } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
 import { ShoppingBagIcon } from '../../components/icons';
+import { EXCLUSIVE_ROLES } from '@points-mall/shared';
 import './invites.scss';
 
 interface InviteRecord {
@@ -35,12 +36,13 @@ const ROLE_OPTIONS = [
   { value: 'Volunteer', label: 'Volunteer', className: 'role-badge--volunteer' },
 ];
 
-const ROLE_LABELS: Record<string, { label: string; className: string }> = {
+const ROLE_LABELS: Record<string, { className: string; labelKey?: string; label?: string }> = {
   UserGroupLeader: { label: 'Leader', className: 'role-badge--leader' },
   // [DISABLED] CommunityBuilder
   // CommunityBuilder: { label: 'Builder', className: 'role-badge--builder' },
   Speaker: { label: 'Speaker', className: 'role-badge--speaker' },
   Volunteer: { label: 'Volunteer', className: 'role-badge--volunteer' },
+  OrderAdmin: { labelKey: 'roles.orderAdmin', className: 'role-badge--order-admin' },
 };
 
 /** 从邀请记录安全获取 roles 数组（兼容旧数据） */
@@ -52,7 +54,16 @@ function getInviteRoles(record: { role?: string; roles?: string[] }): string[] {
 
 export default function AdminInvitesPage() {
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
+  const userRoles = useAppStore((s) => s.user?.roles || []);
   const { t } = useTranslation();
+
+  /** Resolve role label: uses i18n key when available, otherwise static label */
+  const getRoleLabel = (role: string): string => {
+    const config = ROLE_LABELS[role];
+    if (!config) return role;
+    if (config.labelKey) return t(config.labelKey as any);
+    return config.label || role;
+  };
 
   const [invites, setInvites] = useState<InviteRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,10 +102,25 @@ export default function AdminInvitesPage() {
     setStatusFilter(tab);
   };
 
+  const isSuperAdmin = userRoles.includes('SuperAdmin');
+  const roleOptions = [
+    ...ROLE_OPTIONS,
+    ...(isSuperAdmin ? [{ value: 'OrderAdmin', label: t('roles.orderAdmin'), className: 'role-badge--order-admin' }] : []),
+  ];
+
   const toggleRole = (role: string) => {
-    setFormRoles((prev) =>
-      prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
-    );
+    if (EXCLUSIVE_ROLES.includes(role as any)) {
+      // Selecting an exclusive role: clear all others, toggle this one
+      setFormRoles((prev) => prev.includes(role) ? [] : [role]);
+    } else {
+      // Selecting a regular role: clear any exclusive roles first
+      setFormRoles((prev) => {
+        const withoutExclusive = prev.filter(r => !EXCLUSIVE_ROLES.includes(r as any));
+        return withoutExclusive.includes(role)
+          ? withoutExclusive.filter(r => r !== role)
+          : [...withoutExclusive, role];
+      });
+    }
   };
 
   const openForm = () => {
@@ -222,7 +248,7 @@ export default function AdminInvitesPage() {
               <View className='form-field'>
                 <Text className='form-field__label'>{t('admin.invites.targetRolesLabel')}</Text>
                 <View className='invite-role-select'>
-                  {ROLE_OPTIONS.map((opt) => (
+                  {roleOptions.map((opt) => (
                     <View
                       key={opt.value}
                       className={`invite-role-select__item ${formRoles.includes(opt.value) ? 'invite-role-select__item--active' : ''}`}
@@ -256,7 +282,7 @@ export default function AdminInvitesPage() {
                         <Text className='new-invite-row__token'>{inv.token.slice(0, 8)}...</Text>
                         {inv.roles.map((role) => (
                           <Text key={role} className={`role-badge ${ROLE_LABELS[role]?.className || ''}`}>
-                            {ROLE_LABELS[role]?.label || role}
+                            {getRoleLabel(role)}
                           </Text>
                         ))}
                       </View>
@@ -305,7 +331,7 @@ export default function AdminInvitesPage() {
                     <Text className='invite-row__token'>{inv.token.slice(0, 8)}...</Text>
                     {getInviteRoles(inv).map((role) => (
                       <Text key={role} className={`role-badge ${ROLE_LABELS[role]?.className || ''}`}>
-                        {ROLE_LABELS[role]?.label || role}
+                        {getRoleLabel(role)}
                       </Text>
                     ))}
                     <Text className={`invite-status invite-status--${inv.status}`}>

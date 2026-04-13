@@ -102,22 +102,11 @@ function createStatefulMockClient(state: MockState) {
       if (table === USERS_TABLE) {
         const userId = cmd.input.Key.userId;
         const expr: string = cmd.input.UpdateExpression ?? '';
-        if (expr.includes('ADD')) {
-          // assignRoles – merge roles
-          const rolesSet: Set<string> = cmd.input.ExpressionAttributeValues[':roles'];
+        // Current implementation uses SET #roles = :roles
+        if (expr.includes('#roles') && cmd.input.ExpressionAttributeValues[':roles']) {
           const user = state.users[userId] ?? { userId, roles: [], points: 0 };
-          const existing = new Set<string>(user.roles ?? []);
-          rolesSet.forEach((r: string) => existing.add(r));
-          user.roles = Array.from(existing);
+          user.roles = cmd.input.ExpressionAttributeValues[':roles'];
           state.users[userId] = user;
-        } else if (expr.includes('DELETE')) {
-          // revokeRole – remove role
-          const roleSet: Set<string> = cmd.input.ExpressionAttributeValues[':role'];
-          const user = state.users[userId];
-          if (user) {
-            const toRemove = Array.from(roleSet);
-            user.roles = (user.roles ?? []).filter((r: string) => !toRemove.includes(r));
-          }
         }
       }
       return Promise.resolve({});
@@ -297,7 +286,7 @@ describe('E2E: 积分码兑换 → 积分商品兑换', () => {
       redeemCodeTables,
     );
     expect(earnResult.success).toBe(true);
-    expect(earnResult.earnedPoints).toBe(500);
+    expect((earnResult as any).pointsEarned).toBe(500);
     expect(state.users['user-001'].points).toBe(500);
 
     // Step 3: 验证积分记录已生成

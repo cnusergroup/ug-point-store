@@ -12,7 +12,7 @@ import type {
   ErrorResponse,
   InviteRecord,
 } from './types';
-import { ADMIN_ROLES, REGULAR_ROLES, ALL_ROLES, hasAdminAccess, isSuperAdmin, isAdminRole, getInviteRoles, isValidContentFileType, isValidVideoUrl, validateTagsArray, normalizeTagName, validateTagName } from './types';
+import { ADMIN_ROLES, REGULAR_ROLES, ALL_ROLES, EXCLUSIVE_ROLES, hasAdminAccess, isSuperAdmin, isAdminRole, isOrderAdmin, isExclusiveRole, validateRoleExclusivity, getInviteRoles, isValidContentFileType, isValidVideoUrl, validateTagsArray, normalizeTagName, validateTagName } from './types';
 import { ErrorCodes, ErrorHttpStatus, ErrorMessages } from './errors';
 
 describe('shared types', () => {
@@ -160,9 +160,99 @@ describe('role classification constants', () => {
     expect(REGULAR_ROLES).toEqual(['UserGroupLeader', 'Speaker', 'Volunteer']);
   });
 
-  it('ALL_ROLES is the union of REGULAR_ROLES and ADMIN_ROLES', () => {
-    expect(ALL_ROLES).toEqual([...REGULAR_ROLES, ...ADMIN_ROLES]);
-    expect(ALL_ROLES).toHaveLength(5);
+  it('ALL_ROLES is the union of REGULAR_ROLES, ADMIN_ROLES, and EXCLUSIVE_ROLES', () => {
+    expect(ALL_ROLES).toEqual([...REGULAR_ROLES, ...ADMIN_ROLES, ...EXCLUSIVE_ROLES]);
+    expect(ALL_ROLES).toHaveLength(6);
+  });
+});
+
+describe('OrderAdmin role classification', () => {
+  it('OrderAdmin is included in ALL_ROLES', () => {
+    expect(ALL_ROLES).toContain('OrderAdmin');
+  });
+
+  it('OrderAdmin is NOT included in ADMIN_ROLES', () => {
+    expect(ADMIN_ROLES).not.toContain('OrderAdmin');
+  });
+
+  it('OrderAdmin is NOT included in REGULAR_ROLES', () => {
+    expect(REGULAR_ROLES).not.toContain('OrderAdmin');
+  });
+
+  it('OrderAdmin is included in EXCLUSIVE_ROLES', () => {
+    expect(EXCLUSIVE_ROLES).toContain('OrderAdmin');
+  });
+
+  it('EXCLUSIVE_ROLES contains only OrderAdmin', () => {
+    expect(EXCLUSIVE_ROLES).toEqual(['OrderAdmin']);
+  });
+});
+
+describe('isOrderAdmin', () => {
+  it('returns true when roles include OrderAdmin', () => {
+    expect(isOrderAdmin(['OrderAdmin'])).toBe(true);
+  });
+
+  it('returns false when roles do not include OrderAdmin', () => {
+    expect(isOrderAdmin(['Admin', 'Speaker'])).toBe(false);
+  });
+
+  it('returns false for empty roles', () => {
+    expect(isOrderAdmin([])).toBe(false);
+  });
+
+  it('returns true even with other roles present (data edge case)', () => {
+    expect(isOrderAdmin(['OrderAdmin', 'Speaker'])).toBe(true);
+  });
+});
+
+describe('isExclusiveRole', () => {
+  it('returns true for OrderAdmin', () => {
+    expect(isExclusiveRole('OrderAdmin')).toBe(true);
+  });
+
+  it('returns false for Admin', () => {
+    expect(isExclusiveRole('Admin')).toBe(false);
+  });
+
+  it('returns false for SuperAdmin', () => {
+    expect(isExclusiveRole('SuperAdmin')).toBe(false);
+  });
+
+  it('returns false for regular roles', () => {
+    for (const role of REGULAR_ROLES) {
+      expect(isExclusiveRole(role)).toBe(false);
+    }
+  });
+});
+
+describe('validateRoleExclusivity', () => {
+  it('returns valid for single OrderAdmin', () => {
+    expect(validateRoleExclusivity(['OrderAdmin'])).toEqual({ valid: true });
+  });
+
+  it('returns invalid when OrderAdmin combined with other roles', () => {
+    const result = validateRoleExclusivity(['OrderAdmin', 'Speaker']);
+    expect(result.valid).toBe(false);
+    expect(result.message).toBeDefined();
+  });
+
+  it('returns invalid when OrderAdmin combined with Admin', () => {
+    const result = validateRoleExclusivity(['OrderAdmin', 'Admin']);
+    expect(result.valid).toBe(false);
+  });
+
+  it('returns valid for non-exclusive role combinations', () => {
+    expect(validateRoleExclusivity(['Speaker', 'Volunteer'])).toEqual({ valid: true });
+    expect(validateRoleExclusivity(['Admin', 'Speaker'])).toEqual({ valid: true });
+  });
+
+  it('returns valid for empty roles', () => {
+    expect(validateRoleExclusivity([])).toEqual({ valid: true });
+  });
+
+  it('returns valid for single non-exclusive role', () => {
+    expect(validateRoleExclusivity(['Speaker'])).toEqual({ valid: true });
   });
 });
 
@@ -179,6 +269,10 @@ describe('isAdminRole', () => {
     for (const role of REGULAR_ROLES) {
       expect(isAdminRole(role)).toBe(false);
     }
+  });
+
+  it('returns false for OrderAdmin', () => {
+    expect(isAdminRole('OrderAdmin')).toBe(false);
   });
 });
 
@@ -217,7 +311,7 @@ describe('isSuperAdmin', () => {
 describe('error codes', () => {
   it('defines all error codes', () => {
     const codes = Object.keys(ErrorCodes);
-    expect(codes).toHaveLength(87);
+    expect(codes).toHaveLength(94);
   });
 
   it('each error code has a corresponding HTTP status', () => {
@@ -707,6 +801,77 @@ describe('Feature: content-tags, Property 4: 规范化与校验可交换性', ()
           const validateOriginal = validateTagName(s);
           const validateNormalized = validateTagName(normalized);
           expect(validateOriginal).toBe(validateNormalized);
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+});
+
+// Feature: order-admin-role, Property 1: 角色互斥不变量（Role exclusivity invariant）
+// **Validates: Requirements 10.1, 10.2, 10.3**
+describe('Feature: order-admin-role, Property 1: 角色互斥不变量（Role exclusivity invariant）', () => {
+  it('含独占角色且长度 > 1 时返回 valid: false', () => {
+    fc.assert(
+      fc.property(
+        // Generate a subarray of ALL_ROLES that contains at least one exclusive role and has length > 1
+        fc.subarray(ALL_ROLES, { minLength: 2 }).filter(
+          (roles) => roles.some((r) => EXCLUSIVE_ROLES.includes(r)),
+        ),
+        (roles) => {
+          const result = validateRoleExclusivity(roles);
+          expect(result.valid).toBe(false);
+          expect(result.message).toBeDefined();
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
+  it('含独占角色且长度 === 1 时返回 valid: true', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...EXCLUSIVE_ROLES),
+        (exclusiveRole) => {
+          const result = validateRoleExclusivity([exclusiveRole]);
+          expect(result.valid).toBe(true);
+          expect(result.message).toBeUndefined();
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
+  it('不含独占角色的任意角色组合始终返回 valid: true', () => {
+    const nonExclusiveRoles = ALL_ROLES.filter((r) => !EXCLUSIVE_ROLES.includes(r));
+    fc.assert(
+      fc.property(
+        fc.subarray(nonExclusiveRoles, { minLength: 0 }),
+        (roles) => {
+          const result = validateRoleExclusivity(roles);
+          expect(result.valid).toBe(true);
+          expect(result.message).toBeUndefined();
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
+  it('对任意角色子集，validateRoleExclusivity 行为与手动校验一致', () => {
+    fc.assert(
+      fc.property(
+        fc.subarray(ALL_ROLES, { minLength: 0 }),
+        (roles) => {
+          const result = validateRoleExclusivity(roles);
+          const hasExclusive = roles.some((r) => EXCLUSIVE_ROLES.includes(r));
+
+          if (hasExclusive && roles.length > 1) {
+            expect(result.valid).toBe(false);
+            expect(result.message).toBeDefined();
+          } else {
+            expect(result.valid).toBe(true);
+            expect(result.message).toBeUndefined();
+          }
         },
       ),
       { numRuns: 100 },

@@ -25,6 +25,11 @@ vi.mock('./admin-order', () => ({
   getOrderStats: vi.fn(),
 }));
 
+// Mock feature toggles
+vi.mock('../settings/feature-toggles', () => ({
+  getFeatureToggles: vi.fn(),
+}));
+
 // Mock auth middleware - inject user; roles controlled by mockUserRoles
 let mockUserRoles: string[] = ['Speaker'];
 vi.mock('../middleware/auth-middleware', () => ({
@@ -43,6 +48,7 @@ vi.mock('../middleware/auth-middleware', () => ({
 import { handler } from './handler';
 import { createOrder, createDirectOrder, getOrders, getOrderDetail } from './order';
 import { getAdminOrders, getAdminOrderDetail, updateShipping, getOrderStats } from './admin-order';
+import { getFeatureToggles } from '../settings/feature-toggles';
 
 function makeEvent(overrides: Partial<APIGatewayProxyEvent> = {}): APIGatewayProxyEvent {
   return {
@@ -66,6 +72,20 @@ describe('Order Lambda Handler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUserRoles = ['Speaker'];
+    // Default: adminOrdersEnabled = true so Admin users pass the toggle check
+    vi.mocked(getFeatureToggles).mockResolvedValue({
+      codeRedemptionEnabled: false,
+      pointsClaimEnabled: false,
+      adminProductsEnabled: true,
+      adminOrdersEnabled: true,
+      adminContentReviewEnabled: false,
+      adminCategoriesEnabled: false,
+      contentRolePermissions: {
+        Speaker: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+        UserGroupLeader: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+        Volunteer: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+      },
+    });
   });
 
   describe('General routing', () => {
@@ -487,4 +507,116 @@ describe('Order Lambda Handler', () => {
       expect(JSON.parse(result.body).code).toBe('INVALID_STATUS_TRANSITION');
     });
   });
+
+  // ---- OrderAdmin Routes ----
+
+  describe('OrderAdmin access to order admin endpoints', () => {
+    beforeEach(() => {
+      mockUserRoles = ['OrderAdmin'];
+    });
+
+    it('OrderAdmin can access GET /api/admin/orders', async () => {
+      vi.mocked(getAdminOrders).mockResolvedValue({
+        success: true,
+        orders: [],
+        total: 0,
+        page: 1,
+        pageSize: 10,
+      });
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/orders' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(getAdminOrders).toHaveBeenCalledWith(undefined, 1, 10, expect.anything(), '');
+    });
+
+    it('OrderAdmin can access GET /api/admin/orders/stats', async () => {
+      const mockStats = { pending: 5, shipped: 3, inTransit: 2, delivered: 10, total: 20 };
+      vi.mocked(getOrderStats).mockResolvedValue({ success: true, stats: mockStats });
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/orders/stats' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body)).toEqual(mockStats);
+    });
+
+    it('OrderAdmin can access GET /api/admin/orders/:id', async () => {
+      const mockOrder = { orderId: 'order-1', userId: 'user-1', items: [], totalPoints: 100 };
+      vi.mocked(getAdminOrderDetail).mockResolvedValue({ success: true, order: mockOrder as any });
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/orders/order-1' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body).orderId).toBe('order-1');
+      expect(getAdminOrderDetail).toHaveBeenCalledWith('order-1', expect.anything(), '');
+    });
+
+    it('OrderAdmin can access PATCH /api/admin/orders/:id/shipping', async () => {
+      vi.mocked(updateShipping).mockResolvedValue({ success: true });
+      const event = makeEvent({
+        httpMethod: 'PATCH',
+        path: '/api/admin/orders/order-1/shipping',
+        body: JSON.stringify({ status: 'shipped', trackingNumber: 'SF123456', remark: '已发货' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body).message).toBe('物流状态更新成功');
+      expect(updateShipping).toHaveBeenCalledWith(
+        'order-1',
+        'shipped',
+        'SF123456',
+        '已发货',
+        'test-user-id',
+        expect.anything(),
+        '',
+      );
+    });
+
+    it('OrderAdmin bypasses adminOrdersEnabled toggle when disabled', async () => {
+      vi.mocked(getFeatureToggles).mockResolvedValue({
+        codeRedemptionEnabled: false,
+        pointsClaimEnabled: false,
+        adminProductsEnabled: true,
+        adminOrdersEnabled: false,
+        adminContentReviewEnabled: false,
+        adminCategoriesEnabled: false,
+        contentRolePermissions: {
+          Speaker: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+          UserGroupLeader: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+          Volunteer: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+        },
+      });
+      vi.mocked(getAdminOrders).mockResolvedValue({
+        success: true,
+        orders: [],
+        total: 0,
+        page: 1,
+        pageSize: 10,
+      });
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/orders' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      // getFeatureToggles should NOT be called for OrderAdmin
+      expect(getFeatureToggles).not.toHaveBeenCalled();
+    });
+
+    it('Admin is blocked when adminOrdersEnabled toggle is disabled', async () => {
+      mockUserRoles = ['Admin'];
+      vi.mocked(getFeatureToggles).mockResolvedValue({
+        codeRedemptionEnabled: false,
+        pointsClaimEnabled: false,
+        adminProductsEnabled: true,
+        adminOrdersEnabled: false,
+        adminContentReviewEnabled: false,
+        adminCategoriesEnabled: false,
+        contentRolePermissions: {
+          Speaker: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+          UserGroupLeader: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+          Volunteer: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+        },
+      });
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/orders' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(getFeatureToggles).toHaveBeenCalled();
+    });
+  });
 });
+

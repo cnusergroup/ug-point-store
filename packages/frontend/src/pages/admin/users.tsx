@@ -5,6 +5,7 @@ import { useAppStore } from '../../store';
 import { request, RequestError } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
+import { canManageUser } from './user-permissions';
 import './users.scss';
 
 /** User list item returned by the API */
@@ -23,24 +24,38 @@ type RoleFilter = 'all' | 'UserGroupLeader' | /* [DISABLED] CommunityBuilder */ 
 
 const ROLE_FILTER_TABS: { key: RoleFilter; label: string }[] = [
   { key: 'all', label: 'all' },
+  { key: 'Admin', label: 'Admin' },
   { key: 'UserGroupLeader', label: 'UserGroupLeader' },
   // [DISABLED] CommunityBuilder
   // { key: 'CommunityBuilder', label: 'CommunityBuilder' },
   { key: 'Speaker', label: 'Speaker' },
   { key: 'Volunteer', label: 'Volunteer' },
-  { key: 'Admin', label: 'Admin' },
 ];
 
 /** Role display config for badges */
 const ROLE_CONFIG: Record<string, { label: string; className: string }> = {
+  SuperAdmin: { label: 'SuperAdmin', className: 'role-badge--superadmin' },
+  Admin: { label: 'Admin', className: 'role-badge--admin' },
   UserGroupLeader: { label: 'Leader', className: 'role-badge--leader' },
   // [DISABLED] CommunityBuilder
   // CommunityBuilder: { label: 'Builder', className: 'role-badge--builder' },
   Speaker: { label: 'Speaker', className: 'role-badge--speaker' },
   Volunteer: { label: 'Volunteer', className: 'role-badge--volunteer' },
-  Admin: { label: 'Admin', className: 'role-badge--admin' },
-  SuperAdmin: { label: 'SuperAdmin', className: 'role-badge--superadmin' },
 };
+
+/** Role display priority — lower index = higher priority */
+const ROLE_PRIORITY: Record<string, number> = {
+  SuperAdmin: 0,
+  Admin: 1,
+  UserGroupLeader: 2,
+  Speaker: 3,
+  Volunteer: 4,
+};
+
+/** Sort roles by display priority */
+function sortRolesByPriority(roles: string[]): string[] {
+  return [...roles].sort((a, b) => (ROLE_PRIORITY[a] ?? 99) - (ROLE_PRIORITY[b] ?? 99));
+}
 
 /** Regular roles any Admin can assign */
 const REGULAR_ROLES = [
@@ -154,13 +169,45 @@ export default function AdminUsersPage() {
   const isSuperAdmin = adminRoles.includes('SuperAdmin');
   const assignableRoles = isSuperAdmin ? [...REGULAR_ROLES, 'Admin'] : REGULAR_ROLES;
 
+  /** Visible roles in the edit modal — includes locked admin roles the target already has */
+  const getVisibleRoles = (): string[] => {
+    if (!editingUser) return assignableRoles;
+    // SuperAdmin on target is always shown as locked (for any caller)
+    // Admin on target is shown as locked for non-SuperAdmin callers
+    const lockedRoles = editingUser.roles.filter((r) => {
+      if (r === 'SuperAdmin') return true; // Always locked
+      if (r === 'Admin' && !isSuperAdmin) return true; // Locked for non-SuperAdmin
+      return false;
+    });
+    return [...new Set([...lockedRoles, ...assignableRoles])];
+  };
+
+  /** Check if the current user can manage (disable/delete) a target user */
+  const canManageUserCheck = (targetRoles: string[]): boolean => {
+    return canManageUser(adminRoles, targetRoles);
+  };
+
   const openRoleEditor = (user: UserListItem) => {
     setEditingUser(user);
     setSelectedRoles([...user.roles]);
     setRoleError('');
   };
 
+  /** Check if a role is locked (cannot be toggled via regular role editing) */
+  const isRoleLocked = (role: string): boolean => {
+    if (!editingUser) return false;
+    // SuperAdmin role is ALWAYS locked for everyone — it uses a dedicated transfer flow
+    if (role === 'SuperAdmin' && editingUser.roles.includes('SuperAdmin')) return true;
+    // Admin role is locked for non-SuperAdmin callers
+    if (!isSuperAdmin) {
+      const adminLevelRoles = ['Admin', 'SuperAdmin'];
+      return adminLevelRoles.includes(role) && editingUser.roles.includes(role);
+    }
+    return false;
+  };
+
   const toggleRole = (role: string) => {
+    if (isRoleLocked(role)) return;
     setSelectedRoles((prev) =>
       prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role],
     );
@@ -171,10 +218,15 @@ export default function AdminUsersPage() {
     setSubmittingRoles(true);
     setRoleError('');
     try {
+      // Strip SuperAdmin from ALL submissions (it's managed via dedicated transfer flow).
+      // For non-SuperAdmin callers, also strip Admin — backend preserves via read-before-write.
+      const rolesToSubmit = !isSuperAdmin
+        ? selectedRoles.filter((r) => r !== 'Admin' && r !== 'SuperAdmin')
+        : selectedRoles.filter((r) => r !== 'SuperAdmin');
       await request({
         url: `/api/admin/users/${editingUser.userId}/roles`,
         method: 'PUT',
-        data: { roles: selectedRoles },
+        data: { roles: rolesToSubmit },
       });
       Taro.showToast({ title: t('admin.users.rolesUpdated'), icon: 'none' });
       setEditingUser(null);
@@ -240,7 +292,7 @@ export default function AdminUsersPage() {
                   </View>
                   <Text className='user-row__email'>{user.email}</Text>
                   <View className='user-row__roles'>
-                    {user.roles.map((role) => {
+                    {sortRolesByPriority(user.roles).map((role) => {
                       const config = ROLE_CONFIG[role];
                       return (
                         <Text key={role} className={`role-badge ${config?.className || ''}`}>
@@ -261,7 +313,7 @@ export default function AdminUsersPage() {
                   <View className='user-row__action-btn user-row__action-btn--edit' onClick={() => openRoleEditor(user)}>
                     <Text>{t('admin.users.editRoles')}</Text>
                   </View>
-                  {user.status === 'active' ? (
+                  {canManageUserCheck(user.roles) && (user.status === 'active' ? (
                     <View
                       className='user-row__action-btn user-row__action-btn--warn'
                       onClick={() => setConfirmAction({ type: 'disable', user })}
@@ -275,13 +327,15 @@ export default function AdminUsersPage() {
                     >
                       <Text>{t('admin.users.enableUser')}</Text>
                     </View>
+                  ))}
+                  {canManageUserCheck(user.roles) && (
+                    <View
+                      className='user-row__action-btn user-row__action-btn--danger'
+                      onClick={() => setConfirmAction({ type: 'delete', user })}
+                    >
+                      <Text>{t('admin.users.deleteUser')}</Text>
+                    </View>
                   )}
-                  <View
-                    className='user-row__action-btn user-row__action-btn--danger'
-                    onClick={() => setConfirmAction({ type: 'delete', user })}
-                  >
-                    <Text>{t('admin.users.deleteUser')}</Text>
-                  </View>
                 </View>
               </View>
             </View>
@@ -351,7 +405,7 @@ export default function AdminUsersPage() {
               <View className='role-edit-current'>
                 <Text className='role-edit-current__label'>{t('admin.users.currentRolesLabel')}</Text>
                 <View className='role-edit-current__badges'>
-                  {editingUser.roles.length > 0 ? editingUser.roles.map((role) => {
+                  {editingUser.roles.length > 0 ? sortRolesByPriority(editingUser.roles).map((role) => {
                     const config = ROLE_CONFIG[role];
                     return (
                       <Text key={role} className={`role-badge ${config?.className || ''}`}>
@@ -365,21 +419,53 @@ export default function AdminUsersPage() {
               </View>
               <View className='role-edit-list'>
                 <Text className='role-edit-list__label'>{t('admin.users.assignableRolesLabel')}</Text>
-                {assignableRoles.map((role) => {
-                  const isSelected = selectedRoles.includes(role);
-                  return (
-                    <View
-                      key={role}
-                      className={`role-edit-item ${isSelected ? 'role-edit-item--active' : ''}`}
-                      onClick={() => toggleRole(role)}
-                    >
-                      <View className={`role-edit-item__check ${isSelected ? 'role-edit-item__check--on' : ''}`}>
-                        <Text>{isSelected ? '✓' : ''}</Text>
+                {/* Admin roles section (locked for non-SuperAdmin) */}
+                {getVisibleRoles().filter((r) => ['Admin', 'SuperAdmin'].includes(r)).length > 0 && (
+                  <>
+                    {getVisibleRoles()
+                      .filter((r) => ['Admin', 'SuperAdmin'].includes(r))
+                      .sort((a, b) => (ROLE_PRIORITY[a] ?? 99) - (ROLE_PRIORITY[b] ?? 99))
+                      .map((role) => {
+                        const isSelected = selectedRoles.includes(role);
+                        const locked = isRoleLocked(role);
+                        return (
+                          <View
+                            key={role}
+                            className={`role-edit-item ${isSelected ? 'role-edit-item--active' : ''} ${locked ? 'role-edit-item--locked' : ''}`}
+                            onClick={() => toggleRole(role)}
+                          >
+                            <View className={`role-edit-item__check ${isSelected ? 'role-edit-item__check--on' : ''} ${locked ? 'role-edit-item__check--locked' : ''}`}>
+                              <Text>{locked ? '🔒' : isSelected ? '✓' : ''}</Text>
+                            </View>
+                            <Text className='role-edit-item__name'>{ROLE_LABELS[role] || role}</Text>
+                            {locked && <Text className='role-edit-item__lock-hint'>{t('admin.users.roleLocked')}</Text>}
+                          </View>
+                        );
+                      })}
+                    <View className='role-edit-list__divider' />
+                  </>
+                )}
+                {/* Regular roles section */}
+                {getVisibleRoles()
+                  .filter((r) => !['Admin', 'SuperAdmin'].includes(r))
+                  .sort((a, b) => (ROLE_PRIORITY[a] ?? 99) - (ROLE_PRIORITY[b] ?? 99))
+                  .map((role) => {
+                    const isSelected = selectedRoles.includes(role);
+                    const locked = isRoleLocked(role);
+                    return (
+                      <View
+                        key={role}
+                        className={`role-edit-item ${isSelected ? 'role-edit-item--active' : ''} ${locked ? 'role-edit-item--locked' : ''}`}
+                        onClick={() => toggleRole(role)}
+                      >
+                        <View className={`role-edit-item__check ${isSelected ? 'role-edit-item__check--on' : ''} ${locked ? 'role-edit-item__check--locked' : ''}`}>
+                          <Text>{locked ? '🔒' : isSelected ? '✓' : ''}</Text>
+                        </View>
+                        <Text className='role-edit-item__name'>{ROLE_LABELS[role] || role}</Text>
+                        {locked && <Text className='role-edit-item__lock-hint'>{t('admin.users.roleLocked')}</Text>}
                       </View>
-                      <Text className='role-edit-item__name'>{ROLE_LABELS[role] || role}</Text>
-                    </View>
-                  );
-                })}
+                    );
+                  })}
               </View>
             </View>
             <View className='form-modal__actions'>

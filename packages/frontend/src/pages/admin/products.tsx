@@ -113,6 +113,8 @@ const EMPTY_FORM = {
 
 export default function AdminProductsPage() {
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
+  const userRoles = useAppStore((s) => s.user?.roles || []);
+  const isSuperAdmin = userRoles.includes('SuperAdmin');
   const { t } = useTranslation();
 
   const [products, setProducts] = useState<AdminProduct[]>([]);
@@ -144,8 +146,26 @@ export default function AdminProductsPage() {
       Taro.redirectTo({ url: '/pages/login/index' });
       return;
     }
-    fetchProducts();
-  }, [isAuthenticated, fetchProducts]);
+    // SuperAdmin always has access; only check toggle for Admin
+    if (!isSuperAdmin) {
+      request<{ adminProductsEnabled: boolean }>({
+        url: '/api/settings/feature-toggles',
+        skipAuth: true,
+      })
+        .then((res) => {
+          if (!res.adminProductsEnabled) {
+            Taro.redirectTo({ url: '/pages/admin/index' });
+          } else {
+            fetchProducts();
+          }
+        })
+        .catch(() => {
+          fetchProducts();
+        });
+    } else {
+      fetchProducts();
+    }
+  }, [isAuthenticated, isSuperAdmin, fetchProducts]);
 
   const openCreate = () => {
     setForm({ ...EMPTY_FORM });

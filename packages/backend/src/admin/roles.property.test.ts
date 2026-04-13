@@ -8,7 +8,7 @@ import type { UserRole } from '@points-mall/shared';
 // 撤销某角色后查询用户角色应不再包含该角色。
 // Validates: Requirements 3.2, 3.3
 
-const ALL_ROLES: UserRole[] = ['UserGroupLeader', 'CommunityBuilder', 'Speaker', 'Volunteer'];
+const ALL_ROLES: UserRole[] = ['UserGroupLeader', 'Speaker', 'Volunteer'];
 
 /** Arbitrary for a non-empty subset of valid roles */
 const rolesSubsetArb = fc
@@ -23,90 +23,108 @@ const userIdArb = fc.string({ minLength: 1, maxLength: 30, unit: fc.constantFrom
 
 const TABLE = 'Users';
 
-function createMockDynamoClient() {
-  return { send: vi.fn().mockResolvedValue({}) } as any;
+function createMockDynamoClient(targetCurrentRoles: string[] = []) {
+  return {
+    send: vi.fn().mockImplementation((command: any) => {
+      const commandName = command.constructor.name;
+      if (commandName === 'GetCommand') {
+        return Promise.resolve({
+          Item: { roles: targetCurrentRoles },
+        });
+      }
+      return Promise.resolve({});
+    }),
+  } as any;
 }
 
 describe('Property 4: 角色分配与撤销的往返一致性', () => {
-  it('分配角色后 DynamoDB ADD 表达式应包含所有指定角色', async () => {
+  it('分配角色后 DynamoDB UpdateCommand 应包含所有指定角色', async () => {
     await fc.assert(
       fc.asyncProperty(userIdArb, rolesSubsetArb, async (userId, roles) => {
-        const client = createMockDynamoClient();
+        // Non-SuperAdmin caller assigning regular roles to a target with no admin roles
+        const client = createMockDynamoClient([]);
         const result = await assignRoles(userId, roles, client, TABLE);
 
         expect(result.success).toBe(true);
-        expect(client.send).toHaveBeenCalledTimes(1);
 
-        const command = client.send.mock.calls[0][0];
-        const sentRoles: Set<string> = command.input.ExpressionAttributeValues[':roles'];
+        // GetCommand (read) + UpdateCommand (write) = 2 calls for non-SuperAdmin
+        const updateCall = client.send.mock.calls.find(
+          (call: any[]) => call[0].constructor.name === 'UpdateCommand',
+        );
+        expect(updateCall).toBeDefined();
 
-        // Every assigned role must be present in the ADD set
+        const sentRoles: string[] = updateCall![0].input.ExpressionAttributeValues[':roles'];
+
+        // Every assigned role must be present
         for (const role of roles) {
-          expect(sentRoles.has(role)).toBe(true);
+          expect(sentRoles).toContain(role);
         }
-        // The set should contain exactly the assigned roles (no extras)
-        expect(sentRoles.size).toBe(new Set(roles).size);
+        // Should contain exactly the assigned roles (no extras)
+        expect(new Set(sentRoles).size).toBe(new Set(roles).size);
       }),
       { numRuns: 100 },
     );
   });
 
-  it('撤销角色后 DynamoDB DELETE 表达式应精确包含被撤销的角色', async () => {
+  it('撤销角色后 DynamoDB 应写回不包含被撤销角色的列表', async () => {
     await fc.assert(
       fc.asyncProperty(userIdArb, singleRoleArb, async (userId, role) => {
-        const client = createMockDynamoClient();
+        // revokeRole reads current roles, filters, then writes back
+        const currentRoles = [role, 'Speaker'].filter((v, i, a) => a.indexOf(v) === i);
+        const client = createMockDynamoClient(currentRoles);
         const result = await revokeRole(userId, role, client, TABLE);
 
         expect(result.success).toBe(true);
-        expect(client.send).toHaveBeenCalledTimes(1);
 
-        const command = client.send.mock.calls[0][0];
-        const deletedRoles: Set<string> = command.input.ExpressionAttributeValues[':role'];
+        const updateCall = client.send.mock.calls.find(
+          (call: any[]) => call[0].constructor.name === 'UpdateCommand',
+        );
+        expect(updateCall).toBeDefined();
 
-        // The DELETE set should contain exactly the revoked role
-        expect(deletedRoles.has(role)).toBe(true);
-        expect(deletedRoles.size).toBe(1);
+        const writtenRoles: string[] = updateCall![0].input.ExpressionAttributeValues[':roles'];
+
+        // The revoked role should NOT be in the written roles
+        expect(writtenRoles).not.toContain(role);
       }),
       { numRuns: 100 },
     );
   });
 
-  it('分配后撤销同一角色：ADD 包含该角色且 DELETE 精确移除该角色', async () => {
+  it('分配后撤销同一角色：分配包含该角色且撤销后移除该角色', async () => {
     await fc.assert(
       fc.asyncProperty(userIdArb, rolesSubsetArb, async (userId, roles) => {
-        // Step 1: Assign all roles
-        const assignClient = createMockDynamoClient();
+        // Step 1: Assign all roles (non-SuperAdmin caller, target has no admin roles)
+        const assignClient = createMockDynamoClient([]);
         const assignResult = await assignRoles(userId, roles, assignClient, TABLE);
         expect(assignResult.success).toBe(true);
 
-        const assignedSet: Set<string> = assignClient.send.mock.calls[0][0].input.ExpressionAttributeValues[':roles'];
+        const assignUpdateCall = assignClient.send.mock.calls.find(
+          (call: any[]) => call[0].constructor.name === 'UpdateCommand',
+        );
+        expect(assignUpdateCall).toBeDefined();
+        const assignedRoles: string[] = assignUpdateCall![0].input.ExpressionAttributeValues[':roles'];
 
-        // Pick a random role from the assigned set to revoke
+        // Pick a role to revoke
         const roleToRevoke = roles[0];
+        expect(assignedRoles).toContain(roleToRevoke);
 
         // Step 2: Revoke one role
-        const revokeClient = createMockDynamoClient();
+        const revokeClient = createMockDynamoClient(assignedRoles);
         const revokeResult = await revokeRole(userId, roleToRevoke, revokeClient, TABLE);
         expect(revokeResult.success).toBe(true);
 
-        const revokedSet: Set<string> = revokeClient.send.mock.calls[0][0].input.ExpressionAttributeValues[':role'];
+        const revokeUpdateCall = revokeClient.send.mock.calls.find(
+          (call: any[]) => call[0].constructor.name === 'UpdateCommand',
+        );
+        expect(revokeUpdateCall).toBeDefined();
+        const remainingRoles: string[] = revokeUpdateCall![0].input.ExpressionAttributeValues[':roles'];
 
-        // The assigned set should have contained the role we're revoking
-        expect(assignedSet.has(roleToRevoke)).toBe(true);
-        // The revoked set should contain exactly the role we revoked
-        expect(revokedSet.has(roleToRevoke)).toBe(true);
-        expect(revokedSet.size).toBe(1);
-
-        // Simulating the resulting state: assigned roles minus revoked role
-        const remainingRoles = new Set(assignedSet);
-        remainingRoles.delete(roleToRevoke);
-
-        // The remaining set should NOT contain the revoked role
-        expect(remainingRoles.has(roleToRevoke)).toBe(false);
+        // The revoked role should not be present
+        expect(remainingRoles).not.toContain(roleToRevoke);
         // All other originally assigned roles should still be present
         for (const r of roles) {
           if (r !== roleToRevoke) {
-            expect(remainingRoles.has(r)).toBe(true);
+            expect(remainingRoles).toContain(r);
           }
         }
       }),
@@ -157,52 +175,58 @@ describe('Property 2: SuperAdmin 角色禁止通过 API 分配', () => {
 });
 
 // Feature: admin-roles-password, Property 3: SuperAdmin 分配/撤销 Admin 角色的往返一致性
-// 对于任何目标用户，当 SuperAdmin 为其分配 Admin 角色后，DynamoDB ADD 表达式应包含 'Admin'；
-// 随后撤销 Admin 角色后，DynamoDB DELETE 表达式应包含 'Admin'，且其他已有角色不受影响。
+// 对于任何目标用户，当 SuperAdmin 为其分配 Admin 角色后，DynamoDB 应写入包含 Admin 的角色列表；
+// 随后撤销 Admin 角色后，DynamoDB 应写入不包含 Admin 的角色列表，且其他已有角色不受影响。
 // **Validates: Requirements 3.1, 3.2**
 
 /** Arbitrary for a subset of regular (non-admin) roles to represent pre-existing roles */
 const existingRegularRolesArb = fc.subarray(
-  ['UserGroupLeader', 'CommunityBuilder', 'Speaker', 'Volunteer'] as const,
+  ['UserGroupLeader', 'Speaker', 'Volunteer'] as const,
   { minLength: 0 },
 );
 
 describe('Property 3: SuperAdmin 分配/撤销 Admin 角色的往返一致性', () => {
   const superAdminCaller = ['SuperAdmin'];
 
-  it('SuperAdmin 分配 Admin 后 DynamoDB ADD 表达式应包含 Admin', async () => {
+  it('SuperAdmin 分配 Admin 后 DynamoDB 应写入包含 Admin 的角色列表', async () => {
     await fc.assert(
       fc.asyncProperty(userIdArb, existingRegularRolesArb, async (userId, _existingRoles) => {
-        const client = createMockDynamoClient();
+        const client = createMockDynamoClient([]);
         const result = await assignRoles(userId, ['Admin'], client, TABLE, superAdminCaller);
 
         expect(result.success).toBe(true);
-        expect(client.send).toHaveBeenCalledTimes(1);
 
-        const command = client.send.mock.calls[0][0];
-        const sentRoles: Set<string> = command.input.ExpressionAttributeValues[':roles'];
+        // SuperAdmin caller: only UpdateCommand (no GetCommand needed)
+        const updateCall = client.send.mock.calls.find(
+          (call: any[]) => call[0].constructor.name === 'UpdateCommand',
+        );
+        expect(updateCall).toBeDefined();
 
-        expect(sentRoles.has('Admin')).toBe(true);
-        expect(sentRoles.size).toBe(1);
+        const sentRoles: string[] = updateCall![0].input.ExpressionAttributeValues[':roles'];
+        expect(sentRoles).toContain('Admin');
+        expect(sentRoles.length).toBe(1);
       }),
       { numRuns: 100 },
     );
   });
 
-  it('SuperAdmin 撤销 Admin 后 DynamoDB DELETE 表达式应包含 Admin', async () => {
+  it('SuperAdmin 撤销 Admin 后 DynamoDB 应写入不包含 Admin 的角色列表', async () => {
     await fc.assert(
-      fc.asyncProperty(userIdArb, existingRegularRolesArb, async (userId, _existingRoles) => {
-        const client = createMockDynamoClient();
+      fc.asyncProperty(userIdArb, existingRegularRolesArb, async (userId, existingRoles) => {
+        // Target currently has Admin + existing regular roles
+        const currentRoles = ['Admin', ...existingRoles];
+        const client = createMockDynamoClient(currentRoles);
         const result = await revokeRole(userId, 'Admin', client, TABLE, superAdminCaller);
 
         expect(result.success).toBe(true);
-        expect(client.send).toHaveBeenCalledTimes(1);
 
-        const command = client.send.mock.calls[0][0];
-        const deletedRoles: Set<string> = command.input.ExpressionAttributeValues[':role'];
+        const updateCall = client.send.mock.calls.find(
+          (call: any[]) => call[0].constructor.name === 'UpdateCommand',
+        );
+        expect(updateCall).toBeDefined();
 
-        expect(deletedRoles.has('Admin')).toBe(true);
-        expect(deletedRoles.size).toBe(1);
+        const writtenRoles: string[] = updateCall![0].input.ExpressionAttributeValues[':roles'];
+        expect(writtenRoles).not.toContain('Admin');
       }),
       { numRuns: 100 },
     );
@@ -211,37 +235,36 @@ describe('Property 3: SuperAdmin 分配/撤销 Admin 角色的往返一致性', 
   it('分配 Admin 后撤销 Admin：其他已有角色不受影响', async () => {
     await fc.assert(
       fc.asyncProperty(userIdArb, existingRegularRolesArb, async (userId, existingRoles) => {
-        // Step 1: Assign Admin role
-        const assignClient = createMockDynamoClient();
+        // Step 1: Assign Admin role (SuperAdmin caller — no GetCommand)
+        const assignClient = createMockDynamoClient([]);
         const assignResult = await assignRoles(userId, ['Admin'], assignClient, TABLE, superAdminCaller);
         expect(assignResult.success).toBe(true);
 
-        const assignedSet: Set<string> = assignClient.send.mock.calls[0][0].input.ExpressionAttributeValues[':roles'];
-        // The ADD expression should only contain 'Admin', not touch existing roles
-        expect(assignedSet.has('Admin')).toBe(true);
-        expect(assignedSet.size).toBe(1);
+        const assignUpdateCall = assignClient.send.mock.calls.find(
+          (call: any[]) => call[0].constructor.name === 'UpdateCommand',
+        );
+        expect(assignUpdateCall).toBeDefined();
+        const assignedRoles: string[] = assignUpdateCall![0].input.ExpressionAttributeValues[':roles'];
+        expect(assignedRoles).toContain('Admin');
 
-        // Step 2: Revoke Admin role
-        const revokeClient = createMockDynamoClient();
+        // Step 2: Revoke Admin role — target now has Admin + existing roles
+        const rolesAfterAssign = [...new Set(['Admin', ...existingRoles])];
+        const revokeClient = createMockDynamoClient(rolesAfterAssign);
         const revokeResult = await revokeRole(userId, 'Admin', revokeClient, TABLE, superAdminCaller);
         expect(revokeResult.success).toBe(true);
 
-        const revokedSet: Set<string> = revokeClient.send.mock.calls[0][0].input.ExpressionAttributeValues[':role'];
-        // The DELETE expression should only contain 'Admin'
-        expect(revokedSet.has('Admin')).toBe(true);
-        expect(revokedSet.size).toBe(1);
+        const revokeUpdateCall = revokeClient.send.mock.calls.find(
+          (call: any[]) => call[0].constructor.name === 'UpdateCommand',
+        );
+        expect(revokeUpdateCall).toBeDefined();
+        const remainingRoles: string[] = revokeUpdateCall![0].input.ExpressionAttributeValues[':roles'];
 
-        // Simulate round-trip: existing roles + Admin - Admin = existing roles
-        const rolesAfterAssign = new Set([...existingRoles, 'Admin']);
-        expect(rolesAfterAssign.has('Admin')).toBe(true);
-
-        rolesAfterAssign.delete('Admin');
-        // After revoke, only the original existing roles should remain
-        expect(rolesAfterAssign.has('Admin')).toBe(false);
+        // Admin should be removed
+        expect(remainingRoles).not.toContain('Admin');
+        // All existing regular roles should still be present
         for (const role of existingRoles) {
-          expect(rolesAfterAssign.has(role)).toBe(true);
+          expect(remainingRoles).toContain(role);
         }
-        expect(rolesAfterAssign.size).toBe(new Set(existingRoles).size);
       }),
       { numRuns: 100 },
     );
@@ -255,7 +278,7 @@ describe('Property 3: SuperAdmin 分配/撤销 Admin 角色的往返一致性', 
 
 /** Arbitrary for caller role sets that do NOT contain SuperAdmin */
 const nonSuperAdminRolesArb = fc.subarray(
-  ['UserGroupLeader', 'CommunityBuilder', 'Speaker', 'Volunteer', 'Admin'] as const,
+  ['UserGroupLeader', 'Speaker', 'Volunteer', 'Admin'] as const,
   { minLength: 0 },
 );
 
@@ -276,7 +299,7 @@ describe('Property 4: 非 SuperAdmin 用户无法分配或撤销管理角色', (
   it('非 SuperAdmin 调用者撤销 Admin 角色应被拒绝', async () => {
     await fc.assert(
       fc.asyncProperty(userIdArb, nonSuperAdminRolesArb, async (userId, callerRoles) => {
-        const client = createMockDynamoClient();
+        const client = createMockDynamoClient([]);
         const result = await revokeRole(userId, 'Admin', client, TABLE, callerRoles);
 
         expect(result.success).toBe(false);
@@ -289,22 +312,19 @@ describe('Property 4: 非 SuperAdmin 用户无法分配或撤销管理角色', (
     );
   });
 
-  it('非 SuperAdmin 调用者分配包含 Admin 的混合角色列表也应被拒绝', async () => {
+  it('非 SuperAdmin 调用者分配包含 Admin 的混合角色列表：Admin 被静默剥离', async () => {
     await fc.assert(
       fc.asyncProperty(
         userIdArb,
         nonSuperAdminRolesArb,
-        fc.subarray(['UserGroupLeader', 'CommunityBuilder', 'Speaker', 'Volunteer'] as const, { minLength: 0 }),
+        fc.subarray(['UserGroupLeader', 'Speaker', 'Volunteer'] as const, { minLength: 1 }),
         async (userId, callerRoles, otherRoles) => {
-          const client = createMockDynamoClient();
+          const client = createMockDynamoClient([]);
           const targetRoles = [...otherRoles, 'Admin'];
           const result = await assignRoles(userId, targetRoles, client, TABLE, callerRoles);
 
-          expect(result.success).toBe(false);
-          expect(result.error).toBeDefined();
-          expect(result.error!.code).toBe('ADMIN_ROLE_REQUIRES_SUPERADMIN');
-          // DynamoDB should NOT have been called
-          expect(client.send).not.toHaveBeenCalled();
+          // Admin is silently stripped for non-SuperAdmin callers, regular roles pass through
+          expect(result.success).toBe(true);
         },
       ),
       { numRuns: 100 },

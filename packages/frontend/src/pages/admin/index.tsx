@@ -60,6 +60,7 @@ const ADMIN_LINKS = [
     titleKey: 'admin.dashboard.contentTitle',
     descKey: 'admin.dashboard.contentDesc',
     url: '/pages/admin/content',
+    adminPermissionKey: 'adminContentReviewEnabled' as const,
   },
   {
     key: 'categories',
@@ -67,6 +68,7 @@ const ADMIN_LINKS = [
     titleKey: 'admin.dashboard.categoriesTitle',
     descKey: 'admin.dashboard.categoriesDesc',
     url: '/pages/admin/categories',
+    adminPermissionKey: 'adminCategoriesEnabled' as const,
   },
   {
     key: 'batch-points',
@@ -113,11 +115,16 @@ export default function AdminDashboard() {
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
   const user = useAppStore((s) => s.user);
   const { t } = useTranslation();
-  const [featureToggles, setFeatureToggles] = useState<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; adminProductsEnabled: boolean; adminOrdersEnabled: boolean } | null>(null);
+  const [featureToggles, setFeatureToggles] = useState<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; adminProductsEnabled: boolean; adminOrdersEnabled: boolean; adminContentReviewEnabled: boolean; adminCategoriesEnabled: boolean } | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
       Taro.redirectTo({ url: '/pages/login/index' });
+      return;
+    }
+    // OrderAdmin 重定向到订单页
+    if (user?.roles?.includes('OrderAdmin')) {
+      Taro.redirectTo({ url: '/pages/admin/orders' });
       return;
     }
     const hasAdminAccess = user?.roles?.some(r => r === 'Admin' || r === 'SuperAdmin');
@@ -126,7 +133,7 @@ export default function AdminDashboard() {
     }
 
     // Fetch feature toggles (public endpoint, no auth needed)
-    request<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; adminProductsEnabled: boolean; adminOrdersEnabled: boolean }>({
+    request<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; adminProductsEnabled: boolean; adminOrdersEnabled: boolean; adminContentReviewEnabled: boolean; adminCategoriesEnabled: boolean }>({
       url: '/api/settings/feature-toggles',
       skipAuth: true,
     })
@@ -138,6 +145,8 @@ export default function AdminDashboard() {
           pointsClaimEnabled: true,
           adminProductsEnabled: true,
           adminOrdersEnabled: true,
+          adminContentReviewEnabled: true,
+          adminCategoriesEnabled: true,
         });
       });
   }, [isAuthenticated, user]);

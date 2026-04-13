@@ -26,6 +26,8 @@ const STATUS_CONFIG: Record<string, { labelKey: string; className: string }> = {
 
 export default function AdminTravelPage() {
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
+  const userRoles = useAppStore((s) => s.user?.roles || []);
+  const isSuperAdmin = userRoles.includes('SuperAdmin');
   const { t } = useTranslation();
 
   const [applications, setApplications] = useState<TravelApplication[]>([]);
@@ -75,8 +77,12 @@ export default function AdminTravelPage() {
       Taro.redirectTo({ url: '/pages/login/index' });
       return;
     }
+    if (!isSuperAdmin) {
+      Taro.redirectTo({ url: '/pages/admin/index' });
+      return;
+    }
     fetchApplications(statusFilter);
-  }, [isAuthenticated, fetchApplications, statusFilter]);
+  }, [isAuthenticated, isSuperAdmin, fetchApplications, statusFilter]);
 
   const handleTabChange = (tab: StatusFilter) => {
     setStatusFilter(tab);

@@ -170,7 +170,6 @@ page {
 
   &:hover {
     box-shadow: 0 0 12px currentColor;
-    transform: scale(1.05);
   }
 
   &--leader {
@@ -205,9 +204,17 @@ page {
   }
 
   &--superadmin {
-    background: rgba(245, 166, 35, 0.15);
-    color: var(--role-leader);
-    border: 1px solid rgba(245, 166, 35, 0.3);
+    background: linear-gradient(135deg, rgba(245, 166, 35, 0.2) 0%, rgba(255, 215, 0, 0.15) 50%, rgba(245, 166, 35, 0.2) 100%);
+    color: #ffd700;
+    border: 1px solid rgba(255, 215, 0, 0.4);
+    font-weight: 700;
+    text-shadow: 0 0 8px rgba(255, 215, 0, 0.3);
+  }
+
+  &--order-admin {
+    background: rgba(45, 212, 168, 0.15);
+    color: var(--success);
+    border: 1px solid rgba(45, 212, 168, 0.3);
   }
 
   &--all {

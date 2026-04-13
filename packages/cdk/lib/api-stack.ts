@@ -307,6 +307,7 @@ export class ApiStack extends cdk.Stack {
     const settings = api.addResource('settings');
     settings.addResource('feature-toggles').addMethod('GET', pointsInt);
     settings.addResource('travel-sponsorship').addMethod('GET', pointsInt);
+    settings.addResource('invite-settings').addMethod('GET', pointsInt);
 
     // Claims routes (user-facing, integrated to Points Lambda)
     const claims = api.addResource('claims');
