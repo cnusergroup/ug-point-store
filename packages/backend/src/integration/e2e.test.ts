@@ -286,7 +286,7 @@ describe('E2E: 积分码兑换 → 积分商品兑换', () => {
       redeemCodeTables,
     );
     expect(earnResult.success).toBe(true);
-    expect((earnResult as any).pointsEarned).toBe(500);
+    expect(earnResult.earnedPoints).toBe(500);
     expect(state.users['user-001'].points).toBe(500);
 
     // Step 3: 验证积分记录已生成

@@ -1,6 +1,7 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { SESClient } from '@aws-sdk/client-ses';
 import { S3Client } from '@aws-sdk/client-s3';
 import { ErrorHttpStatus, isSuperAdmin, ErrorCodes, ErrorMessages, isOrderAdmin } from '@points-mall/shared';
 import type { Product, UserRole } from '@points-mall/shared';
@@ -21,10 +22,16 @@ import { getInviteSettings, updateInviteSettings } from '../settings/invite-sett
 import { transferSuperAdmin } from './superadmin-transfer';
 import { updateTravelSettings, validateTravelSettingsInput } from '../travel/settings';
 import { reviewTravelApplication, listAllTravelApplications } from '../travel/review';
+import { listTemplates, updateTemplate, validateTemplateInput, getRequiredVariables } from '../email/templates';
+import { seedDefaultTemplates } from '../email/seed';
+import { sendNewProductNotification, sendNewContentNotification, sendPointsEarnedEmail } from '../email/notifications';
+import type { NotificationContext, SubscribedUser } from '../email/notifications';
+import type { NotificationType, EmailLocale } from '../email/send';
 
 // Create client outside handler for Lambda container reuse
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const s3Client = new S3Client({});
+const sesClient = new SESClient({});
 
 const USERS_TABLE = process.env.USERS_TABLE ?? '';
 const PRODUCTS_TABLE = process.env.PRODUCTS_TABLE ?? '';
@@ -42,6 +49,7 @@ const CONTENT_RESERVATIONS_TABLE = process.env.CONTENT_RESERVATIONS_TABLE ?? '';
 const BATCH_DISTRIBUTIONS_TABLE = process.env.BATCH_DISTRIBUTIONS_TABLE ?? '';
 const CONTENT_TAGS_TABLE = process.env.CONTENT_TAGS_TABLE ?? '';
 const TRAVEL_APPLICATIONS_TABLE = process.env.TRAVEL_APPLICATIONS_TABLE ?? '';
+const EMAIL_TEMPLATES_TABLE = process.env.EMAIL_TEMPLATES_TABLE ?? '';
 
 const CORS_HEADERS = {
   'Content-Type': 'application/json',
@@ -91,6 +99,7 @@ const CONTENT_CATEGORIES_DELETE_REGEX = /^\/api\/admin\/content\/categories\/([^
 const BATCH_POINTS_HISTORY_DETAIL_REGEX = /^\/api\/admin\/batch-points\/history\/([^/]+)$/;
 const TRAVEL_REVIEW_REGEX = /^\/api\/admin\/travel\/([^/]+)\/review$/;
 const TAGS_DELETE_REGEX = /^\/api\/admin\/tags\/([^/]+)$/;
+const EMAIL_TEMPLATES_UPDATE_REGEX = /^\/api\/admin\/email-templates\/([^/]+)\/([^/]+)$/;
 
 /**
  * Check if the authenticated user has admin privileges.
@@ -161,6 +170,15 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     if (path === '/api/admin/settings/content-role-permissions') {
       return await handleUpdateContentRolePermissions(event);
     }
+
+    // PUT /api/admin/email-templates/{type}/{locale} — SuperAdmin only
+    const emailTemplateMatch = path.match(EMAIL_TEMPLATES_UPDATE_REGEX);
+    if (emailTemplateMatch) {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleUpdateEmailTemplate(emailTemplateMatch[1], emailTemplateMatch[2], event);
+    }
   }
 
   // POST routes
@@ -216,6 +234,21 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     if (path === '/api/admin/batch-points') {
       return await handleBatchDistribution(event);
     }
+    // POST /api/admin/email-templates/seed — SuperAdmin only, seed default templates
+    if (path === '/api/admin/email-templates/seed') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleSeedEmailTemplates();
+    }
+    // POST /api/admin/email/send-product-notification — trigger new product bulk send
+    if (path === '/api/admin/email/send-product-notification') {
+      return await handleSendProductNotification(event);
+    }
+    // POST /api/admin/email/send-content-notification — trigger new content bulk send
+    if (path === '/api/admin/email/send-content-notification') {
+      return await handleSendContentNotification(event);
+    }
   }
 
   // GET routes
@@ -248,6 +281,11 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
 
   if (method === 'GET' && path === '/api/admin/tags') {
     return await handleListAllTags();
+  }
+
+  // GET /api/admin/email-templates — Admin and SuperAdmin can access
+  if (method === 'GET' && path === '/api/admin/email-templates') {
+    return await handleListEmailTemplates(event);
   }
 
   if (method === 'GET' && path === '/api/admin/content') {
@@ -805,6 +843,37 @@ async function handleReviewClaim(claimId: string, event: AuthenticatedEvent): Pr
     return jsonResponse(statusCode, result.error);
   }
 
+  // Send points earned email after successful claim approval (best-effort)
+  if (body.action === 'approve' && result.claim) {
+    try {
+      const notificationCtx: NotificationContext = {
+        sesClient,
+        dynamoClient,
+        emailTemplatesTable: EMAIL_TEMPLATES_TABLE,
+        usersTable: USERS_TABLE,
+        senderEmail: 'store@awscommunity.cn',
+      };
+      // Fetch user's current balance (post-approval) for the email
+      const userBalanceResult = await dynamoClient.send(
+        new GetCommand({
+          TableName: USERS_TABLE,
+          Key: { userId: result.claim.userId },
+          ProjectionExpression: 'points',
+        }),
+      );
+      const currentBalance = userBalanceResult.Item?.points ?? 0;
+      await sendPointsEarnedEmail(
+        notificationCtx,
+        result.claim.userId,
+        result.claim.awardedPoints ?? 0,
+        '积分申请审批',
+        currentBalance,
+      );
+    } catch (err) {
+      console.error('[Email] Failed to send pointsEarned email after claim approval:', err);
+    }
+  }
+
   return jsonResponse(200, { claim: result.claim });
 }
 
@@ -844,6 +913,42 @@ async function handleBatchDistribution(event: AuthenticatedEvent): Promise<APIGa
 
   if (!result.success) {
     return errorResponse(result.error!.code, result.error!.message);
+  }
+
+  // Send points earned email to each recipient (best-effort)
+  try {
+    const notificationCtx: NotificationContext = {
+      sesClient,
+      dynamoClient,
+      emailTemplatesTable: EMAIL_TEMPLATES_TABLE,
+      usersTable: USERS_TABLE,
+      senderEmail: 'store@awscommunity.cn',
+    };
+    const uniqueUserIds = [...new Set(userIds as string[])];
+    for (const userId of uniqueUserIds) {
+      try {
+        // Fetch user's current balance (post-distribution) for the email
+        const userBalanceResult = await dynamoClient.send(
+          new GetCommand({
+            TableName: USERS_TABLE,
+            Key: { userId },
+            ProjectionExpression: 'points',
+          }),
+        );
+        const currentBalance = userBalanceResult.Item?.points ?? 0;
+        await sendPointsEarnedEmail(
+          notificationCtx,
+          userId,
+          points as number,
+          '管理员发放',
+          currentBalance,
+        );
+      } catch (emailErr) {
+        console.error(`[Email] Failed to send pointsEarned email to user ${userId}:`, emailErr);
+      }
+    }
+  } catch (err) {
+    console.error('[Email] Failed to send pointsEarned emails after batch distribution:', err);
   }
 
   return jsonResponse(201, {
@@ -1044,6 +1149,13 @@ async function handleUpdateFeatureToggles(event: AuthenticatedEvent): Promise<AP
       adminOrdersEnabled: body.adminOrdersEnabled !== false,     // default true if not provided
       adminContentReviewEnabled: body.adminContentReviewEnabled === true, // default false
       adminCategoriesEnabled: body.adminCategoriesEnabled === true,       // default false
+      emailPointsEarnedEnabled: body.emailPointsEarnedEnabled === true,   // default false
+      emailNewOrderEnabled: body.emailNewOrderEnabled === true,            // default false
+      emailOrderShippedEnabled: body.emailOrderShippedEnabled === true,    // default false
+      emailNewProductEnabled: body.emailNewProductEnabled === true,        // default false
+      emailNewContentEnabled: body.emailNewContentEnabled === true,        // default false
+      adminEmailProductsEnabled: body.adminEmailProductsEnabled === true,  // default false
+      adminEmailContentEnabled: body.adminEmailContentEnabled === true,    // default false
       updatedBy: event.user.userId,
     },
     dynamoClient,
@@ -1312,4 +1424,214 @@ async function handleUpdateContentRolePermissions(event: AuthenticatedEvent): Pr
   }
 
   return jsonResponse(200, { contentRolePermissions: result.contentRolePermissions });
+}
+
+// ---- Bulk Email Notification Route Handlers ----
+
+const SENDER_EMAIL = 'store@awscommunity.cn';
+
+function buildNotificationContext(): NotificationContext {
+  return {
+    sesClient,
+    dynamoClient,
+    emailTemplatesTable: EMAIL_TEMPLATES_TABLE,
+    usersTable: USERS_TABLE,
+    senderEmail: SENDER_EMAIL,
+  };
+}
+
+async function handleSendProductNotification(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  // Check email toggle first — return 403 if disabled
+  const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+  if (!toggles.emailNewProductEnabled) {
+    return errorResponse('FORBIDDEN', '新商品邮件通知功能已关闭', 403);
+  }
+
+  // Admin permission check: SuperAdmin always passes, Admin requires adminEmailProductsEnabled
+  if (!isSuperAdmin(event.user.roles as UserRole[])) {
+    if (!toggles.adminEmailProductsEnabled) {
+      return errorResponse('FORBIDDEN', '管理员暂无新商品邮件通知权限', 403);
+    }
+  }
+
+  const body = parseBody(event);
+  if (!body || !body.productList) {
+    return errorResponse('INVALID_REQUEST', 'Missing required field: productList', 400);
+  }
+
+  const productList = body.productList as string;
+
+  // Query subscribed users with emailSubscriptions.newProduct === true
+  const scanResult = await dynamoClient.send(
+    new ScanCommand({
+      TableName: USERS_TABLE,
+      FilterExpression: '#subs.#np = :trueVal',
+      ExpressionAttributeNames: {
+        '#subs': 'emailSubscriptions',
+        '#np': 'newProduct',
+      },
+      ExpressionAttributeValues: {
+        ':trueVal': true,
+      },
+      ProjectionExpression: 'email, locale',
+    }),
+  );
+
+  const subscribedUsers: SubscribedUser[] = (scanResult.Items ?? [])
+    .filter((item) => item.email)
+    .map((item) => ({
+      email: item.email as string,
+      locale: (item.locale as EmailLocale) ?? 'zh',
+    }));
+
+  const ctx = buildNotificationContext();
+  const result = await sendNewProductNotification(ctx, productList, subscribedUsers);
+
+  return jsonResponse(200, {
+    message: '新商品通知发送完成',
+    subscriberCount: subscribedUsers.length,
+    totalBatches: result.totalBatches,
+    successCount: result.successCount,
+    failureCount: result.failureCount,
+  });
+}
+
+async function handleSendContentNotification(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  // Check email toggle first — return 403 if disabled
+  const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+  if (!toggles.emailNewContentEnabled) {
+    return errorResponse('FORBIDDEN', '新内容邮件通知功能已关闭', 403);
+  }
+
+  // Admin permission check: SuperAdmin always passes, Admin requires adminEmailContentEnabled
+  if (!isSuperAdmin(event.user.roles as UserRole[])) {
+    if (!toggles.adminEmailContentEnabled) {
+      return errorResponse('FORBIDDEN', '管理员暂无新内容邮件通知权限', 403);
+    }
+  }
+
+  const body = parseBody(event);
+  if (!body || !body.contentList) {
+    return errorResponse('INVALID_REQUEST', 'Missing required field: contentList', 400);
+  }
+
+  const contentList = body.contentList as string;
+
+  // Query subscribed users with emailSubscriptions.newContent === true
+  const scanResult = await dynamoClient.send(
+    new ScanCommand({
+      TableName: USERS_TABLE,
+      FilterExpression: '#subs.#nc = :trueVal',
+      ExpressionAttributeNames: {
+        '#subs': 'emailSubscriptions',
+        '#nc': 'newContent',
+      },
+      ExpressionAttributeValues: {
+        ':trueVal': true,
+      },
+      ProjectionExpression: 'email, locale',
+    }),
+  );
+
+  const subscribedUsers: SubscribedUser[] = (scanResult.Items ?? [])
+    .filter((item) => item.email)
+    .map((item) => ({
+      email: item.email as string,
+      locale: (item.locale as EmailLocale) ?? 'zh',
+    }));
+
+  const ctx = buildNotificationContext();
+  const result = await sendNewContentNotification(ctx, contentList, subscribedUsers);
+
+  return jsonResponse(200, {
+    message: '新内容通知发送完成',
+    subscriberCount: subscribedUsers.length,
+    totalBatches: result.totalBatches,
+    successCount: result.successCount,
+    failureCount: result.failureCount,
+  });
+}
+
+// ---- Email Template Route Handlers ----
+
+const VALID_NOTIFICATION_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent'];
+const VALID_LOCALES: EmailLocale[] = ['zh', 'en', 'ja', 'ko', 'zh-TW'];
+
+async function handleListEmailTemplates(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const type = event.queryStringParameters?.type as string | undefined;
+
+  if (type && !VALID_NOTIFICATION_TYPES.includes(type as NotificationType)) {
+    return errorResponse('INVALID_REQUEST', `Invalid notification type: ${type}`, 400);
+  }
+
+  const templates = await listTemplates(
+    dynamoClient,
+    EMAIL_TEMPLATES_TABLE,
+    type as NotificationType | undefined,
+  );
+
+  // Include required variables metadata when filtering by type
+  const requiredVariables = type ? getRequiredVariables(type as NotificationType) : undefined;
+
+  return jsonResponse(200, { templates, requiredVariables });
+}
+
+async function handleSeedEmailTemplates(): Promise<APIGatewayProxyResult> {
+  await seedDefaultTemplates(dynamoClient, EMAIL_TEMPLATES_TABLE);
+  return jsonResponse(200, { message: '默认邮件模板初始化完成' });
+}
+
+async function handleUpdateEmailTemplate(type: string, locale: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  if (!VALID_NOTIFICATION_TYPES.includes(type as NotificationType)) {
+    return errorResponse('INVALID_REQUEST', `Invalid notification type: ${type}`, 400);
+  }
+
+  if (!VALID_LOCALES.includes(locale as EmailLocale)) {
+    return errorResponse('INVALID_REQUEST', `Invalid locale: ${locale}`, 400);
+  }
+
+  const body = parseBody(event);
+  if (!body) {
+    return errorResponse('INVALID_REQUEST', 'Missing request body', 400);
+  }
+
+  const subject = body.subject as string | undefined;
+  const bodyContent = body.body as string | undefined;
+
+  if (subject === undefined && bodyContent === undefined) {
+    return errorResponse('INVALID_REQUEST', 'At least one of subject or body must be provided', 400);
+  }
+
+  // Validate provided fields
+  if (subject !== undefined || bodyContent !== undefined) {
+    // For partial updates, we need to validate what's provided
+    // Full validation (including merging with existing) happens in updateTemplate
+    if (subject !== undefined) {
+      const subjectValidation = validateTemplateInput(subject, 'x'); // dummy body for subject-only check
+      if (!subjectValidation.valid && subjectValidation.error?.includes('Subject')) {
+        return errorResponse('INVALID_REQUEST', subjectValidation.error, 400);
+      }
+    }
+    if (bodyContent !== undefined) {
+      const bodyValidation = validateTemplateInput('x', bodyContent); // dummy subject for body-only check
+      if (!bodyValidation.valid && bodyValidation.error?.includes('Body')) {
+        return errorResponse('INVALID_REQUEST', bodyValidation.error, 400);
+      }
+    }
+  }
+
+  try {
+    const template = await updateTemplate(dynamoClient, EMAIL_TEMPLATES_TABLE, {
+      templateId: type,
+      locale: locale as EmailLocale,
+      subject,
+      body: bodyContent,
+      updatedBy: event.user.userId,
+    });
+
+    return jsonResponse(200, { template });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to update template';
+    return errorResponse('INVALID_REQUEST', message, 400);
+  }
 }

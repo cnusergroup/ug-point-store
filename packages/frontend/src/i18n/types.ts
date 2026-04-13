@@ -417,6 +417,13 @@ export interface TranslationDict {
     logoutConfirmContent: string;
     logoutConfirmButton: string;
     languageLabel: string;
+    emailSubscriptions: {
+      sectionTitle: string;
+      newProductLabel: string;
+      newProductDesc: string;
+      newContentLabel: string;
+      newContentDesc: string;
+    };
   };
   address: {
     title: string;
@@ -525,6 +532,10 @@ export interface TranslationDict {
       travelDesc: string;
       tagsTitle: string;
       tagsDesc: string;
+      emailProductsTitle: string;
+      emailProductsDesc: string;
+      emailContentTitle: string;
+      emailContentDesc: string;
     };
     products: {
       title: string;
@@ -828,6 +839,10 @@ export interface TranslationDict {
       adminContentReviewDesc: string;
       adminCategoriesLabel: string;
       adminCategoriesDesc: string;
+      adminEmailProductsLabel: string;
+      adminEmailProductsDesc: string;
+      adminEmailContentLabel: string;
+      adminEmailContentDesc: string;
       contentRolePermissionsTitle: string;
       contentRolePermissionsDesc: string;
       permissionCanAccess: string;
@@ -837,6 +852,34 @@ export interface TranslationDict {
       roleSpeaker: string;
       roleUserGroupLeader: string;
       roleVolunteer: string;
+      email: {
+        sectionTitle: string;
+        pointsEarnedLabel: string;
+        pointsEarnedDesc: string;
+        newOrderLabel: string;
+        newOrderDesc: string;
+        orderShippedLabel: string;
+        orderShippedDesc: string;
+        newProductLabel: string;
+        newProductDesc: string;
+        newContentLabel: string;
+        newContentDesc: string;
+        editTemplateButton: string;
+        templateEditorTitle: string;
+        templateSubjectLabel: string;
+        templateBodyLabel: string;
+        templateVariablesTitle: string;
+        templateSaving: string;
+        templateSaved: string;
+        templateSaveFailed: string;
+        templateLoadFailed: string;
+        templateSubjectPlaceholder: string;
+        templateBodyPlaceholder: string;
+        templateSubjectCount: string;
+        templateBodyCount: string;
+        templateValidationSubject: string;
+        templateValidationBody: string;
+      };
     };
   };
   contentHub: {
@@ -1257,6 +1300,37 @@ export interface TranslationDict {
       collapseDetail: string;
       detailLoading: string;
     };
+  };
+  emailNotification: {
+    productPageTitle: string;
+    contentPageTitle: string;
+    backButton: string;
+    loading: string;
+    disabled: string;
+    disabledProductMessage: string;
+    disabledContentMessage: string;
+    selectAll: string;
+    deselectAll: string;
+    selectedCount: string;
+    preview: string;
+    send: string;
+    sending: string;
+    sendResult: string;
+    resultTitle: string;
+    resultSubscribers: string;
+    resultTotalBatches: string;
+    resultSuccess: string;
+    resultFailure: string;
+    resultClose: string;
+    previewTitle: string;
+    previewSubject: string;
+    noTemplate: string;
+    sendFailed: string;
+    templateLoadFailed: string;
+    recentProducts: string;
+    recentContent: string;
+    noRecentProducts: string;
+    noRecentContent: string;
   };
   roles: {
     orderAdmin: string;

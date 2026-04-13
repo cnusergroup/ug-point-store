@@ -1,11 +1,12 @@
-import { useState } from 'react';
-import { View, Text, Input } from '@tarojs/components';
+import { useState, useEffect, useCallback } from 'react';
+import { View, Text, Input, Switch } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useAppStore } from '../../store';
+import { request } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
 import type { Locale } from '../../i18n/types';
-import { KeyIcon, LogoutIcon, AdminIcon, ChevronRightIcon, ArrowLeftIcon, GlobeIcon, SettingsIcon } from '../../components/icons';
+import { KeyIcon, LogoutIcon, AdminIcon, ChevronRightIcon, ArrowLeftIcon, GlobeIcon, SettingsIcon, MailIcon } from '../../components/icons';
 import './index.scss';
 
 const LOCALE_OPTIONS: { key: Locale; label: string }[] = [
@@ -34,8 +35,65 @@ export default function SettingsPage() {
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordSuccess, setPasswordSuccess] = useState(false);
 
+  // Email subscription state
+  const [emailSubs, setEmailSubs] = useState<{ newProduct: boolean; newContent: boolean }>({ newProduct: false, newContent: false });
+  const [emailSubsLoading, setEmailSubsLoading] = useState(true);
+  const [emailToggles, setEmailToggles] = useState<{ emailNewProductEnabled: boolean; emailNewContentEnabled: boolean }>({ emailNewProductEnabled: false, emailNewContentEnabled: false });
+
   const userRoles = user?.roles ?? [];
   const isAdmin = userRoles.includes('Admin') || userRoles.includes('SuperAdmin');
+
+  // Fetch feature toggles and email subscriptions on mount
+  const fetchEmailData = useCallback(async () => {
+    setEmailSubsLoading(true);
+    try {
+      // Fetch admin feature toggles (public, no auth)
+      const togglesRes = await request<{ emailNewProductEnabled?: boolean; emailNewContentEnabled?: boolean }>({
+        url: '/api/settings/feature-toggles',
+        skipAuth: true,
+      });
+      setEmailToggles({
+        emailNewProductEnabled: togglesRes.emailNewProductEnabled ?? false,
+        emailNewContentEnabled: togglesRes.emailNewContentEnabled ?? false,
+      });
+
+      // Only fetch user subscriptions if at least one toggle is enabled
+      if (togglesRes.emailNewProductEnabled || togglesRes.emailNewContentEnabled) {
+        const subsRes = await request<{ newProduct: boolean; newContent: boolean }>({
+          url: '/api/user/email-subscriptions',
+        });
+        setEmailSubs({
+          newProduct: subsRes?.newProduct ?? false,
+          newContent: subsRes?.newContent ?? false,
+        });
+      }
+    } catch {
+      // Silently fail — section will just not show
+    } finally {
+      setEmailSubsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchEmailData();
+  }, [fetchEmailData]);
+
+  const handleEmailSubToggle = async (key: 'newProduct' | 'newContent', newValue: boolean) => {
+    const prev = { ...emailSubs };
+    setEmailSubs({ ...emailSubs, [key]: newValue });
+    try {
+      await request({
+        url: '/api/user/email-subscriptions',
+        method: 'PUT',
+        data: { [key]: newValue },
+      });
+    } catch {
+      // Revert on failure
+      setEmailSubs(prev);
+    }
+  };
+
+  const showEmailSection = !emailSubsLoading && (emailToggles.emailNewProductEnabled || emailToggles.emailNewContentEnabled);
 
   const handlePasswordToggle = () => {
     setShowPasswordForm((prev) => !prev);
@@ -224,6 +282,51 @@ export default function SettingsPage() {
         </View>
 
         <View className='settings-divider' />
+
+        {/* Email Subscriptions (conditional on admin toggles) */}
+        {showEmailSection && (
+          <>
+            <View className='settings-email'>
+              <View className='settings-email__header'>
+                <View className='settings-item__left'>
+                  <View className='settings-item__icon'>
+                    <MailIcon size={20} color='var(--accent-primary)' />
+                  </View>
+                  <Text className='settings-item__label'>邮件订阅</Text>
+                </View>
+              </View>
+              <View className='settings-email__toggles'>
+                {emailToggles.emailNewProductEnabled && (
+                  <View className='settings-email__toggle-row'>
+                    <View className='settings-email__toggle-info'>
+                      <Text className='settings-email__toggle-label'>新商品通知</Text>
+                      <Text className='settings-email__toggle-desc'>商城上新时收到邮件提醒</Text>
+                    </View>
+                    <Switch
+                      checked={emailSubs.newProduct}
+                      onChange={(e) => handleEmailSubToggle('newProduct', e.detail.value)}
+                      color='var(--accent-primary)'
+                    />
+                  </View>
+                )}
+                {emailToggles.emailNewContentEnabled && (
+                  <View className='settings-email__toggle-row'>
+                    <View className='settings-email__toggle-info'>
+                      <Text className='settings-email__toggle-label'>新内容通知</Text>
+                      <Text className='settings-email__toggle-desc'>有新内容发布时收到邮件提醒</Text>
+                    </View>
+                    <Switch
+                      checked={emailSubs.newContent}
+                      onChange={(e) => handleEmailSubToggle('newContent', e.detail.value)}
+                      color='var(--accent-primary)'
+                    />
+                  </View>
+                )}
+              </View>
+            </View>
+            <View className='settings-divider' />
+          </>
+        )}
 
         {/* Admin Entry (conditional) */}
         {isAdmin && (

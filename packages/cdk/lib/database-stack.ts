@@ -21,6 +21,7 @@ export class DatabaseStack extends cdk.Stack {
   public readonly batchDistributionsTable: dynamodb.Table;
   public readonly travelApplicationsTable: dynamodb.Table;
   public readonly contentTagsTable: dynamodb.Table;
+  public readonly emailTemplatesTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -348,5 +349,17 @@ export class DatabaseStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'ContentTagsTableName', { value: this.contentTagsTable.tableName, exportName: 'PointsMall-ContentTagsTableName' });
     new cdk.CfnOutput(this, 'ContentTagsTableArn', { value: this.contentTagsTable.tableArn, exportName: 'PointsMall-ContentTagsTableArn' });
+
+    // EmailTemplates table: PK=templateId, SK=locale
+    this.emailTemplatesTable = new dynamodb.Table(this, 'EmailTemplatesTable', {
+      tableName: 'PointsMall-EmailTemplates',
+      partitionKey: { name: 'templateId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'locale', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    new cdk.CfnOutput(this, 'EmailTemplatesTableName', { value: this.emailTemplatesTable.tableName, exportName: 'PointsMall-EmailTemplatesTableName' });
+    new cdk.CfnOutput(this, 'EmailTemplatesTableArn', { value: this.emailTemplatesTable.tableArn, exportName: 'PointsMall-EmailTemplatesTableArn' });
   }
 }

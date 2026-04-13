@@ -2,11 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { APIGatewayProxyEvent } from 'aws-lambda';
 
 // Mock AWS SDK clients before importing handler
+const { mockDynamoSend } = vi.hoisted(() => ({
+  mockDynamoSend: vi.fn(),
+}));
 vi.mock('@aws-sdk/client-dynamodb', () => ({
   DynamoDBClient: vi.fn().mockImplementation(() => ({})),
 }));
 vi.mock('@aws-sdk/lib-dynamodb', () => ({
-  DynamoDBDocumentClient: { from: vi.fn().mockReturnValue({}) },
+  DynamoDBDocumentClient: { from: vi.fn().mockReturnValue({ send: mockDynamoSend }) },
+  GetCommand: vi.fn().mockImplementation((params: any) => ({ _type: 'GetCommand', ...params })),
+  UpdateCommand: vi.fn().mockImplementation((params: any) => ({ _type: 'UpdateCommand', ...params })),
 }));
 
 // Mock the points modules
@@ -870,6 +875,135 @@ describe('Points Lambda Handler - Routing', () => {
       const result = await handler(event);
       expect(result.statusCode).toBe(400);
       expect(JSON.parse(result.body).code).toBe('INVALID_APPLICATION_STATUS');
+    });
+  });
+
+  // ── Email Subscription Routes ──────────────────────────────
+
+  describe('GET /api/user/email-subscriptions', () => {
+    it('returns default subscriptions when emailSubscriptions field is missing', async () => {
+      mockDynamoSend.mockResolvedValueOnce({ Item: { userId: 'test-user-id' } });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/user/email-subscriptions',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body)).toEqual({ newProduct: false, newContent: false });
+    });
+
+    it('returns actual subscription values when set', async () => {
+      mockDynamoSend.mockResolvedValueOnce({
+        Item: {
+          userId: 'test-user-id',
+          emailSubscriptions: { newProduct: true, newContent: false },
+        },
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/user/email-subscriptions',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body)).toEqual({ newProduct: true, newContent: false });
+    });
+
+    it('returns 404 when user not found', async () => {
+      mockDynamoSend.mockResolvedValueOnce({ Item: undefined });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/user/email-subscriptions',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(404);
+      expect(JSON.parse(result.body).code).toBe('USER_NOT_FOUND');
+    });
+  });
+
+  describe('PUT /api/user/email-subscriptions', () => {
+    it('updates newProduct subscription and returns full state', async () => {
+      // First call: init map, second call: UpdateCommand, third call: GetCommand (read back)
+      mockDynamoSend
+        .mockResolvedValueOnce({}) // init emailSubscriptions map
+        .mockResolvedValueOnce({}) // UpdateCommand
+        .mockResolvedValueOnce({   // GetCommand
+          Item: {
+            userId: 'test-user-id',
+            emailSubscriptions: { newProduct: true, newContent: false },
+          },
+        });
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/user/email-subscriptions',
+        body: JSON.stringify({ newProduct: true }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body)).toEqual({ newProduct: true, newContent: false });
+    });
+
+    it('updates both subscriptions', async () => {
+      mockDynamoSend
+        .mockResolvedValueOnce({}) // init emailSubscriptions map
+        .mockResolvedValueOnce({}) // UpdateCommand
+        .mockResolvedValueOnce({   // GetCommand
+          Item: {
+            userId: 'test-user-id',
+            emailSubscriptions: { newProduct: true, newContent: true },
+          },
+        });
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/user/email-subscriptions',
+        body: JSON.stringify({ newProduct: true, newContent: true }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body)).toEqual({ newProduct: true, newContent: true });
+    });
+
+    it('returns 400 when body is missing', async () => {
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/user/email-subscriptions',
+        body: null,
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+    });
+
+    it('returns 400 when newProduct is not a boolean', async () => {
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/user/email-subscriptions',
+        body: JSON.stringify({ newProduct: 'yes' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).message).toBe('newProduct must be a boolean');
+    });
+
+    it('returns 400 when newContent is not a boolean', async () => {
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/user/email-subscriptions',
+        body: JSON.stringify({ newContent: 1 }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).message).toBe('newContent must be a boolean');
+    });
+
+    it('returns 400 when no subscription fields provided', async () => {
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/user/email-subscriptions',
+        body: JSON.stringify({ unrelated: true }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).message).toBe('At least one of newProduct or newContent is required');
     });
   });
 });

@@ -27,6 +27,7 @@ export interface ApiStackProps extends cdk.StackProps {
   batchDistributionsTable: dynamodb.Table;
   travelApplicationsTable: dynamodb.Table;
   contentTagsTable: dynamodb.Table;
+  emailTemplatesTable: dynamodb.Table;
   jwtSecret: string;
   wechatAppId: string;
   wechatAppSecret: string;
@@ -46,7 +47,7 @@ export class ApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
-    const { usersTable, productsTable, codesTable, redemptionsTable, pointsRecordsTable, cartTable, addressesTable, ordersTable, invitesTable, claimsTable, contentItemsTable, contentCategoriesTable, contentCommentsTable, contentLikesTable, contentReservationsTable, batchDistributionsTable, travelApplicationsTable, contentTagsTable } = props;
+    const { usersTable, productsTable, codesTable, redemptionsTable, pointsRecordsTable, cartTable, addressesTable, ordersTable, invitesTable, claimsTable, contentItemsTable, contentCategoriesTable, contentCommentsTable, contentLikesTable, contentReservationsTable, batchDistributionsTable, travelApplicationsTable, contentTagsTable, emailTemplatesTable } = props;
 
     // --- SSM Parameter for JWT Secret ---
     const jwtSecretParam = new ssm.StringParameter(this, 'JwtSecretParam', {
@@ -246,6 +247,25 @@ export class ApiStack extends cdk.Stack {
     usersTable.grantReadWriteData(contentFn);
     pointsRecordsTable.grantReadWriteData(contentFn);
 
+    // SES permissions for email notifications (Admin, Points, Order, Content Lambdas)
+    const sesEmailPolicy = new iam.PolicyStatement({
+      actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+      resources: [
+        `arn:aws:ses:${this.region}:${this.account}:identity/awscommunity.cn`,
+        `arn:aws:ses:${this.region}:${this.account}:configuration-set/*`,
+      ],
+    });
+    [adminFn, pointsFn, orderFn, contentFn].forEach(fn => fn.addToRolePolicy(sesEmailPolicy));
+
+    // EmailTemplates table: env var and permissions
+    [adminFn, pointsFn, orderFn, contentFn].forEach(fn => {
+      fn.addEnvironment('EMAIL_TEMPLATES_TABLE', emailTemplatesTable.tableName);
+    });
+    emailTemplatesTable.grantReadWriteData(adminFn);
+    emailTemplatesTable.grantReadData(pointsFn);
+    emailTemplatesTable.grantReadData(orderFn);
+    emailTemplatesTable.grantReadData(contentFn);
+
     // Grant all Lambdas permission to read the JWT secret from SSM
     const ssmReadPolicy = new iam.PolicyStatement({
       actions: ['ssm:GetParameter'],
@@ -302,6 +322,9 @@ export class ApiStack extends cdk.Stack {
     // User routes (reuse Points Lambda — it already has Users table access)
     const user = api.addResource('user');
     user.addResource('profile').addMethod('GET', pointsInt);
+    const emailSubscriptions = user.addResource('email-subscriptions');
+    emailSubscriptions.addMethod('GET', pointsInt);
+    emailSubscriptions.addMethod('PUT', pointsInt);
 
     // Settings routes (public, no auth — integrated to Points Lambda)
     const settings = api.addResource('settings');

@@ -282,12 +282,17 @@ export default function ContentListPage() {
             lowerThreshold={100}
           >
             <View className='content-grid'>
-              {items.map((item) => (
+              {items.map((item) => {
+                const isNew = item.createdAt
+                  ? (Date.now() - new Date(item.createdAt).getTime()) < 7 * 24 * 60 * 60 * 1000
+                  : false;
+                return (
                 <View
                   key={item.contentId}
                   className='content-card'
                   onClick={() => handleItemClick(item.contentId)}
                 >
+                  {isNew && <View className='content-card__new-badge'><Text className='content-card__new-badge-text'>NEW</Text></View>}
                   <View className='content-card__body'>
                     <Text className='content-card__title'>{item.title}</Text>
                     <View className='content-card__meta'>
@@ -317,7 +322,8 @@ export default function ContentListPage() {
                     </View>
                   </View>
                 </View>
-              ))}
+                );
+              })}
             </View>
 
             {loadingMore && (

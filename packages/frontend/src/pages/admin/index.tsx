@@ -4,7 +4,7 @@ import Taro from '@tarojs/taro';
 import { useAppStore } from '../../store';
 import { request } from '../../utils/request';
 import { useTranslation } from '../../i18n';
-import { PackageIcon, TicketIcon, ProfileIcon, ClaimIcon, ShoppingBagIcon, GlobeIcon, SettingsIcon, GiftIcon, ClockIcon, LocationIcon, TagIcon } from '../../components/icons';
+import { PackageIcon, TicketIcon, ProfileIcon, ClaimIcon, ShoppingBagIcon, GlobeIcon, SettingsIcon, GiftIcon, ClockIcon, LocationIcon, TagIcon, MailIcon } from '../../components/icons';
 import './index.scss';
 
 const ADMIN_LINKS = [
@@ -102,6 +102,22 @@ const ADMIN_LINKS = [
     superAdminOnly: true,
   },
   {
+    key: 'email-products',
+    icon: MailIcon,
+    titleKey: 'admin.dashboard.emailProductsTitle',
+    descKey: 'admin.dashboard.emailProductsDesc',
+    url: '/pages/admin/email-products',
+    adminPermissionKey: 'adminEmailProductsEnabled' as const,
+  },
+  {
+    key: 'email-content',
+    icon: MailIcon,
+    titleKey: 'admin.dashboard.emailContentTitle',
+    descKey: 'admin.dashboard.emailContentDesc',
+    url: '/pages/admin/email-content',
+    adminPermissionKey: 'adminEmailContentEnabled' as const,
+  },
+  {
     key: 'settings',
     icon: SettingsIcon,
     titleKey: 'admin.dashboard.settingsTitle',
@@ -115,7 +131,7 @@ export default function AdminDashboard() {
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
   const user = useAppStore((s) => s.user);
   const { t } = useTranslation();
-  const [featureToggles, setFeatureToggles] = useState<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; adminProductsEnabled: boolean; adminOrdersEnabled: boolean; adminContentReviewEnabled: boolean; adminCategoriesEnabled: boolean } | null>(null);
+  const [featureToggles, setFeatureToggles] = useState<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; adminProductsEnabled: boolean; adminOrdersEnabled: boolean; adminContentReviewEnabled: boolean; adminCategoriesEnabled: boolean; adminEmailProductsEnabled: boolean; adminEmailContentEnabled: boolean } | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -133,7 +149,7 @@ export default function AdminDashboard() {
     }
 
     // Fetch feature toggles (public endpoint, no auth needed)
-    request<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; adminProductsEnabled: boolean; adminOrdersEnabled: boolean; adminContentReviewEnabled: boolean; adminCategoriesEnabled: boolean }>({
+    request<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; adminProductsEnabled: boolean; adminOrdersEnabled: boolean; adminContentReviewEnabled: boolean; adminCategoriesEnabled: boolean; adminEmailProductsEnabled: boolean; adminEmailContentEnabled: boolean }>({
       url: '/api/settings/feature-toggles',
       skipAuth: true,
     })
@@ -147,6 +163,8 @@ export default function AdminDashboard() {
           adminOrdersEnabled: true,
           adminContentReviewEnabled: true,
           adminCategoriesEnabled: true,
+          adminEmailProductsEnabled: true,
+          adminEmailContentEnabled: true,
         });
       });
   }, [isAuthenticated, user]);

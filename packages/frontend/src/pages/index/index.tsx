@@ -25,6 +25,7 @@ interface ProductListItem {
   pointsCost?: number;
   allowedRoles?: UserRole[] | 'all';
   eventInfo?: string;
+  createdAt?: string;
 }
 
 interface ProductListResponse {
@@ -191,6 +192,10 @@ export default function IndexPage() {
       isCode ? 'product-card--code-exclusive' : '',
     ].filter(Boolean).join(' ');
 
+    const isNew = product.createdAt
+      ? (Date.now() - new Date(product.createdAt).getTime()) < 7 * 24 * 60 * 60 * 1000
+      : false;
+
     return (
       <View
         key={product.productId}
@@ -212,6 +217,11 @@ export default function IndexPage() {
           {product.locked && (
             <View className='product-card__lock-overlay'>
               <Text className='product-card__lock-icon'><LockIcon size={24} color='var(--text-primary)' /></Text>
+            </View>
+          )}
+          {isNew && !product.locked && (
+            <View className='product-card__new-badge'>
+              <Text className='product-card__new-badge-text'>NEW</Text>
             </View>
           )}
         </View>

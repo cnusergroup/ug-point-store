@@ -45,6 +45,9 @@ export async function listUsers(
 ): Promise<ListUsersResult> {
   const pageSize = Math.min(Math.max(options.pageSize ?? 20, 1), 100);
 
+  // System records stored in Users table that should be excluded from user listings
+  const SYSTEM_USER_IDS = ['feature-toggles', 'travel-sponsorship', 'invite-settings'];
+
   const expressionAttributeNames: Record<string, string> = {
     '#userId': 'userId',
     '#email': 'email',
@@ -55,17 +58,30 @@ export async function listUsers(
     '#createdAt': 'createdAt',
   };
 
+  // Build filter to exclude system records and optionally filter by role
+  const filterParts: string[] = [];
+  const expressionAttributeValues: Record<string, unknown> = {};
+
+  // Exclude system records
+  SYSTEM_USER_IDS.forEach((id, idx) => {
+    const key = `:sysId${idx}`;
+    filterParts.push(`#userId <> ${key}`);
+    expressionAttributeValues[key] = id;
+  });
+
+  if (options.role) {
+    filterParts.push('contains(#roles, :role)');
+    expressionAttributeValues[':role'] = options.role;
+  }
+
   const params: Record<string, unknown> = {
     TableName: tableName,
     Limit: pageSize,
     ProjectionExpression: '#userId, #email, #nickname, #roles, #points, #status, #createdAt',
     ExpressionAttributeNames: expressionAttributeNames,
+    FilterExpression: filterParts.join(' AND '),
+    ExpressionAttributeValues: expressionAttributeValues,
   };
-
-  if (options.role) {
-    params.FilterExpression = 'contains(#roles, :role)';
-    params.ExpressionAttributeValues = { ':role': options.role };
-  }
 
   if (options.lastKey) {
     params.ExclusiveStartKey = options.lastKey;

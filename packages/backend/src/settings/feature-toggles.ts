@@ -2,7 +2,6 @@
 import {
   DynamoDBDocumentClient,
   GetCommand,
-  PutCommand,
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { ErrorCodes, ErrorMessages } from '@points-mall/shared';
@@ -35,6 +34,20 @@ export interface FeatureToggles {
   adminCategoriesEnabled: boolean;
   /** Per-role content permissions matrix for Speaker, UserGroupLeader, Volunteer */
   contentRolePermissions: ContentRolePermissions;
+  /** Whether pointsEarned email notifications are enabled */
+  emailPointsEarnedEnabled: boolean;
+  /** Whether newOrder email notifications are enabled */
+  emailNewOrderEnabled: boolean;
+  /** Whether orderShipped email notifications are enabled */
+  emailOrderShippedEnabled: boolean;
+  /** Whether newProduct email notifications are enabled */
+  emailNewProductEnabled: boolean;
+  /** Whether newContent email notifications are enabled */
+  emailNewContentEnabled: boolean;
+  /** Whether Admin (non-SuperAdmin) can trigger new product email notifications */
+  adminEmailProductsEnabled: boolean;
+  /** Whether Admin (non-SuperAdmin) can trigger new content email notifications */
+  adminEmailContentEnabled: boolean;
 }
 
 export interface UpdateFeatureTogglesInput {
@@ -44,6 +57,13 @@ export interface UpdateFeatureTogglesInput {
   adminOrdersEnabled: boolean;
   adminContentReviewEnabled: boolean;
   adminCategoriesEnabled: boolean;
+  emailPointsEarnedEnabled: boolean;
+  emailNewOrderEnabled: boolean;
+  emailOrderShippedEnabled: boolean;
+  emailNewProductEnabled: boolean;
+  emailNewContentEnabled: boolean;
+  adminEmailProductsEnabled: boolean;
+  adminEmailContentEnabled: boolean;
   updatedBy: string;
 }
 
@@ -75,10 +95,17 @@ const DEFAULT_ROLE_PERMISSIONS: RolePermissions = {
   canReserve: true,
 };
 
+const DEFAULT_VOLUNTEER_PERMISSIONS: RolePermissions = {
+  canAccess: true,
+  canUpload: false,
+  canDownload: false,
+  canReserve: false,
+};
+
 const DEFAULT_CONTENT_ROLE_PERMISSIONS: ContentRolePermissions = {
   Speaker: { ...DEFAULT_ROLE_PERMISSIONS },
   UserGroupLeader: { ...DEFAULT_ROLE_PERMISSIONS },
-  Volunteer: { ...DEFAULT_ROLE_PERMISSIONS },
+  Volunteer: { ...DEFAULT_VOLUNTEER_PERMISSIONS },
 };
 
 const DEFAULT_TOGGLES: FeatureToggles = {
@@ -93,6 +120,13 @@ const DEFAULT_TOGGLES: FeatureToggles = {
     UserGroupLeader: { ...DEFAULT_ROLE_PERMISSIONS },
     Volunteer: { ...DEFAULT_ROLE_PERMISSIONS },
   },
+  emailPointsEarnedEnabled: false,       // default: email notifications disabled
+  emailNewOrderEnabled: false,
+  emailOrderShippedEnabled: false,
+  emailNewProductEnabled: false,
+  emailNewContentEnabled: false,
+  adminEmailProductsEnabled: false,          // default: Admin cannot trigger product email notifications
+  adminEmailContentEnabled: false,           // default: Admin cannot trigger content email notifications
 };
 
 // ---- Core Functions ----
@@ -142,6 +176,13 @@ export async function getFeatureToggles(
         UserGroupLeader:  safeRolePerms(rawCrp?.UserGroupLeader),
         Volunteer:        safeRolePerms(rawCrp?.Volunteer),
       },
+      emailPointsEarnedEnabled: result.Item.emailPointsEarnedEnabled === true,   // default false
+      emailNewOrderEnabled:     result.Item.emailNewOrderEnabled === true,        // default false
+      emailOrderShippedEnabled: result.Item.emailOrderShippedEnabled === true,    // default false
+      emailNewProductEnabled:   result.Item.emailNewProductEnabled === true,      // default false
+      emailNewContentEnabled:   result.Item.emailNewContentEnabled === true,      // default false
+      adminEmailProductsEnabled: result.Item.adminEmailProductsEnabled === true,  // default false
+      adminEmailContentEnabled:  result.Item.adminEmailContentEnabled === true,   // default false
     };
   } catch {
     // Safe degradation: return defaults when read fails
@@ -152,7 +193,7 @@ export async function getFeatureToggles(
 /**
  * Update feature toggle settings in DynamoDB.
  * Validates that all toggle values are booleans before writing.
- * Note: contentRolePermissions is NOT updated here — use updateContentRolePermissions instead.
+ * Uses UpdateCommand to only update toggle fields, preserving contentRolePermissions untouched.
  */
 export async function updateFeatureToggles(
   input: UpdateFeatureTogglesInput,
@@ -166,7 +207,14 @@ export async function updateFeatureToggles(
     typeof input.adminProductsEnabled !== 'boolean' ||
     typeof input.adminOrdersEnabled !== 'boolean' ||
     typeof input.adminContentReviewEnabled !== 'boolean' ||
-    typeof input.adminCategoriesEnabled !== 'boolean'
+    typeof input.adminCategoriesEnabled !== 'boolean' ||
+    typeof input.emailPointsEarnedEnabled !== 'boolean' ||
+    typeof input.emailNewOrderEnabled !== 'boolean' ||
+    typeof input.emailOrderShippedEnabled !== 'boolean' ||
+    typeof input.emailNewProductEnabled !== 'boolean' ||
+    typeof input.emailNewContentEnabled !== 'boolean' ||
+    typeof input.adminEmailProductsEnabled !== 'boolean' ||
+    typeof input.adminEmailContentEnabled !== 'boolean'
   ) {
     return {
       success: false,
@@ -174,57 +222,91 @@ export async function updateFeatureToggles(
     };
   }
 
-  // Read existing record first to preserve contentRolePermissions
-  let existingCrp: ContentRolePermissions = {
-    Speaker: { ...DEFAULT_ROLE_PERMISSIONS },
-    UserGroupLeader: { ...DEFAULT_ROLE_PERMISSIONS },
-    Volunteer: { ...DEFAULT_ROLE_PERMISSIONS },
-  };
-  try {
-    const existing = await dynamoClient.send(
-      new GetCommand({ TableName: usersTable, Key: { userId: FEATURE_TOGGLES_KEY } }),
-    );
-    if (existing.Item?.contentRolePermissions) {
-      existingCrp = existing.Item.contentRolePermissions as ContentRolePermissions;
-    }
-  } catch {
-    // ignore — use defaults
-  }
-
   const now = new Date().toISOString();
 
-  const record = {
-    userId: FEATURE_TOGGLES_KEY,
-    codeRedemptionEnabled: input.codeRedemptionEnabled,
-    pointsClaimEnabled: input.pointsClaimEnabled,
-    adminProductsEnabled: input.adminProductsEnabled,
-    adminOrdersEnabled: input.adminOrdersEnabled,
-    adminContentReviewEnabled: input.adminContentReviewEnabled,
-    adminCategoriesEnabled: input.adminCategoriesEnabled,
-    contentRolePermissions: existingCrp,
-    updatedAt: now,
-    updatedBy: input.updatedBy,
-  };
-
+  // Use UpdateCommand to only update toggle fields — never touches contentRolePermissions
   await dynamoClient.send(
-    new PutCommand({
+    new UpdateCommand({
       TableName: usersTable,
-      Item: record,
+      Key: { userId: FEATURE_TOGGLES_KEY },
+      UpdateExpression: `SET
+        codeRedemptionEnabled = :cre,
+        pointsClaimEnabled = :pce,
+        adminProductsEnabled = :ape,
+        adminOrdersEnabled = :aoe,
+        adminContentReviewEnabled = :acre,
+        adminCategoriesEnabled = :acae,
+        emailPointsEarnedEnabled = :epe,
+        emailNewOrderEnabled = :eno,
+        emailOrderShippedEnabled = :eos,
+        emailNewProductEnabled = :enp,
+        emailNewContentEnabled = :enc,
+        adminEmailProductsEnabled = :aepe,
+        adminEmailContentEnabled = :aece,
+        updatedAt = :ua,
+        updatedBy = :ub`,
+      ExpressionAttributeValues: {
+        ':cre': input.codeRedemptionEnabled,
+        ':pce': input.pointsClaimEnabled,
+        ':ape': input.adminProductsEnabled,
+        ':aoe': input.adminOrdersEnabled,
+        ':acre': input.adminContentReviewEnabled,
+        ':acae': input.adminCategoriesEnabled,
+        ':epe': input.emailPointsEarnedEnabled,
+        ':eno': input.emailNewOrderEnabled,
+        ':eos': input.emailOrderShippedEnabled,
+        ':enp': input.emailNewProductEnabled,
+        ':enc': input.emailNewContentEnabled,
+        ':aepe': input.adminEmailProductsEnabled,
+        ':aece': input.adminEmailContentEnabled,
+        ':ua': now,
+        ':ub': input.updatedBy,
+      },
     }),
   );
+
+  // Read back the full record to return complete settings
+  const readResult = await dynamoClient.send(
+    new GetCommand({ TableName: usersTable, Key: { userId: FEATURE_TOGGLES_KEY } }),
+  );
+
+  const item = readResult.Item ?? {};
+
+  const safeRolePerms = (raw: unknown): RolePermissions => {
+    const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+    return {
+      canAccess:   r.canAccess   !== false,
+      canUpload:   r.canUpload   !== false,
+      canDownload: r.canDownload !== false,
+      canReserve:  r.canReserve  !== false,
+    };
+  };
+
+  const rawCrp = item.contentRolePermissions as Record<string, unknown> | undefined;
 
   return {
     success: true,
     settings: {
-      codeRedemptionEnabled: record.codeRedemptionEnabled,
-      pointsClaimEnabled: record.pointsClaimEnabled,
-      adminProductsEnabled: record.adminProductsEnabled,
-      adminOrdersEnabled: record.adminOrdersEnabled,
-      adminContentReviewEnabled: record.adminContentReviewEnabled,
-      adminCategoriesEnabled: record.adminCategoriesEnabled,
-      contentRolePermissions: record.contentRolePermissions,
-      updatedAt: record.updatedAt,
-      updatedBy: record.updatedBy,
+      codeRedemptionEnabled: input.codeRedemptionEnabled,
+      pointsClaimEnabled: input.pointsClaimEnabled,
+      adminProductsEnabled: input.adminProductsEnabled,
+      adminOrdersEnabled: input.adminOrdersEnabled,
+      adminContentReviewEnabled: input.adminContentReviewEnabled,
+      adminCategoriesEnabled: input.adminCategoriesEnabled,
+      contentRolePermissions: {
+        Speaker:          safeRolePerms(rawCrp?.Speaker),
+        UserGroupLeader:  safeRolePerms(rawCrp?.UserGroupLeader),
+        Volunteer:        safeRolePerms(rawCrp?.Volunteer),
+      },
+      emailPointsEarnedEnabled: input.emailPointsEarnedEnabled,
+      emailNewOrderEnabled: input.emailNewOrderEnabled,
+      emailOrderShippedEnabled: input.emailOrderShippedEnabled,
+      emailNewProductEnabled: input.emailNewProductEnabled,
+      emailNewContentEnabled: input.emailNewContentEnabled,
+      adminEmailProductsEnabled: input.adminEmailProductsEnabled,
+      adminEmailContentEnabled: input.adminEmailContentEnabled,
+      updatedAt: now,
+      updatedBy: input.updatedBy,
     },
   };
 }

@@ -15,6 +15,7 @@ export interface RedeemCodeInput {
 export interface RedeemCodeResult {
   success: boolean;
   earnedPoints?: number;
+  newBalance?: number;
   error?: { code: string; message: string };
 }
 
@@ -150,5 +151,5 @@ export async function redeemCode(
     }),
   );
 
-  return { success: true, pointsEarned: pointsValue, newBalance };
+  return { success: true, earnedPoints: pointsValue, newBalance };
 }

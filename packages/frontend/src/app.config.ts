@@ -23,6 +23,8 @@ export default defineAppConfig({
     'pages/admin/batch-history',
     'pages/admin/travel',
     'pages/admin/tags',
+    'pages/admin/email-products',
+    'pages/admin/email-content',
     'pages/orders/index',
     'pages/order-detail/index',
     'pages/order-confirm/index',

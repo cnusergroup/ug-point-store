@@ -47,6 +47,13 @@ describe('getFeatureToggles', () => {
         UserGroupLeader: { canAccess: false, canUpload: true,  canDownload: false, canReserve: true  },
         Volunteer:       { canAccess: true,  canUpload: true,  canDownload: true,  canReserve: true  },
       },
+      emailPointsEarnedEnabled: true,
+      emailNewOrderEnabled: false,
+      emailOrderShippedEnabled: true,
+      emailNewProductEnabled: false,
+      emailNewContentEnabled: true,
+      adminEmailProductsEnabled: true,
+      adminEmailContentEnabled: false,
     });
 
     const result = await getFeatureToggles(client, 'users-table');
@@ -63,6 +70,13 @@ describe('getFeatureToggles', () => {
         UserGroupLeader: { canAccess: false, canUpload: true,  canDownload: false, canReserve: true  },
         Volunteer:       { canAccess: true,  canUpload: true,  canDownload: true,  canReserve: true  },
       },
+      emailPointsEarnedEnabled: true,
+      emailNewOrderEnabled: false,
+      emailOrderShippedEnabled: true,
+      emailNewProductEnabled: false,
+      emailNewContentEnabled: true,
+      adminEmailProductsEnabled: true,
+      adminEmailContentEnabled: false,
     });
   });
 
@@ -79,6 +93,13 @@ describe('getFeatureToggles', () => {
       adminContentReviewEnabled: false,
       adminCategoriesEnabled: false,
       contentRolePermissions: DEFAULT_CONTENT_ROLE_PERMISSIONS,
+      emailPointsEarnedEnabled: false,
+      emailNewOrderEnabled: false,
+      emailOrderShippedEnabled: false,
+      emailNewProductEnabled: false,
+      emailNewContentEnabled: false,
+      adminEmailProductsEnabled: false,
+      adminEmailContentEnabled: false,
     });
   });
 
@@ -95,6 +116,13 @@ describe('getFeatureToggles', () => {
       adminContentReviewEnabled: false,
       adminCategoriesEnabled: false,
       contentRolePermissions: DEFAULT_CONTENT_ROLE_PERMISSIONS,
+      emailPointsEarnedEnabled: false,
+      emailNewOrderEnabled: false,
+      emailOrderShippedEnabled: false,
+      emailNewProductEnabled: false,
+      emailNewContentEnabled: false,
+      adminEmailProductsEnabled: false,
+      adminEmailContentEnabled: false,
     });
   });
 
@@ -112,6 +140,7 @@ describe('getFeatureToggles', () => {
     // codeRedemptionEnabled and pointsClaimEnabled must be strict true to be enabled
     // adminProductsEnabled and adminOrdersEnabled default to true unless explicitly false
     // adminContentReviewEnabled and adminCategoriesEnabled default to false
+    // email toggles default to false (strict === true check)
     expect(result).toEqual({
       codeRedemptionEnabled: false,
       pointsClaimEnabled: false,
@@ -120,6 +149,13 @@ describe('getFeatureToggles', () => {
       adminContentReviewEnabled: false,
       adminCategoriesEnabled: false,
       contentRolePermissions: DEFAULT_CONTENT_ROLE_PERMISSIONS,
+      emailPointsEarnedEnabled: false,
+      emailNewOrderEnabled: false,
+      emailOrderShippedEnabled: false,
+      emailNewProductEnabled: false,
+      emailNewContentEnabled: false,
+      adminEmailProductsEnabled: false,
+      adminEmailContentEnabled: false,
     });
   });
 
@@ -138,6 +174,14 @@ describe('getFeatureToggles', () => {
     const result = await getFeatureToggles(client, 'users-table');
 
     expect(result.contentRolePermissions).toEqual(DEFAULT_CONTENT_ROLE_PERMISSIONS);
+    // email toggles should default to false when missing
+    expect(result.emailPointsEarnedEnabled).toBe(false);
+    expect(result.emailNewOrderEnabled).toBe(false);
+    expect(result.emailOrderShippedEnabled).toBe(false);
+    expect(result.emailNewProductEnabled).toBe(false);
+    expect(result.emailNewContentEnabled).toBe(false);
+    expect(result.adminEmailProductsEnabled).toBe(false);
+    expect(result.adminEmailContentEnabled).toBe(false);
   });
 });
 
@@ -155,6 +199,13 @@ describe('updateFeatureToggles', () => {
         adminOrdersEnabled: false,
         adminContentReviewEnabled: true,
         adminCategoriesEnabled: false,
+        emailPointsEarnedEnabled: true,
+        emailNewOrderEnabled: false,
+        emailOrderShippedEnabled: true,
+        emailNewProductEnabled: false,
+        emailNewContentEnabled: true,
+        adminEmailProductsEnabled: true,
+        adminEmailContentEnabled: false,
         updatedBy: 'user-1',
       },
       client,
@@ -169,6 +220,13 @@ describe('updateFeatureToggles', () => {
     expect(result.settings!.adminOrdersEnabled).toBe(false);
     expect(result.settings!.adminContentReviewEnabled).toBe(true);
     expect(result.settings!.adminCategoriesEnabled).toBe(false);
+    expect(result.settings!.emailPointsEarnedEnabled).toBe(true);
+    expect(result.settings!.emailNewOrderEnabled).toBe(false);
+    expect(result.settings!.emailOrderShippedEnabled).toBe(true);
+    expect(result.settings!.emailNewProductEnabled).toBe(false);
+    expect(result.settings!.emailNewContentEnabled).toBe(true);
+    expect(result.settings!.adminEmailProductsEnabled).toBe(true);
+    expect(result.settings!.adminEmailContentEnabled).toBe(false);
     expect(result.settings!.updatedBy).toBe('user-1');
     expect(result.settings!.updatedAt).toBeTruthy();
   });
@@ -184,6 +242,13 @@ describe('updateFeatureToggles', () => {
         adminOrdersEnabled: true,
         adminContentReviewEnabled: false,
         adminCategoriesEnabled: false,
+        emailPointsEarnedEnabled: false,
+        emailNewOrderEnabled: false,
+        emailOrderShippedEnabled: false,
+        emailNewProductEnabled: false,
+        emailNewContentEnabled: false,
+        adminEmailProductsEnabled: false,
+        adminEmailContentEnabled: false,
         updatedBy: 'user-1',
       },
       client,
@@ -206,6 +271,13 @@ describe('updateFeatureToggles', () => {
         adminOrdersEnabled: true,
         adminContentReviewEnabled: false,
         adminCategoriesEnabled: false,
+        emailPointsEarnedEnabled: false,
+        emailNewOrderEnabled: false,
+        emailOrderShippedEnabled: false,
+        emailNewProductEnabled: false,
+        emailNewContentEnabled: false,
+        adminEmailProductsEnabled: false,
+        adminEmailContentEnabled: false,
         updatedBy: 'user-1',
       },
       client,
@@ -228,6 +300,13 @@ describe('updateFeatureToggles', () => {
         adminOrdersEnabled: true,
         adminContentReviewEnabled: false,
         adminCategoriesEnabled: false,
+        emailPointsEarnedEnabled: false,
+        emailNewOrderEnabled: false,
+        emailOrderShippedEnabled: false,
+        emailNewProductEnabled: false,
+        emailNewContentEnabled: false,
+        adminEmailProductsEnabled: false,
+        adminEmailContentEnabled: false,
         updatedBy: 'user-1',
       },
       client,
@@ -249,6 +328,13 @@ describe('updateFeatureToggles', () => {
         adminOrdersEnabled: true,
         adminContentReviewEnabled: 'yes' as any,
         adminCategoriesEnabled: false,
+        emailPointsEarnedEnabled: false,
+        emailNewOrderEnabled: false,
+        emailOrderShippedEnabled: false,
+        emailNewProductEnabled: false,
+        emailNewContentEnabled: false,
+        adminEmailProductsEnabled: false,
+        adminEmailContentEnabled: false,
         updatedBy: 'user-1',
       },
       client,
@@ -271,24 +357,44 @@ describe('updateFeatureToggles', () => {
         adminOrdersEnabled: false,
         adminContentReviewEnabled: false,
         adminCategoriesEnabled: true,
+        emailPointsEarnedEnabled: true,
+        emailNewOrderEnabled: false,
+        emailOrderShippedEnabled: true,
+        emailNewProductEnabled: false,
+        emailNewContentEnabled: true,
+        adminEmailProductsEnabled: true,
+        adminEmailContentEnabled: false,
         updatedBy: 'admin-1',
       },
       client,
       'users-table',
     );
 
-    // First call is GetCommand (to preserve contentRolePermissions), second is PutCommand
-    const putCall = client.send.mock.calls[1][0];
-    expect(putCall.input.TableName).toBe('users-table');
-    expect(putCall.input.Item.userId).toBe('feature-toggles');
-    expect(putCall.input.Item.codeRedemptionEnabled).toBe(false);
-    expect(putCall.input.Item.pointsClaimEnabled).toBe(true);
-    expect(putCall.input.Item.adminProductsEnabled).toBe(true);
-    expect(putCall.input.Item.adminOrdersEnabled).toBe(false);
-    expect(putCall.input.Item.adminContentReviewEnabled).toBe(false);
-    expect(putCall.input.Item.adminCategoriesEnabled).toBe(true);
-    expect(putCall.input.Item.updatedBy).toBe('admin-1');
-    expect(putCall.input.Item.updatedAt).toBeTruthy();
+    // First call is UpdateCommand, second is GetCommand (read-back)
+    const updateCall = client.send.mock.calls[0][0];
+    expect(updateCall.constructor.name).toBe('UpdateCommand');
+    expect(updateCall.input.TableName).toBe('users-table');
+    expect(updateCall.input.Key).toEqual({ userId: 'feature-toggles' });
+    const vals = updateCall.input.ExpressionAttributeValues;
+    expect(vals[':cre']).toBe(false);
+    expect(vals[':pce']).toBe(true);
+    expect(vals[':ape']).toBe(true);
+    expect(vals[':aoe']).toBe(false);
+    expect(vals[':acre']).toBe(false);
+    expect(vals[':acae']).toBe(true);
+    expect(vals[':epe']).toBe(true);
+    expect(vals[':eno']).toBe(false);
+    expect(vals[':eos']).toBe(true);
+    expect(vals[':enp']).toBe(false);
+    expect(vals[':enc']).toBe(true);
+    expect(vals[':aepe']).toBe(true);
+    expect(vals[':aece']).toBe(false);
+    expect(vals[':ub']).toBe('admin-1');
+    expect(vals[':ua']).toBeTruthy();
+
+    // Second call is GetCommand (read-back)
+    const getCall = client.send.mock.calls[1][0];
+    expect(getCall.constructor.name).toBe('GetCommand');
   });
 });
 

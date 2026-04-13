@@ -1,6 +1,7 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { SESClient } from '@aws-sdk/client-ses';
 import { S3Client } from '@aws-sdk/client-s3';
 import { ErrorHttpStatus, ErrorCodes, ErrorMessages } from '@points-mall/shared';
 import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware';
@@ -13,6 +14,8 @@ import { getUserProfile } from '../user/profile';
 import { submitClaim, listMyClaims } from '../claims/submit';
 import { getClaimUploadUrl } from '../claims/images';
 import { getTravelSettings } from '../travel/settings';
+import { sendPointsEarnedEmail } from '../email/notifications';
+import type { NotificationContext } from '../email/notifications';
 import {
   getTravelQuota,
   submitTravelApplication,
@@ -24,6 +27,7 @@ import {
 // Create client outside handler for Lambda container reuse
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const s3Client = new S3Client({});
+const sesClient = new SESClient({});
 
 const USERS_TABLE = process.env.USERS_TABLE ?? '';
 const CODES_TABLE = process.env.CODES_TABLE ?? '';
@@ -31,6 +35,7 @@ const POINTS_RECORDS_TABLE = process.env.POINTS_RECORDS_TABLE ?? '';
 const CLAIMS_TABLE = process.env.CLAIMS_TABLE ?? '';
 const IMAGES_BUCKET = process.env.IMAGES_BUCKET ?? '';
 const TRAVEL_APPLICATIONS_TABLE = process.env.TRAVEL_APPLICATIONS_TABLE ?? '';
+const EMAIL_TEMPLATES_TABLE = process.env.EMAIL_TEMPLATES_TABLE ?? '';
 
 const TRAVEL_APPLICATIONS_RESUBMIT_REGEX = /^\/api\/travel\/applications\/([^/]+)$/;
 
@@ -38,7 +43,7 @@ const CORS_HEADERS = {
   'Content-Type': 'application/json',
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+  'Access-Control-Allow-Methods': 'GET,POST,PUT,OPTIONS',
 };
 
 function jsonResponse(statusCode: number, body: unknown): APIGatewayProxyResult {
@@ -147,6 +152,16 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     return await handleResubmitTravelApplication(event, resubmitMatch[1]);
   }
 
+  // GET /api/user/email-subscriptions
+  if (method === 'GET' && path === '/api/user/email-subscriptions') {
+    return await handleGetEmailSubscriptions(event);
+  }
+
+  // PUT /api/user/email-subscriptions
+  if (method === 'PUT' && path === '/api/user/email-subscriptions') {
+    return await handleUpdateEmailSubscriptions(event);
+  }
+
   return errorResponse('NOT_FOUND', 'Route not found', 404);
 });
 
@@ -217,6 +232,26 @@ async function handleRedeemCode(event: AuthenticatedEvent): Promise<APIGatewayPr
     const code = result.error!.code;
     const status = (ErrorHttpStatus as Record<string, number>)[code] ?? 400;
     return jsonResponse(status, result.error);
+  }
+
+  // Send points earned email notification (best-effort, never fails parent operation)
+  try {
+    const notificationCtx: NotificationContext = {
+      sesClient,
+      dynamoClient,
+      emailTemplatesTable: EMAIL_TEMPLATES_TABLE,
+      usersTable: USERS_TABLE,
+      senderEmail: 'store@awscommunity.cn',
+    };
+    await sendPointsEarnedEmail(
+      notificationCtx,
+      event.user.userId,
+      result.earnedPoints ?? 0,
+      '积分码兑换',
+      result.newBalance ?? 0,
+    );
+  } catch (err) {
+    console.error('[Email] Failed to send pointsEarned email after code redemption:', err);
   }
 
   return jsonResponse(200, { earnedPoints: result.earnedPoints });
@@ -455,4 +490,98 @@ async function handleResubmitTravelApplication(event: AuthenticatedEvent, applic
   }
 
   return jsonResponse(200, { success: true, application: result.application });
+}
+
+async function handleGetEmailSubscriptions(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const result = await dynamoClient.send(
+    new GetCommand({
+      TableName: USERS_TABLE,
+      Key: { userId: event.user.userId },
+    }),
+  );
+
+  if (!result.Item) {
+    return errorResponse('USER_NOT_FOUND', '用户不存在', 404);
+  }
+
+  const subscriptions = result.Item.emailSubscriptions ?? {};
+
+  return jsonResponse(200, {
+    newProduct: subscriptions.newProduct === true,
+    newContent: subscriptions.newContent === true,
+  });
+}
+
+async function handleUpdateEmailSubscriptions(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body) {
+    return errorResponse('INVALID_REQUEST', 'Missing request body', 400);
+  }
+
+  // Validate that provided fields are booleans
+  const updates: Record<string, boolean> = {};
+  if ('newProduct' in body) {
+    if (typeof body.newProduct !== 'boolean') {
+      return errorResponse('INVALID_REQUEST', 'newProduct must be a boolean', 400);
+    }
+    updates.newProduct = body.newProduct;
+  }
+  if ('newContent' in body) {
+    if (typeof body.newContent !== 'boolean') {
+      return errorResponse('INVALID_REQUEST', 'newContent must be a boolean', 400);
+    }
+    updates.newContent = body.newContent;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return errorResponse('INVALID_REQUEST', 'At least one of newProduct or newContent is required', 400);
+  }
+
+  // First, ensure the emailSubscriptions map exists on the user record.
+  // DynamoDB cannot SET nested attributes on a map that doesn't exist yet.
+  await dynamoClient.send(
+    new UpdateCommand({
+      TableName: USERS_TABLE,
+      Key: { userId: event.user.userId },
+      UpdateExpression: 'SET emailSubscriptions = if_not_exists(emailSubscriptions, :emptyMap)',
+      ExpressionAttributeValues: { ':emptyMap': {} },
+    }),
+  );
+
+  // Build update expression for only the provided fields
+  const expressionParts: string[] = [];
+  const expressionValues: Record<string, unknown> = {};
+
+  if ('newProduct' in updates) {
+    expressionParts.push('emailSubscriptions.newProduct = :newProduct');
+    expressionValues[':newProduct'] = updates.newProduct;
+  }
+  if ('newContent' in updates) {
+    expressionParts.push('emailSubscriptions.newContent = :newContent');
+    expressionValues[':newContent'] = updates.newContent;
+  }
+
+  await dynamoClient.send(
+    new UpdateCommand({
+      TableName: USERS_TABLE,
+      Key: { userId: event.user.userId },
+      UpdateExpression: `SET ${expressionParts.join(', ')}`,
+      ExpressionAttributeValues: expressionValues,
+    }),
+  );
+
+  // Read back the full subscription state
+  const getResult = await dynamoClient.send(
+    new GetCommand({
+      TableName: USERS_TABLE,
+      Key: { userId: event.user.userId },
+    }),
+  );
+
+  const subscriptions = getResult.Item?.emailSubscriptions ?? {};
+
+  return jsonResponse(200, {
+    newProduct: subscriptions.newProduct === true,
+    newContent: subscriptions.newContent === true,
+  });
 }

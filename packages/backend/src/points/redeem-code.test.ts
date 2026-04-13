@@ -113,7 +113,7 @@ describe('redeemCode', () => {
     const result = await redeemCode({ code: 'ABC123', userId: 'user-1' }, client, tables);
 
     expect(result.success).toBe(true);
-    expect(result.pointsEarned).toBe(100);
+    expect(result.earnedPoints).toBe(100);
   });
 
   it('should issue TransactWriteCommand with correct items', async () => {
@@ -204,6 +204,6 @@ describe('redeemCode', () => {
     const result = await redeemCode({ code: 'ABC123', userId: 'user-2' }, client, tables);
 
     expect(result.success).toBe(true);
-    expect(result.pointsEarned).toBe(50);
+    expect(result.earnedPoints).toBe(50);
   });
 });

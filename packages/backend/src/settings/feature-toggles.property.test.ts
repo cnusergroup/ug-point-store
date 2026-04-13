@@ -29,6 +29,42 @@ function createInMemoryClient() {
         return Promise.resolve({});
       }
 
+      if (name === 'UpdateCommand') {
+        const key = command.input.Key.userId as string;
+        const existing = store.get(key) ?? { userId: key };
+        const vals = command.input.ExpressionAttributeValues ?? {};
+        const updated = { ...existing };
+        // Map expression attribute values to field names
+        const fieldMap: Record<string, string> = {
+          ':cre': 'codeRedemptionEnabled',
+          ':pce': 'pointsClaimEnabled',
+          ':ape': 'adminProductsEnabled',
+          ':aoe': 'adminOrdersEnabled',
+          ':acre': 'adminContentReviewEnabled',
+          ':acae': 'adminCategoriesEnabled',
+          ':epe': 'emailPointsEarnedEnabled',
+          ':eno': 'emailNewOrderEnabled',
+          ':eos': 'emailOrderShippedEnabled',
+          ':enp': 'emailNewProductEnabled',
+          ':enc': 'emailNewContentEnabled',
+          ':aepe': 'adminEmailProductsEnabled',
+          ':aece': 'adminEmailContentEnabled',
+          ':ua': 'updatedAt',
+          ':ub': 'updatedBy',
+          ':crp': 'contentRolePermissions',
+          ':updatedAt': 'updatedAt',
+          ':updatedBy': 'updatedBy',
+        };
+        for (const [placeholder, value] of Object.entries(vals)) {
+          const field = fieldMap[placeholder];
+          if (field) {
+            updated[field] = value;
+          }
+        }
+        store.set(key, updated);
+        return Promise.resolve({});
+      }
+
       return Promise.resolve({});
     }),
     _store: store,
@@ -119,6 +155,13 @@ describe('Property 3: 更新输入校验正确性', () => {
               adminOrdersEnabled: true,
               adminContentReviewEnabled: false,
               adminCategoriesEnabled: false,
+              emailPointsEarnedEnabled: false,
+              emailNewOrderEnabled: false,
+              emailOrderShippedEnabled: false,
+              emailNewProductEnabled: false,
+              emailNewContentEnabled: false,
+              adminEmailProductsEnabled: false,
+              adminEmailContentEnabled: false,
               updatedBy: 'test-user',
             },
             client,
@@ -147,6 +190,13 @@ describe('Property 3: 更新输入校验正确性', () => {
               adminOrdersEnabled: true,
               adminContentReviewEnabled: false,
               adminCategoriesEnabled: false,
+              emailPointsEarnedEnabled: false,
+              emailNewOrderEnabled: false,
+              emailOrderShippedEnabled: false,
+              emailNewProductEnabled: false,
+              emailNewContentEnabled: false,
+              adminEmailProductsEnabled: false,
+              adminEmailContentEnabled: false,
               updatedBy: 'test-user',
             },
             client,
@@ -175,6 +225,13 @@ describe('Property 3: 更新输入校验正确性', () => {
               adminOrdersEnabled: true,
               adminContentReviewEnabled: false,
               adminCategoriesEnabled: false,
+              emailPointsEarnedEnabled: false,
+              emailNewOrderEnabled: false,
+              emailOrderShippedEnabled: false,
+              emailNewProductEnabled: false,
+              emailNewContentEnabled: false,
+              adminEmailProductsEnabled: false,
+              adminEmailContentEnabled: false,
               updatedBy: 'test-user',
             },
             client,
@@ -221,6 +278,13 @@ describe('Property 4: 更新幂等性', () => {
                 adminOrdersEnabled: adminOrders,
                 adminContentReviewEnabled: false,
                 adminCategoriesEnabled: false,
+                emailPointsEarnedEnabled: false,
+                emailNewOrderEnabled: false,
+                emailOrderShippedEnabled: false,
+                emailNewProductEnabled: false,
+                emailNewContentEnabled: false,
+                adminEmailProductsEnabled: false,
+                adminEmailContentEnabled: false,
                 updatedBy: 'admin-1',
               },
               client,
@@ -240,6 +304,13 @@ describe('Property 4: 更新幂等性', () => {
                 adminOrdersEnabled: adminOrders,
                 adminContentReviewEnabled: false,
                 adminCategoriesEnabled: false,
+                emailPointsEarnedEnabled: false,
+                emailNewOrderEnabled: false,
+                emailOrderShippedEnabled: false,
+                emailNewProductEnabled: false,
+                emailNewContentEnabled: false,
+                adminEmailProductsEnabled: false,
+                adminEmailContentEnabled: false,
                 updatedBy: 'admin-1',
               },
               client,
@@ -294,6 +365,13 @@ describe('Property 6: 读写一致性（Round-trip）', () => {
                 adminOrdersEnabled: adminOrders,
                 adminContentReviewEnabled: false,
                 adminCategoriesEnabled: false,
+                emailPointsEarnedEnabled: false,
+                emailNewOrderEnabled: false,
+                emailOrderShippedEnabled: false,
+                emailNewProductEnabled: false,
+                emailNewContentEnabled: false,
+                adminEmailProductsEnabled: false,
+                adminEmailContentEnabled: false,
                 updatedBy: 'admin-1',
               },
               client,
@@ -373,6 +451,13 @@ describe('Property 5: 功能开关拦截正确性', () => {
                 adminOrdersEnabled: true,
                 adminContentReviewEnabled: false,
                 adminCategoriesEnabled: false,
+                emailPointsEarnedEnabled: false,
+                emailNewOrderEnabled: false,
+                emailOrderShippedEnabled: false,
+                emailNewProductEnabled: false,
+                emailNewContentEnabled: false,
+                adminEmailProductsEnabled: false,
+                adminEmailContentEnabled: false,
                 updatedBy: 'admin',
               },
               client,
@@ -416,6 +501,13 @@ describe('Property 5: 功能开关拦截正确性', () => {
                 adminOrdersEnabled: true,
                 adminContentReviewEnabled: false,
                 adminCategoriesEnabled: false,
+                emailPointsEarnedEnabled: false,
+                emailNewOrderEnabled: false,
+                emailOrderShippedEnabled: false,
+                emailNewProductEnabled: false,
+                emailNewContentEnabled: false,
+                adminEmailProductsEnabled: false,
+                adminEmailContentEnabled: false,
                 updatedBy: 'admin',
               },
               client,
@@ -566,14 +658,37 @@ function createInMemoryClientWithUpdate(initialItem?: Record<string, unknown>) {
       }
 
       if (name === 'UpdateCommand') {
-        // Simulate: SET contentRolePermissions = :crp, updatedAt = :updatedAt, updatedBy = :updatedBy
         const key = command.input.Key.userId as string;
         const existing = store.get(key) ?? { userId: key };
         const vals = command.input.ExpressionAttributeValues ?? {};
         const updated = { ...existing };
-        if (':crp' in vals) updated.contentRolePermissions = vals[':crp'];
-        if (':updatedAt' in vals) updated.updatedAt = vals[':updatedAt'];
-        if (':updatedBy' in vals) updated.updatedBy = vals[':updatedBy'];
+        // Map expression attribute values to field names
+        const fieldMap: Record<string, string> = {
+          ':cre': 'codeRedemptionEnabled',
+          ':pce': 'pointsClaimEnabled',
+          ':ape': 'adminProductsEnabled',
+          ':aoe': 'adminOrdersEnabled',
+          ':acre': 'adminContentReviewEnabled',
+          ':acae': 'adminCategoriesEnabled',
+          ':epe': 'emailPointsEarnedEnabled',
+          ':eno': 'emailNewOrderEnabled',
+          ':eos': 'emailOrderShippedEnabled',
+          ':enp': 'emailNewProductEnabled',
+          ':enc': 'emailNewContentEnabled',
+          ':aepe': 'adminEmailProductsEnabled',
+          ':aece': 'adminEmailContentEnabled',
+          ':ua': 'updatedAt',
+          ':ub': 'updatedBy',
+          ':crp': 'contentRolePermissions',
+          ':updatedAt': 'updatedAt',
+          ':updatedBy': 'updatedBy',
+        };
+        for (const [placeholder, value] of Object.entries(vals)) {
+          const field = fieldMap[placeholder];
+          if (field) {
+            updated[field] = value;
+          }
+        }
         store.set(key, updated);
         return Promise.resolve({});
       }
@@ -745,6 +860,13 @@ describe('Property 2 (content-role-settings): adminContentReviewEnabled 写入�
               adminOrdersEnabled: true,
               adminContentReviewEnabled: v,
               adminCategoriesEnabled,
+              emailPointsEarnedEnabled: false,
+              emailNewOrderEnabled: false,
+              emailOrderShippedEnabled: false,
+              emailNewProductEnabled: false,
+              emailNewContentEnabled: false,
+              adminEmailProductsEnabled: false,
+              adminEmailContentEnabled: false,
               updatedBy: 'test-user',
             },
             client,

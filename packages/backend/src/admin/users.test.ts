@@ -157,7 +157,8 @@ describe('listUsers', () => {
     await listUsers({ role: 'Speaker' }, client, tableName);
 
     const command = client.send.mock.calls[0][0];
-    expect(command.input.FilterExpression).toBe('contains(#roles, :role)');
+    expect(command.input.FilterExpression).toContain('contains(#roles, :role)');
+    expect(command.input.FilterExpression).toContain('#userId <> :sysId0');
     expect(command.input.ExpressionAttributeValues[':role']).toBe('Speaker');
   });
 
@@ -166,8 +167,9 @@ describe('listUsers', () => {
     await listUsers({}, client, tableName);
 
     const command = client.send.mock.calls[0][0];
-    expect(command.input.FilterExpression).toBeUndefined();
-    expect(command.input.ExpressionAttributeValues).toBeUndefined();
+    // Should still have system record filter even without role filter
+    expect(command.input.FilterExpression).toContain('#userId <> :sysId0');
+    expect(command.input.ExpressionAttributeValues[':role']).toBeUndefined();
   });
 
   it('should default points to 0 when not present', async () => {

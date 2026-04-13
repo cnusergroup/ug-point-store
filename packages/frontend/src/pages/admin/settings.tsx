@@ -27,13 +27,273 @@ interface FeatureToggles {
   adminOrdersEnabled: boolean;
   adminContentReviewEnabled: boolean;
   adminCategoriesEnabled: boolean;
+  adminEmailProductsEnabled: boolean;
+  adminEmailContentEnabled: boolean;
   contentRolePermissions: ContentRolePermissions;
+  emailPointsEarnedEnabled: boolean;
+  emailNewOrderEnabled: boolean;
+  emailOrderShippedEnabled: boolean;
+  emailNewProductEnabled: boolean;
+  emailNewContentEnabled: boolean;
+}
+
+type NotificationType = 'pointsEarned' | 'newOrder' | 'orderShipped' | 'newProduct' | 'newContent';
+
+interface EmailToggleConfig {
+  key: keyof FeatureToggles;
+  notificationType: NotificationType;
+  label: string;
+  desc: string;
 }
 
 interface TravelSponsorshipSettings {
   travelSponsorshipEnabled: boolean;
   domesticThreshold: number;
   internationalThreshold: number;
+}
+
+type EmailLocale = 'zh' | 'en' | 'ja' | 'ko' | 'zh-TW';
+
+interface EmailTemplate {
+  templateId: string;
+  locale: EmailLocale;
+  subject: string;
+  body: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+const LOCALE_TABS: { key: EmailLocale; label: string }[] = [
+  { key: 'zh', label: '中文' },
+  { key: 'en', label: 'English' },
+  { key: 'ja', label: '日本語' },
+  { key: 'ko', label: '한국어' },
+  { key: 'zh-TW', label: '繁體中文' },
+];
+
+const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
+  pointsEarned: '积分到账通知',
+  newOrder: '新订单通知',
+  orderShipped: '订单发货通知',
+  newProduct: '新商品通知',
+  newContent: '新内容通知',
+};
+
+function EmailTemplateEditorModal({
+  notificationType,
+  onClose,
+}: {
+  notificationType: NotificationType;
+  onClose: () => void;
+}) {
+  const [templates, setTemplates] = useState<EmailTemplate[]>([]);
+  const [requiredVariables, setRequiredVariables] = useState<string[]>([]);
+  const [activeLocale, setActiveLocale] = useState<EmailLocale>('zh');
+  const [subject, setSubject] = useState('');
+  const [body, setBody] = useState('');
+  const [loadingTemplates, setLoadingTemplates] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [validationError, setValidationError] = useState('');
+
+  const fetchTemplates = useCallback(async () => {
+    setLoadingTemplates(true);
+    try {
+      const res = await request<{ templates: EmailTemplate[]; requiredVariables?: string[] }>({
+        url: `/api/admin/email-templates?type=${notificationType}`,
+      });
+      setTemplates(res.templates || []);
+      if (res.requiredVariables) {
+        setRequiredVariables(res.requiredVariables);
+      }
+    } catch {
+      Taro.showToast({ title: '加载模板失败', icon: 'none' });
+    } finally {
+      setLoadingTemplates(false);
+    }
+  }, [notificationType]);
+
+  useEffect(() => {
+    fetchTemplates();
+  }, [fetchTemplates]);
+
+  // When templates load or locale changes, populate the fields
+  useEffect(() => {
+    const tpl = templates.find((t) => t.locale === activeLocale);
+    setSubject(tpl?.subject ?? '');
+    setBody(tpl?.body ?? '');
+    setDirty(false);
+    setValidationError('');
+  }, [templates, activeLocale]);
+
+  const handleSubjectChange = (val: string) => {
+    setSubject(val);
+    setDirty(true);
+    setValidationError('');
+  };
+
+  const handleBodyChange = (val: string) => {
+    setBody(val);
+    setDirty(true);
+    setValidationError('');
+  };
+
+  const validate = (): boolean => {
+    if (subject.length < 1 || subject.length > 200) {
+      setValidationError('主题长度需在 1–200 字符之间');
+      return false;
+    }
+    if (body.length < 1 || body.length > 10000) {
+      setValidationError('正文长度需在 1–10000 字符之间');
+      return false;
+    }
+    return true;
+  };
+
+  const handleSave = async () => {
+    if (!validate()) return;
+    setSaving(true);
+    try {
+      const res = await request<{ template: EmailTemplate }>({
+        url: `/api/admin/email-templates/${notificationType}/${activeLocale}`,
+        method: 'PUT',
+        data: { subject, body },
+      });
+      // Update local templates list with the saved template
+      setTemplates((prev) => {
+        const idx = prev.findIndex((t) => t.locale === activeLocale);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = res.template;
+          return updated;
+        }
+        return [...prev, res.template];
+      });
+      setDirty(false);
+      Taro.showToast({ title: '保存成功', icon: 'none' });
+    } catch (err) {
+      if (err instanceof RequestError) {
+        Taro.showToast({ title: err.message, icon: 'none' });
+      } else {
+        Taro.showToast({ title: '保存失败', icon: 'none' });
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleOverlayClick = () => {
+    onClose();
+  };
+
+  return (
+    <View className='template-editor-overlay' onClick={handleOverlayClick}>
+      <View className='template-editor' onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <View className='template-editor__header'>
+          <Text className='template-editor__title'>
+            {NOTIFICATION_TYPE_LABELS[notificationType]} — 模板编辑
+          </Text>
+          <View className='template-editor__close' onClick={onClose}>
+            <Text>✕</Text>
+          </View>
+        </View>
+
+        {/* Locale Tabs */}
+        <View className='template-editor__tabs'>
+          {LOCALE_TABS.map((tab) => (
+            <View
+              key={tab.key}
+              className={`template-editor__tab${activeLocale === tab.key ? ' template-editor__tab--active' : ''}`}
+              onClick={() => setActiveLocale(tab.key)}
+            >
+              <Text className='template-editor__tab-text'>{tab.label}</Text>
+            </View>
+          ))}
+        </View>
+
+        {loadingTemplates ? (
+          <View className='template-editor__loading'>
+            <Text>加载中...</Text>
+          </View>
+        ) : (
+          <View className='template-editor__body'>
+            {/* Subject Field */}
+            <View className='template-editor__field'>
+              <View className='template-editor__field-header'>
+                <Text className='template-editor__field-label'>主题</Text>
+                <Text className='template-editor__field-count'>
+                  {subject.length}/200
+                </Text>
+              </View>
+              <Input
+                className='template-editor__input'
+                value={subject}
+                onInput={(e) => handleSubjectChange(e.detail.value)}
+                placeholder='输入邮件主题...'
+                maxlength={200}
+              />
+            </View>
+
+            {/* Body Field */}
+            <View className='template-editor__field'>
+              <View className='template-editor__field-header'>
+                <Text className='template-editor__field-label'>正文 (HTML)</Text>
+                <Text className='template-editor__field-count'>
+                  {body.length}/10000
+                </Text>
+              </View>
+              <textarea
+                className='template-editor__textarea'
+                value={body}
+                onInput={(e: any) => handleBodyChange(e.target.value || e.detail?.value || '')}
+                placeholder='输入邮件正文 HTML...'
+                maxLength={10000}
+              />
+            </View>
+
+            {/* Variable Reference Panel */}
+            {requiredVariables.length > 0 && (
+              <View className='template-editor__variables'>
+                <Text className='template-editor__variables-title'>可用变量</Text>
+                <View className='template-editor__variables-list'>
+                  {requiredVariables.map((v) => (
+                    <View key={v} className='template-editor__variable-tag'>
+                      <Text className='template-editor__variable-text'>{`{{${v}}}`}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* Validation Error */}
+            {validationError && (
+              <View className='template-editor__error'>
+                <Text className='template-editor__error-text'>{validationError}</Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Footer */}
+        {!loadingTemplates && (
+          <View className='template-editor__footer'>
+            <View className='template-editor__cancel-btn' onClick={onClose}>
+              <Text className='template-editor__cancel-btn-text'>取消</Text>
+            </View>
+            <View
+              className={`template-editor__save-btn${(!dirty || saving) ? ' template-editor__save-btn--disabled' : ''}`}
+              onClick={(!dirty || saving) ? undefined : handleSave}
+            >
+              <Text className='template-editor__save-btn-text'>
+                {saving ? '保存中...' : '保存'}
+              </Text>
+            </View>
+          </View>
+        )}
+      </View>
+    </View>
+  );
 }
 
 interface InviteSettings {
@@ -60,11 +320,18 @@ export default function AdminSettingsPage() {
     adminOrdersEnabled: true,
     adminContentReviewEnabled: false,
     adminCategoriesEnabled: false,
+    adminEmailProductsEnabled: false,
+    adminEmailContentEnabled: false,
     contentRolePermissions: {
       Speaker: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
       UserGroupLeader: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
       Volunteer: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
     },
+    emailPointsEarnedEnabled: false,
+    emailNewOrderEnabled: false,
+    emailOrderShippedEnabled: false,
+    emailNewProductEnabled: false,
+    emailNewContentEnabled: false,
   });
 
   const [contentRolePermissions, setContentRolePermissions] = useState<ContentRolePermissions>({
@@ -89,6 +356,9 @@ export default function AdminSettingsPage() {
   const [transferPassword, setTransferPassword] = useState('');
   const [transferring, setTransferring] = useState(false);
   const [transferError, setTransferError] = useState('');
+
+  // Email template editor state
+  const [editingTemplateType, setEditingTemplateType] = useState<NotificationType | null>(null);
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);
@@ -182,6 +452,13 @@ export default function AdminSettingsPage() {
           adminOrdersEnabled: updated.adminOrdersEnabled,
           adminContentReviewEnabled: updated.adminContentReviewEnabled,
           adminCategoriesEnabled: updated.adminCategoriesEnabled,
+          adminEmailProductsEnabled: updated.adminEmailProductsEnabled,
+          adminEmailContentEnabled: updated.adminEmailContentEnabled,
+          emailPointsEarnedEnabled: updated.emailPointsEarnedEnabled,
+          emailNewOrderEnabled: updated.emailNewOrderEnabled,
+          emailOrderShippedEnabled: updated.emailOrderShippedEnabled,
+          emailNewProductEnabled: updated.emailNewProductEnabled,
+          emailNewContentEnabled: updated.emailNewContentEnabled,
         },
       });
       Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
@@ -477,6 +754,36 @@ export default function AdminSettingsPage() {
               />
             </View>
           </View>
+
+          {/* Admin Email Products Permission */}
+          <View className='toggle-item'>
+            <View className='toggle-item__info'>
+              <Text className='toggle-item__label'>{t('admin.settings.adminEmailProductsLabel')}</Text>
+              <Text className='toggle-item__desc'>{t('admin.settings.adminEmailProductsDesc')}</Text>
+            </View>
+            <View className='toggle-item__switch'>
+              <Switch
+                checked={settings.adminEmailProductsEnabled}
+                onChange={(e) => handleToggle('adminEmailProductsEnabled', e.detail.value)}
+                color='var(--accent-primary)'
+              />
+            </View>
+          </View>
+
+          {/* Admin Email Content Permission */}
+          <View className='toggle-item'>
+            <View className='toggle-item__info'>
+              <Text className='toggle-item__label'>{t('admin.settings.adminEmailContentLabel')}</Text>
+              <Text className='toggle-item__desc'>{t('admin.settings.adminEmailContentDesc')}</Text>
+            </View>
+            <View className='toggle-item__switch'>
+              <Switch
+                checked={settings.adminEmailContentEnabled}
+                onChange={(e) => handleToggle('adminEmailContentEnabled', e.detail.value)}
+                color='var(--accent-primary)'
+              />
+            </View>
+          </View>
         </View>
       )}
       {/* Content Role Permissions Matrix — SuperAdmin only */}
@@ -520,6 +827,98 @@ export default function AdminSettingsPage() {
             </View>
           </View>
         </>
+      )}
+
+      {/* Email Notification Section — SuperAdmin only */}
+      {isSuperAdmin && !loading && (
+        <>
+          <View className='settings-section'>
+            <Text className='settings-section__title'>{'邮件通知'}</Text>
+          </View>
+          <View className='toggle-list'>
+            {([
+              {
+                key: 'emailPointsEarnedEnabled' as keyof FeatureToggles,
+                notificationType: 'pointsEarned' as NotificationType,
+                label: '积分到账通知',
+                desc: '用户获得积分时发送邮件通知',
+              },
+              {
+                key: 'emailNewOrderEnabled' as keyof FeatureToggles,
+                notificationType: 'newOrder' as NotificationType,
+                label: '新订单通知',
+                desc: '用户下单时向管理员发送邮件通知',
+              },
+              {
+                key: 'emailOrderShippedEnabled' as keyof FeatureToggles,
+                notificationType: 'orderShipped' as NotificationType,
+                label: '订单发货通知',
+                desc: '订单发货时向用户发送邮件通知',
+              },
+              {
+                key: 'emailNewProductEnabled' as keyof FeatureToggles,
+                notificationType: 'newProduct' as NotificationType,
+                label: '新商品通知',
+                desc: '向订阅用户发送新商品上架邮件通知',
+              },
+              {
+                key: 'emailNewContentEnabled' as keyof FeatureToggles,
+                notificationType: 'newContent' as NotificationType,
+                label: '新内容通知',
+                desc: '向订阅用户发送新内容发布邮件通知',
+              },
+            ] as EmailToggleConfig[]).map((item) => (
+              <View key={item.key} className='email-toggle-item'>
+                <View className='email-toggle-item__main'>
+                  <View className='toggle-item__info'>
+                    <Text className='toggle-item__label'>{item.label}</Text>
+                    <Text className='toggle-item__desc'>{item.desc}</Text>
+                  </View>
+                  <View className='toggle-item__switch'>
+                    <Switch
+                      checked={settings[item.key] as boolean}
+                      onChange={(e) => handleToggle(item.key, e.detail.value)}
+                      color='var(--accent-primary)'
+                    />
+                  </View>
+                </View>
+                <View
+                  className='email-toggle-item__edit-btn'
+                  onClick={() => setEditingTemplateType(item.notificationType)}
+                >
+                  <Text className='email-toggle-item__edit-btn-text'>{'编辑模板'}</Text>
+                </View>
+              </View>
+            ))}
+
+            {/* Seed default templates button */}
+            <View
+              className='email-seed-btn'
+              onClick={async () => {
+                try {
+                  await request({
+                    url: '/api/admin/email-templates/seed',
+                    method: 'POST',
+                  });
+                  Taro.showToast({ title: '默认模板已初始化', icon: 'none' });
+                } catch {
+                  Taro.showToast({ title: '初始化失败', icon: 'none' });
+                }
+              }}
+            >
+              <Text className='email-seed-btn__text'>初始化默认模板</Text>
+              <Text className='email-seed-btn__hint'>写入 25 条默认邮件模板（5 种通知 × 5 种语言），已有模板会被覆盖</Text>
+            </View>
+          </View>
+        </>
+      )}
+
+      {/* Email Template Editor Modal */}
+      {editingTemplateType && (
+        <EmailTemplateEditorModal
+          notificationType={editingTemplateType}
+          onClose={() => setEditingTemplateType(null)}
+        />
       )}
 
       {/* Travel Sponsorship Settings Section */}

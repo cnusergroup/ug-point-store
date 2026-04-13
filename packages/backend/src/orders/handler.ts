@@ -1,18 +1,22 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { SESClient } from '@aws-sdk/client-ses';
 import { ErrorHttpStatus, hasAdminAccess, isSuperAdmin, isOrderAdmin } from '@points-mall/shared';
 import type { UserRole, ShippingStatus } from '@points-mall/shared';
 import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware';
 import { createOrder, createDirectOrder, getOrders, getOrderDetail } from './order';
 import { getAdminOrders, getAdminOrderDetail, updateShipping, getOrderStats } from './admin-order';
 import { getFeatureToggles } from '../settings/feature-toggles';
+import { sendNewOrderEmail, sendOrderShippedEmail } from '../email/notifications';
+import type { NotificationContext } from '../email/notifications';
 import type { OrderTableNames } from './order';
 
 // Create client outside handler for Lambda container reuse
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true },
 });
+const sesClient = new SESClient({});
 
 const USERS_TABLE = process.env.USERS_TABLE ?? '';
 const PRODUCTS_TABLE = process.env.PRODUCTS_TABLE ?? '';
@@ -20,6 +24,7 @@ const ORDERS_TABLE = process.env.ORDERS_TABLE ?? '';
 const CART_TABLE = process.env.CART_TABLE ?? '';
 const POINTS_RECORDS_TABLE = process.env.POINTS_RECORDS_TABLE ?? '';
 const ADDRESSES_TABLE = process.env.ADDRESSES_TABLE ?? '';
+const EMAIL_TEMPLATES_TABLE = process.env.EMAIL_TEMPLATES_TABLE ?? '';
 
 const tables: OrderTableNames = {
   usersTable: USERS_TABLE,
@@ -179,6 +184,34 @@ async function handleCreateOrder(event: AuthenticatedEvent): Promise<APIGatewayP
     return jsonResponse(status, result.error);
   }
 
+  // Send new order email notification to admins (best-effort, never fails order creation)
+  try {
+    const orderDetail = await getOrderDetail(result.orderId!, event.user.userId, dynamoClient, ORDERS_TABLE);
+    const orderItems = orderDetail.order?.items?.map((i) => ({ productName: i.productName, quantity: i.quantity, selectedSize: i.selectedSize })) ?? [];
+    const shippingAddress = orderDetail.order?.shippingAddress;
+
+    // Fetch buyer nickname
+    const buyerResult = await dynamoClient.send(
+      new GetCommand({ TableName: USERS_TABLE, Key: { userId: event.user.userId }, ProjectionExpression: 'nickname' }),
+    );
+    const buyerNickname = (buyerResult.Item?.nickname as string) ?? '';
+
+    const notificationCtx: NotificationContext = {
+      sesClient,
+      dynamoClient,
+      emailTemplatesTable: EMAIL_TEMPLATES_TABLE,
+      usersTable: USERS_TABLE,
+      senderEmail: 'store@awscommunity.cn',
+    };
+    await sendNewOrderEmail(notificationCtx, result.orderId!, orderItems, buyerNickname, {
+      recipientName: shippingAddress?.recipientName ?? '',
+      phone: shippingAddress?.phone ?? '',
+      detailAddress: shippingAddress?.detailAddress ?? '',
+    });
+  } catch (err) {
+    console.error('[Email] Failed to send newOrder email after order creation:', err);
+  }
+
   return jsonResponse(200, { orderId: result.orderId });
 }
 
@@ -204,6 +237,34 @@ async function handleCreateDirectOrder(event: AuthenticatedEvent): Promise<APIGa
     const code = result.error!.code;
     const status = (ErrorHttpStatus as Record<string, number>)[code] ?? 400;
     return jsonResponse(status, result.error);
+  }
+
+  // Send new order email notification to admins (best-effort, never fails order creation)
+  try {
+    const orderDetail = await getOrderDetail(result.orderId!, event.user.userId, dynamoClient, ORDERS_TABLE);
+    const orderItems = orderDetail.order?.items?.map((i) => ({ productName: i.productName, quantity: i.quantity, selectedSize: i.selectedSize })) ?? [];
+    const shippingAddress = orderDetail.order?.shippingAddress;
+
+    // Fetch buyer nickname
+    const buyerResult = await dynamoClient.send(
+      new GetCommand({ TableName: USERS_TABLE, Key: { userId: event.user.userId }, ProjectionExpression: 'nickname' }),
+    );
+    const buyerNickname = (buyerResult.Item?.nickname as string) ?? '';
+
+    const notificationCtx: NotificationContext = {
+      sesClient,
+      dynamoClient,
+      emailTemplatesTable: EMAIL_TEMPLATES_TABLE,
+      usersTable: USERS_TABLE,
+      senderEmail: 'store@awscommunity.cn',
+    };
+    await sendNewOrderEmail(notificationCtx, result.orderId!, orderItems, buyerNickname, {
+      recipientName: shippingAddress?.recipientName ?? '',
+      phone: shippingAddress?.phone ?? '',
+      detailAddress: shippingAddress?.detailAddress ?? '',
+    });
+  } catch (err) {
+    console.error('[Email] Failed to send newOrder email after direct order creation:', err);
   }
 
   return jsonResponse(200, { orderId: result.orderId });
@@ -290,10 +351,13 @@ async function handleUpdateShipping(orderId: string, event: AuthenticatedEvent):
     return errorResponse('INVALID_REQUEST', 'Missing required field: status', 400);
   }
 
+  const shippingStatus = body.status as ShippingStatus;
+  const trackingNumber = body.trackingNumber as string | undefined;
+
   const result = await updateShipping(
     orderId,
-    body.status as ShippingStatus,
-    body.trackingNumber as string | undefined,
+    shippingStatus,
+    trackingNumber,
     body.remark as string | undefined,
     event.user.userId,
     dynamoClient,
@@ -304,6 +368,27 @@ async function handleUpdateShipping(orderId: string, event: AuthenticatedEvent):
     const code = result.error!.code;
     const status = (ErrorHttpStatus as Record<string, number>)[code] ?? 400;
     return jsonResponse(status, result.error);
+  }
+
+  // Send order shipped email notification (best-effort, never fails shipping update)
+  if (shippingStatus === 'shipped') {
+    try {
+      const orderDetail = await getAdminOrderDetail(orderId, dynamoClient, ORDERS_TABLE);
+      const userId = orderDetail.order?.userId;
+
+      if (userId) {
+        const notificationCtx: NotificationContext = {
+          sesClient,
+          dynamoClient,
+          emailTemplatesTable: EMAIL_TEMPLATES_TABLE,
+          usersTable: USERS_TABLE,
+          senderEmail: 'store@awscommunity.cn',
+        };
+        await sendOrderShippedEmail(notificationCtx, userId, orderId, trackingNumber);
+      }
+    } catch (err) {
+      console.error('[Email] Failed to send orderShipped email after shipping update:', err);
+    }
   }
 
   return jsonResponse(200, { message: '物流状态更新成功' });

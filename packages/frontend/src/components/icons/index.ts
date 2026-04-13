@@ -29,3 +29,4 @@ export { ClockIcon } from './ClockIcon';
 export { GlobeIcon } from './GlobeIcon';
 export { ContentIcon } from './ContentIcon';
 export { TagIcon } from './TagIcon';
+export { MailIcon } from './MailIcon';

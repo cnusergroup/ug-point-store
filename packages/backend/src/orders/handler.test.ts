@@ -85,6 +85,13 @@ describe('Order Lambda Handler', () => {
         UserGroupLeader: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
         Volunteer: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
       },
+      emailPointsEarnedEnabled: false,
+      emailNewOrderEnabled: false,
+      emailOrderShippedEnabled: false,
+      emailNewProductEnabled: false,
+      emailNewContentEnabled: false,
+    adminEmailProductsEnabled: false,
+    adminEmailContentEnabled: false,
     });
   });
 
@@ -582,6 +589,13 @@ describe('Order Lambda Handler', () => {
           UserGroupLeader: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
           Volunteer: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
         },
+        emailPointsEarnedEnabled: false,
+        emailNewOrderEnabled: false,
+        emailOrderShippedEnabled: false,
+        emailNewProductEnabled: false,
+        emailNewContentEnabled: false,
+      adminEmailProductsEnabled: false,
+      adminEmailContentEnabled: false,
       });
       vi.mocked(getAdminOrders).mockResolvedValue({
         success: true,
@@ -611,6 +625,13 @@ describe('Order Lambda Handler', () => {
           UserGroupLeader: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
           Volunteer: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
         },
+        emailPointsEarnedEnabled: false,
+        emailNewOrderEnabled: false,
+        emailOrderShippedEnabled: false,
+        emailNewProductEnabled: false,
+        emailNewContentEnabled: false,
+      adminEmailProductsEnabled: false,
+      adminEmailContentEnabled: false,
       });
       const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/orders' });
       const result = await handler(event);
