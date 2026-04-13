@@ -36,6 +36,7 @@ const ROLE_FILTER_TABS: { key: RoleFilter; label: string }[] = [
 const ROLE_CONFIG: Record<string, { label: string; className: string }> = {
   SuperAdmin: { label: 'SuperAdmin', className: 'role-badge--superadmin' },
   Admin: { label: 'Admin', className: 'role-badge--admin' },
+  OrderAdmin: { label: 'OrderAdmin', className: 'role-badge--order-admin' },
   UserGroupLeader: { label: 'Leader', className: 'role-badge--leader' },
   // [DISABLED] CommunityBuilder
   // CommunityBuilder: { label: 'Builder', className: 'role-badge--builder' },
@@ -280,7 +281,11 @@ export default function AdminUsersPage() {
         </View>
       ) : (
         <View className='user-list'>
-          {users.map((user) => (
+          {users.filter((user) => {
+            // Non-SuperAdmin admins cannot see OrderAdmin users at all
+            if (!isSuperAdmin && user.roles.includes('OrderAdmin')) return false;
+            return true;
+          }).map((user) => (
             <View key={user.userId} className={`user-row ${user.status === 'disabled' ? 'user-row--disabled' : ''}`}>
               <View className='user-row__main'>
                 <View className='user-row__info'>
