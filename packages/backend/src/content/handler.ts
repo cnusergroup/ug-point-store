@@ -15,6 +15,7 @@ import { createReservation, getDownloadUrl, getPreviewUrl } from './reservation'
 import { listCategories } from './admin';
 import { listMyContent } from './mine';
 import { searchTags, getHotTags, getTagCloudTags } from './tags';
+import { listReservationActivities } from './reservation-activities';
 
 // Create clients outside handler for Lambda container reuse
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -29,6 +30,8 @@ const CONTENT_RESERVATIONS_TABLE = process.env.CONTENT_RESERVATIONS_TABLE ?? '';
 const USERS_TABLE = process.env.USERS_TABLE ?? '';
 const POINTS_RECORDS_TABLE = process.env.POINTS_RECORDS_TABLE ?? '';
 const IMAGES_BUCKET = process.env.IMAGES_BUCKET ?? '';
+const ACTIVITIES_TABLE = process.env.ACTIVITIES_TABLE ?? '';
+const UGS_TABLE = process.env.UGS_TABLE ?? '';
 const CONTENT_REWARD_POINTS = parseInt(process.env.CONTENT_REWARD_POINTS ?? '10', 10);
 
 const CORS_HEADERS = {
@@ -142,6 +145,10 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
       return await handleGetTagCloudTags();
     }
 
+    if (path === '/api/content/reservation-activities') {
+      return await handleListReservationActivities(event);
+    }
+
     const downloadMatch = path.match(CONTENT_DOWNLOAD_REGEX);
     if (downloadMatch) {
       return await handleGetDownloadUrl(downloadMatch[1], event);
@@ -243,6 +250,7 @@ async function handleCreateContentItem(event: AuthenticatedEvent): Promise<APIGa
     },
     dynamoClient,
     { contentItemsTable: CONTENT_ITEMS_TABLE, categoriesTable: CONTENT_CATEGORIES_TABLE, contentTagsTable: CONTENT_TAGS_TABLE },
+    { s3Client, bucket: IMAGES_BUCKET },
   );
 
   if (!result.success) {
@@ -378,16 +386,33 @@ async function handleCreateReservation(contentId: string, event: AuthenticatedEv
     return errorResponse('PERMISSION_DENIED', '您没有预约内容的权限', 403);
   }
 
+  const body = parseBody(event);
+  const activityId = body?.activityId as string | undefined;
+  if (!activityId) {
+    return errorResponse('INVALID_REQUEST', 'activityId 为必填字段', 400);
+  }
+
+  const activityType = (body?.activityType as string) ?? '';
+  const activityUG = (body?.activityUG as string) ?? '';
+  const activityTopic = (body?.activityTopic as string) ?? '';
+  const activityDate = (body?.activityDate as string) ?? '';
+
   const result = await createReservation(
-    { contentId, userId: event.user.userId },
+    {
+      contentId,
+      userId: event.user.userId,
+      activityId,
+      activityType,
+      activityUG,
+      activityTopic,
+      activityDate,
+    },
     dynamoClient,
     {
       reservationsTable: CONTENT_RESERVATIONS_TABLE,
       contentItemsTable: CONTENT_ITEMS_TABLE,
-      usersTable: USERS_TABLE,
-      pointsRecordsTable: POINTS_RECORDS_TABLE,
+      activitiesTable: ACTIVITIES_TABLE,
     },
-    CONTENT_REWARD_POINTS,
   );
 
   if (!result.success) {
@@ -457,6 +482,25 @@ async function handleEditContentItem(contentId: string, event: AuthenticatedEven
 }
 
 // ── Tag Route Handlers ─────────────────────────────────────
+
+async function handleListReservationActivities(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const pageSize = event.queryStringParameters?.pageSize
+    ? parseInt(event.queryStringParameters.pageSize, 10)
+    : undefined;
+  const lastKey = event.queryStringParameters?.lastKey;
+
+  const result = await listReservationActivities(
+    { pageSize, lastKey },
+    dynamoClient,
+    { activitiesTable: ACTIVITIES_TABLE, ugsTable: UGS_TABLE },
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message);
+  }
+
+  return jsonResponse(200, { activities: result.activities, lastKey: result.lastKey });
+}
 
 async function handleSearchTags(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
   const prefix = event.queryStringParameters?.prefix ?? '';

@@ -59,6 +59,11 @@ export class FrontendStack extends cdk.Stack {
           prefix: 'exports/',
           expiration: cdk.Duration.days(1),
         },
+        {
+          id: 'cleanup-content-temp-uploads',
+          prefix: 'content/temp/',
+          expiration: cdk.Duration.days(1),
+        },
       ],
     });
 

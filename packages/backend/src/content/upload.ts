@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, CopyObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { DynamoDBDocumentClient, PutCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { ulid } from 'ulid';
@@ -67,7 +67,7 @@ export async function getContentUploadUrl(
   }
 
   const ext = getFileExtension(input.fileName) || 'bin';
-  const fileKey = `content/${input.userId}/${ulid()}.${ext}`;
+  const fileKey = `content/temp/${input.userId}/${ulid()}.${ext}`;
 
   let uploadUrl: string;
   if (UPLOAD_VIA_CLOUDFRONT) {
@@ -119,6 +119,7 @@ export async function createContentItem(
   input: CreateContentItemInput,
   dynamoClient: DynamoDBDocumentClient,
   tables: { contentItemsTable: string; categoriesTable: string; contentTagsTable?: string },
+  s3Options?: { s3Client: S3Client; bucket: string },
 ): Promise<CreateContentItemResult> {
   // Validate title
   if (!input.title || input.title.length > 100) {
@@ -173,6 +174,28 @@ export async function createContentItem(
   const contentId = ulid();
   const categoryName = (categoryResult.Item as { name: string }).name;
 
+  // Move file from temp path to permanent path if it's in content/temp/
+  let finalFileKey = input.fileKey;
+  if (input.fileKey.startsWith('content/temp/') && s3Options) {
+    const permanentKey = input.fileKey.replace('content/temp/', 'content/');
+    try {
+      await s3Options.s3Client.send(new CopyObjectCommand({
+        Bucket: s3Options.bucket,
+        CopySource: `${s3Options.bucket}/${input.fileKey}`,
+        Key: permanentKey,
+      }));
+      await s3Options.s3Client.send(new DeleteObjectCommand({
+        Bucket: s3Options.bucket,
+        Key: input.fileKey,
+      }));
+      finalFileKey = permanentKey;
+    } catch (err) {
+      console.error('Failed to move content file from temp:', err);
+      // Fall back to using the temp key — file will be cleaned up by lifecycle rule
+      finalFileKey = input.fileKey;
+    }
+  }
+
   const item: ContentItem = {
     contentId,
     title: input.title,
@@ -182,7 +205,7 @@ export async function createContentItem(
     uploaderId: input.userId,
     uploaderNickname: input.userNickname,
     uploaderRole: input.userRole,
-    fileKey: input.fileKey,
+    fileKey: finalFileKey,
     fileName: input.fileName,
     fileSize: input.fileSize,
     ...(input.videoUrl ? { videoUrl: input.videoUrl } : {}),
