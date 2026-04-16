@@ -13,6 +13,8 @@ const { mockDynamoSend } = vi.hoisted(() => ({
 vi.mock('@aws-sdk/lib-dynamodb', () => ({
   DynamoDBDocumentClient: { from: vi.fn().mockReturnValue({ send: mockDynamoSend }) },
   GetCommand: vi.fn().mockImplementation((input: any) => ({ _type: 'GetCommand', input })),
+  PutCommand: vi.fn().mockImplementation((input: any) => ({ _type: 'PutCommand', input })),
+  ScanCommand: vi.fn().mockImplementation((input: any) => ({ _type: 'ScanCommand', input })),
 }));
 
 vi.mock('@aws-sdk/client-s3', () => ({
@@ -92,6 +94,50 @@ vi.mock('../settings/invite-settings', () => ({
   getInviteSettings: vi.fn(),
   updateInviteSettings: vi.fn(),
 }));
+vi.mock('./ug', () => ({
+  createUG: vi.fn(),
+  deleteUG: vi.fn(),
+  updateUGStatus: vi.fn(),
+  listUGs: vi.fn(),
+  assignLeader: vi.fn(),
+  removeLeader: vi.fn(),
+  getMyUGs: vi.fn(),
+}));
+vi.mock('./activities', () => ({
+  listActivities: vi.fn(),
+}));
+vi.mock('../content/reservation-approval', () => ({
+  reviewReservation: vi.fn(),
+  listReservationApprovals: vi.fn(),
+  getVisibleUGNames: vi.fn(),
+}));
+vi.mock('../reports/query', () => ({
+  queryPointsDetail: vi.fn(),
+  queryUGActivitySummary: vi.fn(),
+  queryUserPointsRanking: vi.fn(),
+  queryActivityPointsSummary: vi.fn(),
+}));
+vi.mock('../reports/export', () => ({
+  executeExport: vi.fn(),
+  validateExportInput: vi.fn(),
+}));
+vi.mock('../reports/insight-query', () => ({
+  queryPopularProducts: vi.fn(),
+  queryHotContent: vi.fn(),
+  queryContentContributors: vi.fn(),
+  queryInventoryAlert: vi.fn(),
+  queryTravelStatistics: vi.fn(),
+  queryInviteConversion: vi.fn(),
+}));
+
+const { mockLambdaSend } = vi.hoisted(() => ({
+  mockLambdaSend: vi.fn(),
+}));
+
+vi.mock('@aws-sdk/client-lambda', () => ({
+  LambdaClient: vi.fn().mockImplementation(() => ({ send: mockLambdaSend })),
+  InvokeCommand: vi.fn().mockImplementation((input: any) => ({ _type: 'InvokeCommand', input })),
+}));
 
 // Mock auth middleware - inject user with admin role by default
 let mockUserRoles: string[] = ['Admin'];
@@ -124,6 +170,12 @@ import { executeBatchDistribution, validateBatchDistributionInput, listDistribut
 import { updateTravelSettings, validateTravelSettingsInput } from '../travel/settings';
 import { reviewTravelApplication, listAllTravelApplications } from '../travel/review';
 import { getInviteSettings } from '../settings/invite-settings';
+import { createUG, deleteUG, updateUGStatus, listUGs, assignLeader, removeLeader, getMyUGs } from './ug';
+import { listActivities } from './activities';
+import { reviewReservation, listReservationApprovals, getVisibleUGNames } from '../content/reservation-approval';
+import { queryPointsDetail, queryUGActivitySummary, queryUserPointsRanking, queryActivityPointsSummary } from '../reports/query';
+import { executeExport, validateExportInput } from '../reports/export';
+import { queryPopularProducts, queryHotContent, queryContentContributors, queryInventoryAlert, queryTravelStatistics, queryInviteConversion } from '../reports/insight-query';
 
 function makeEvent(overrides: Partial<APIGatewayProxyEvent> = {}): APIGatewayProxyEvent {
   return {
@@ -160,8 +212,17 @@ describe('Admin Lambda Handler', () => {
         UserGroupLeader: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
         Volunteer:       { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
       },
-      updatedAt: '2024-01-01T00:00:00.000Z',
-      updatedBy: 'system',
+      emailPointsEarnedEnabled: false,
+      emailNewOrderEnabled: false,
+      emailOrderShippedEnabled: false,
+      emailNewProductEnabled: false,
+      emailNewContentEnabled: false,
+      adminEmailProductsEnabled: false,
+      adminEmailContentEnabled: false,
+      reservationApprovalPoints: 10,
+      leaderboardRankingEnabled: false,
+      leaderboardAnnouncementEnabled: false,
+      leaderboardUpdateFrequency: 'weekly',
     } as any);
     // Default checkReviewPermission: Admin is denied (adminContentReviewEnabled: false), SuperAdmin is allowed
     vi.mocked(checkReviewPermission).mockImplementation((roles: string[]) =>
@@ -1411,6 +1472,10 @@ describe('Admin Lambda Handler', () => {
           emailNewContentEnabled: false,
           adminEmailProductsEnabled: false,
           adminEmailContentEnabled: false,
+          reservationApprovalPoints: 10,
+          leaderboardRankingEnabled: false,
+          leaderboardAnnouncementEnabled: false,
+          leaderboardUpdateFrequency: 'weekly',
           updatedAt: '2024-01-01T00:00:00.000Z',
           updatedBy: 'admin-user-id',
         },
@@ -1440,6 +1505,10 @@ describe('Admin Lambda Handler', () => {
           emailNewContentEnabled: false,
           adminEmailProductsEnabled: false,
           adminEmailContentEnabled: false,
+          reservationApprovalPoints: 10,
+          leaderboardRankingEnabled: false,
+          leaderboardAnnouncementEnabled: false,
+          leaderboardUpdateFrequency: 'weekly',
           updatedBy: 'admin-user-id',
         },
         expect.anything(),
@@ -1647,16 +1716,25 @@ describe('Admin Lambda Handler', () => {
       );
     });
 
-    it('non-SuperAdmin cannot view history (returns 403)', async () => {
+    it('non-SuperAdmin (Admin) can view own history with distributorId filter', async () => {
       mockUserRoles = ['Admin'];
+      vi.mocked(listDistributionHistory).mockResolvedValue({
+        success: true,
+        distributions: [],
+        lastKey: undefined,
+      });
+
       const event = makeEvent({
         httpMethod: 'GET',
         path: '/api/admin/batch-points/history',
       });
       const result = await handler(event);
-      expect(result.statusCode).toBe(403);
-      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
-      expect(listDistributionHistory).not.toHaveBeenCalled();
+      expect(result.statusCode).toBe(200);
+      expect(listDistributionHistory).toHaveBeenCalledWith(
+        expect.objectContaining({ distributorId: 'admin-user-id' }),
+        expect.anything(),
+        '',
+      );
     });
 
     it('SuperAdmin can view history', async () => {
@@ -1715,16 +1793,59 @@ describe('Admin Lambda Handler', () => {
       );
     });
 
-    it('non-SuperAdmin cannot view distribution detail (returns 403)', async () => {
+    it('non-SuperAdmin can view own distribution detail', async () => {
       mockUserRoles = ['Admin'];
+      vi.mocked(getDistributionDetail).mockResolvedValue({
+        success: true,
+        distribution: {
+          distributionId: 'dist-001',
+          distributorId: 'admin-user-id',
+          distributorNickname: 'Admin1',
+          targetRole: 'Speaker',
+          recipientIds: ['u1'],
+          recipientDetails: [{ userId: 'u1', nickname: 'User1', email: 'u1@test.com' }],
+          points: 100,
+          reason: '测试',
+          successCount: 1,
+          totalPoints: 100,
+          createdAt: '2024-01-01T00:00:00Z',
+        },
+      });
+
       const event = makeEvent({
         httpMethod: 'GET',
         path: '/api/admin/batch-points/history/dist-001',
       });
       const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(getDistributionDetail).toHaveBeenCalled();
+    });
+
+    it('non-SuperAdmin cannot view other admin distribution detail (returns 403)', async () => {
+      mockUserRoles = ['Admin'];
+      vi.mocked(getDistributionDetail).mockResolvedValue({
+        success: true,
+        distribution: {
+          distributionId: 'dist-002',
+          distributorId: 'other-admin-id',
+          distributorNickname: 'OtherAdmin',
+          targetRole: 'Speaker',
+          recipientIds: ['u1'],
+          recipientDetails: [{ userId: 'u1', nickname: 'User1', email: 'u1@test.com' }],
+          points: 100,
+          reason: '测试',
+          successCount: 1,
+          totalPoints: 100,
+          createdAt: '2024-01-01T00:00:00Z',
+        },
+      });
+
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/batch-points/history/dist-002',
+      });
+      const result = await handler(event);
       expect(result.statusCode).toBe(403);
-      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
-      expect(getDistributionDetail).not.toHaveBeenCalled();
     });
 
     it('returns 404 when distribution not found', async () => {
@@ -2136,6 +2257,10 @@ describe('Admin Lambda Handler', () => {
           emailNewContentEnabled: false,
           adminEmailProductsEnabled: false,
           adminEmailContentEnabled: false,
+          reservationApprovalPoints: 10,
+          leaderboardRankingEnabled: false,
+          leaderboardAnnouncementEnabled: false,
+          leaderboardUpdateFrequency: 'weekly',
           updatedAt: '2024-01-01T00:00:00.000Z',
           updatedBy: 'admin-user-id',
         },
@@ -2178,6 +2303,10 @@ describe('Admin Lambda Handler', () => {
           emailNewContentEnabled: false,
           adminEmailProductsEnabled: false,
           adminEmailContentEnabled: false,
+          reservationApprovalPoints: 10,
+          leaderboardRankingEnabled: false,
+          leaderboardAnnouncementEnabled: false,
+          leaderboardUpdateFrequency: 'weekly',
           updatedAt: '2024-01-01T00:00:00.000Z',
           updatedBy: 'admin-user-id',
         },
@@ -2376,6 +2505,1493 @@ describe('Admin Lambda Handler', () => {
       const event = makeEvent({ httpMethod: 'OPTIONS', path: '/api/admin/users' });
       const result = await handler(event);
       expect(result.statusCode).toBe(200);
+    });
+  });
+
+  // ── UG Management Routes ──────────────────────────────
+
+  describe('POST /api/admin/ugs', () => {
+    it('SuperAdmin can create a UG', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(createUG).mockResolvedValue({
+        success: true,
+        ug: { ugId: 'ug-001', name: 'Tokyo', status: 'active', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+      });
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/ugs',
+        body: JSON.stringify({ name: 'Tokyo' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(201);
+      const body = JSON.parse(result.body);
+      expect(body.ug.ugId).toBe('ug-001');
+      expect(body.ug.name).toBe('Tokyo');
+      expect(createUG).toHaveBeenCalledWith(
+        { name: 'Tokyo' },
+        expect.anything(),
+        '',
+      );
+    });
+
+    it('non-SuperAdmin gets 403 FORBIDDEN', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/ugs',
+        body: JSON.stringify({ name: 'Tokyo' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(createUG).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when name is missing', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/ugs',
+        body: JSON.stringify({}),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+    });
+
+    it('returns 409 when UG name is duplicate', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(createUG).mockResolvedValue({
+        success: false,
+        error: { code: 'DUPLICATE_UG_NAME', message: 'UG 名称已存在' },
+      });
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/ugs',
+        body: JSON.stringify({ name: 'Tokyo' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(409);
+      expect(JSON.parse(result.body).code).toBe('DUPLICATE_UG_NAME');
+    });
+  });
+
+  describe('GET /api/admin/ugs', () => {
+    it('SuperAdmin can list UGs', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(listUGs).mockResolvedValue({
+        success: true,
+        ugs: [
+          { ugId: 'ug-001', name: 'Tokyo', status: 'active', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+        ],
+      });
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/ugs' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.ugs).toHaveLength(1);
+      expect(body.ugs[0].name).toBe('Tokyo');
+      expect(listUGs).toHaveBeenCalledWith(
+        { status: 'all' },
+        expect.anything(),
+        '',
+      );
+    });
+
+    it('passes status query param', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(listUGs).mockResolvedValue({ success: true, ugs: [] });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/ugs',
+        queryStringParameters: { status: 'active' },
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(listUGs).toHaveBeenCalledWith(
+        { status: 'active' },
+        expect.anything(),
+        '',
+      );
+    });
+
+    it('non-SuperAdmin gets 403 FORBIDDEN', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/ugs' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(listUGs).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('PUT /api/admin/ugs/{ugId}/status', () => {
+    it('SuperAdmin can update UG status', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(updateUGStatus).mockResolvedValue({ success: true });
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/ugs/ug-001/status',
+        body: JSON.stringify({ status: 'inactive' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body).message).toBe('UG 状态更新成功');
+      expect(updateUGStatus).toHaveBeenCalledWith(
+        'ug-001',
+        'inactive',
+        expect.anything(),
+        '',
+      );
+    });
+
+    it('non-SuperAdmin gets 403 FORBIDDEN', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/ugs/ug-001/status',
+        body: JSON.stringify({ status: 'inactive' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(updateUGStatus).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when status field is missing', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/ugs/ug-001/status',
+        body: JSON.stringify({}),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+    });
+
+    it('returns 400 when status is invalid', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/ugs/ug-001/status',
+        body: JSON.stringify({ status: 'deleted' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+    });
+
+    it('returns 404 when UG not found', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(updateUGStatus).mockResolvedValue({
+        success: false,
+        error: { code: 'UG_NOT_FOUND', message: 'UG 不存在' },
+      });
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/ugs/nonexistent/status',
+        body: JSON.stringify({ status: 'active' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(404);
+      expect(JSON.parse(result.body).code).toBe('UG_NOT_FOUND');
+    });
+  });
+
+  describe('DELETE /api/admin/ugs/{ugId}', () => {
+    it('SuperAdmin can delete a UG', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(deleteUG).mockResolvedValue({ success: true });
+      const event = makeEvent({
+        httpMethod: 'DELETE',
+        path: '/api/admin/ugs/ug-001',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body).message).toBe('UG 已删除');
+      expect(deleteUG).toHaveBeenCalledWith(
+        'ug-001',
+        expect.anything(),
+        '',
+      );
+    });
+
+    it('non-SuperAdmin gets 403 FORBIDDEN', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'DELETE',
+        path: '/api/admin/ugs/ug-001',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(deleteUG).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when UG not found', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(deleteUG).mockResolvedValue({
+        success: false,
+        error: { code: 'UG_NOT_FOUND', message: 'UG 不存在' },
+      });
+      const event = makeEvent({
+        httpMethod: 'DELETE',
+        path: '/api/admin/ugs/nonexistent',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(404);
+      expect(JSON.parse(result.body).code).toBe('UG_NOT_FOUND');
+    });
+  });
+
+  // ── UG Leader Routes ──────────────────────────────
+
+  describe('PUT /api/admin/ugs/{ugId}/leader', () => {
+    it('routes to assignLeader with correct params', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(assignLeader).mockResolvedValue({ success: true });
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/ugs/ug-001/leader',
+        body: JSON.stringify({ leaderId: 'user-123' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body).message).toBe('负责人分配成功');
+      expect(assignLeader).toHaveBeenCalledWith(
+        { ugId: 'ug-001', leaderId: 'user-123' },
+        expect.anything(),
+        '',
+        '',
+      );
+    });
+
+    it('non-SuperAdmin gets 403 FORBIDDEN', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/ugs/ug-001/leader',
+        body: JSON.stringify({ leaderId: 'user-123' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(assignLeader).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 INVALID_REQUEST when leaderId is missing', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/ugs/ug-001/leader',
+        body: JSON.stringify({}),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+      expect(assignLeader).not.toHaveBeenCalled();
+    });
+
+    it('returns error when assignLeader fails', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(assignLeader).mockResolvedValue({
+        success: false,
+        error: { code: 'UG_NOT_FOUND', message: 'UG 不存在' },
+      });
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/ugs/ug-001/leader',
+        body: JSON.stringify({ leaderId: 'user-123' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(404);
+      expect(JSON.parse(result.body).code).toBe('UG_NOT_FOUND');
+    });
+  });
+
+  describe('DELETE /api/admin/ugs/{ugId}/leader', () => {
+    it('routes to removeLeader with correct ugId', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(removeLeader).mockResolvedValue({ success: true });
+      const event = makeEvent({
+        httpMethod: 'DELETE',
+        path: '/api/admin/ugs/ug-001/leader',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body).message).toBe('负责人已移除');
+      expect(removeLeader).toHaveBeenCalledWith(
+        'ug-001',
+        expect.anything(),
+        '',
+      );
+    });
+
+    it('non-SuperAdmin gets 403 FORBIDDEN', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'DELETE',
+        path: '/api/admin/ugs/ug-001/leader',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(removeLeader).not.toHaveBeenCalled();
+    });
+
+    it('returns error when removeLeader fails', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(removeLeader).mockResolvedValue({
+        success: false,
+        error: { code: 'UG_NOT_FOUND', message: 'UG 不存在' },
+      });
+      const event = makeEvent({
+        httpMethod: 'DELETE',
+        path: '/api/admin/ugs/ug-001/leader',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(404);
+      expect(JSON.parse(result.body).code).toBe('UG_NOT_FOUND');
+    });
+  });
+
+  describe('GET /api/admin/ugs/my-ugs', () => {
+    it('routes to getMyUGs and returns UG list', async () => {
+      mockUserRoles = ['Admin'];
+      vi.mocked(getMyUGs).mockResolvedValue({
+        success: true,
+        ugs: [
+          { ugId: 'ug-001', name: 'Tokyo', status: 'active', leaderId: 'admin-user-id', leaderNickname: 'Admin', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+        ],
+      });
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/ugs/my-ugs' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.ugs).toHaveLength(1);
+      expect(body.ugs[0].name).toBe('Tokyo');
+      expect(getMyUGs).toHaveBeenCalledWith(
+        'admin-user-id',
+        expect.anything(),
+        '',
+      );
+    });
+
+    it('SuperAdmin can also access my-ugs', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(getMyUGs).mockResolvedValue({ success: true, ugs: [] });
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/ugs/my-ugs' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body).ugs).toEqual([]);
+    });
+
+    it('non-admin gets 403 FORBIDDEN', async () => {
+      mockUserRoles = ['Speaker'];
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/ugs/my-ugs' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(getMyUGs).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Activity Routes ──────────────────────────────
+
+  describe('GET /api/admin/activities', () => {
+    it('Admin can list activities', async () => {
+      mockUserRoles = ['Admin'];
+      vi.mocked(listActivities).mockResolvedValue({
+        success: true,
+        activities: [
+          {
+            activityId: 'act-001',
+            activityType: '线下活动',
+            ugName: 'Tokyo',
+            topic: 'AWS Summit',
+            activityDate: '2024-06-15',
+            syncedAt: '2024-06-01T00:00:00Z',
+            sourceUrl: 'https://feishu.cn/table/123',
+          },
+        ],
+        lastKey: undefined,
+      });
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/activities' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.activities).toHaveLength(1);
+      expect(body.activities[0].topic).toBe('AWS Summit');
+      expect(listActivities).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ugName: undefined,
+          startDate: undefined,
+          endDate: undefined,
+          keyword: undefined,
+          pageSize: undefined,
+          lastKey: undefined,
+        }),
+        expect.anything(),
+        '',
+      );
+    });
+
+    it('SuperAdmin can list activities', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(listActivities).mockResolvedValue({
+        success: true,
+        activities: [],
+        lastKey: undefined,
+      });
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/activities' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+    });
+
+    it('passes query params for filtering', async () => {
+      mockUserRoles = ['Admin'];
+      vi.mocked(listActivities).mockResolvedValue({
+        success: true,
+        activities: [],
+        lastKey: undefined,
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/activities',
+        queryStringParameters: {
+          ugName: 'Tokyo',
+          startDate: '2024-01-01',
+          endDate: '2024-12-31',
+          keyword: 'summit',
+          pageSize: '10',
+          lastKey: 'some-cursor',
+        },
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(listActivities).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ugName: 'Tokyo',
+          startDate: '2024-01-01',
+          endDate: '2024-12-31',
+          keyword: 'summit',
+          pageSize: 10,
+          lastKey: 'some-cursor',
+        }),
+        expect.anything(),
+        '',
+      );
+    });
+
+    it('non-admin is rejected with 403', async () => {
+      mockUserRoles = ['Speaker'];
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/activities' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(listActivities).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Sync Config Routes ──────────────────────────────
+
+  describe('PUT /api/admin/settings/activity-sync-config', () => {
+    it('SuperAdmin can update sync config', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      // Mock GetCommand for existing config
+      mockDynamoSend.mockResolvedValueOnce({ Item: undefined });
+      // Mock PutCommand
+      mockDynamoSend.mockResolvedValueOnce({});
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/settings/activity-sync-config',
+        body: JSON.stringify({
+          syncIntervalDays: 7,
+          feishuTableUrl: 'https://feishu.cn/table/123',
+        }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.syncIntervalDays).toBe(7);
+      expect(body.feishuTableUrl).toBe('https://feishu.cn/table/123');
+    });
+
+    it('non-SuperAdmin gets 403 FORBIDDEN', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/settings/activity-sync-config',
+        body: JSON.stringify({ syncIntervalDays: 7 }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+    });
+
+    it('returns 400 when syncIntervalDays is out of range', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/settings/activity-sync-config',
+        body: JSON.stringify({ syncIntervalDays: 50 }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+    });
+
+    it('returns 400 when body is null', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/settings/activity-sync-config',
+        body: null,
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+    });
+  });
+
+  describe('GET /api/admin/settings/activity-sync-config', () => {
+    it('SuperAdmin can get sync config', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      mockDynamoSend.mockResolvedValueOnce({
+        Item: {
+          userId: 'activity-sync-config',
+          syncIntervalDays: 7,
+          feishuTableUrl: 'https://feishu.cn/table/123',
+          feishuAppId: 'app-id',
+          feishuAppSecret: 'secret',
+          updatedAt: '2024-01-01T00:00:00Z',
+          updatedBy: 'admin-user-id',
+        },
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/settings/activity-sync-config',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.syncIntervalDays).toBe(7);
+      expect(body.feishuTableUrl).toBe('https://feishu.cn/table/123');
+      expect(body.feishuAppSecret).toBe('***');
+    });
+
+    it('returns default config when none exists', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      mockDynamoSend.mockResolvedValueOnce({ Item: undefined });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/settings/activity-sync-config',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.syncIntervalDays).toBe(1);
+      expect(body.feishuTableUrl).toBe('');
+    });
+
+    it('non-SuperAdmin gets 403 FORBIDDEN', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/settings/activity-sync-config',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+    });
+  });
+
+  // ── Manual Sync Route ──────────────────────────────
+
+  describe('POST /api/admin/sync/activities', () => {
+    it('SuperAdmin can trigger manual sync (returns 500 when SYNC_FUNCTION_NAME not configured)', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/sync/activities',
+      });
+      const result = await handler(event);
+      // SYNC_FUNCTION_NAME is empty in test env, so handler returns 500
+      expect(result.statusCode).toBe(500);
+      expect(JSON.parse(result.body).code).toBe('INTERNAL_ERROR');
+    });
+
+    it('non-SuperAdmin gets 403 FORBIDDEN', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/sync/activities',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+    });
+  });
+
+  // ── Reservation Approval Routes ──────────────────────
+
+  describe('GET /api/admin/reservation-approvals', () => {
+    it('Admin can list reservation approvals', async () => {
+      mockUserRoles = ['Admin'];
+      // Mock ScanCommand for UGs
+      mockDynamoSend.mockResolvedValueOnce({
+        Items: [
+          { ugId: 'ug-1', name: 'Tokyo', status: 'active' },
+        ],
+      });
+      vi.mocked(getVisibleUGNames).mockReturnValue(['Tokyo']);
+      vi.mocked(listReservationApprovals).mockResolvedValue({
+        success: true,
+        reservations: [
+          {
+            pk: 'user1#content1',
+            userId: 'user1',
+            contentId: 'content1',
+            contentTitle: 'Test Content',
+            reserverNickname: 'User One',
+            activityId: 'act-001',
+            activityType: '线下活动',
+            activityUG: 'Tokyo',
+            activityTopic: 'AWS Summit',
+            activityDate: '2024-06-15',
+            status: 'pending',
+            createdAt: '2024-06-01T00:00:00Z',
+          },
+        ],
+        lastKey: undefined,
+      });
+
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reservation-approvals',
+        queryStringParameters: { status: 'pending' },
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.reservations).toHaveLength(1);
+      expect(body.reservations[0].activityTopic).toBe('AWS Summit');
+      expect(getVisibleUGNames).toHaveBeenCalled();
+      expect(listReservationApprovals).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'pending',
+          ugNames: ['Tokyo'],
+        }),
+        expect.anything(),
+        expect.objectContaining({
+          reservationsTable: '',
+          contentItemsTable: '',
+          usersTable: '',
+        }),
+      );
+    });
+
+    it('SuperAdmin can list all reservation approvals', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      mockDynamoSend.mockResolvedValueOnce({ Items: [] });
+      vi.mocked(getVisibleUGNames).mockReturnValue(undefined as any);
+      vi.mocked(listReservationApprovals).mockResolvedValue({
+        success: true,
+        reservations: [],
+        lastKey: undefined,
+      });
+
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reservation-approvals',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body).reservations).toEqual([]);
+    });
+
+    it('non-admin is rejected with 403', async () => {
+      mockUserRoles = ['Speaker'];
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reservation-approvals',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(listReservationApprovals).not.toHaveBeenCalled();
+    });
+
+    it('passes pageSize and lastKey query params', async () => {
+      mockUserRoles = ['Admin'];
+      mockDynamoSend.mockResolvedValueOnce({ Items: [] });
+      vi.mocked(getVisibleUGNames).mockReturnValue([]);
+      vi.mocked(listReservationApprovals).mockResolvedValue({
+        success: true,
+        reservations: [],
+        lastKey: undefined,
+      });
+
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reservation-approvals',
+        queryStringParameters: {
+          status: 'approved',
+          pageSize: '10',
+          lastKey: 'some-cursor',
+        },
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(listReservationApprovals).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'approved',
+          pageSize: 10,
+          lastKey: 'some-cursor',
+        }),
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+  });
+
+  describe('PATCH /api/admin/reservation-approvals/{pk}/review', () => {
+    it('Admin can approve a reservation', async () => {
+      mockUserRoles = ['Admin'];
+      vi.mocked(reviewReservation).mockResolvedValue({ success: true });
+
+      const event = makeEvent({
+        httpMethod: 'PATCH',
+        path: '/api/admin/reservation-approvals/user1%23content1/review',
+        body: JSON.stringify({ action: 'approve' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body).success).toBe(true);
+      expect(reviewReservation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pk: 'user1#content1',
+          reviewerId: 'admin-user-id',
+          action: 'approve',
+        }),
+        expect.anything(),
+        expect.objectContaining({
+          reservationsTable: '',
+          contentItemsTable: '',
+          usersTable: '',
+          pointsRecordsTable: '',
+        }),
+        10, // default reservationApprovalPoints
+      );
+    });
+
+    it('Admin can reject a reservation', async () => {
+      mockUserRoles = ['Admin'];
+      vi.mocked(reviewReservation).mockResolvedValue({ success: true });
+
+      const event = makeEvent({
+        httpMethod: 'PATCH',
+        path: '/api/admin/reservation-approvals/user1%23content1/review',
+        body: JSON.stringify({ action: 'reject' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(reviewReservation).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'reject' }),
+        expect.anything(),
+        expect.anything(),
+        10,
+      );
+    });
+
+    it('returns 400 when action field is missing', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'PATCH',
+        path: '/api/admin/reservation-approvals/user1%23content1/review',
+        body: JSON.stringify({}),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+      expect(reviewReservation).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when action is invalid', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'PATCH',
+        path: '/api/admin/reservation-approvals/user1%23content1/review',
+        body: JSON.stringify({ action: 'invalid' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+      expect(reviewReservation).not.toHaveBeenCalled();
+    });
+
+    it('non-admin is rejected with 403', async () => {
+      mockUserRoles = ['Speaker'];
+      const event = makeEvent({
+        httpMethod: 'PATCH',
+        path: '/api/admin/reservation-approvals/user1%23content1/review',
+        body: JSON.stringify({ action: 'approve' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(reviewReservation).not.toHaveBeenCalled();
+    });
+
+    it('returns error when reviewReservation fails', async () => {
+      mockUserRoles = ['Admin'];
+      vi.mocked(reviewReservation).mockResolvedValue({
+        success: false,
+        error: { code: 'RESERVATION_ALREADY_REVIEWED', message: '该预约已被审批' },
+      });
+
+      const event = makeEvent({
+        httpMethod: 'PATCH',
+        path: '/api/admin/reservation-approvals/user1%23content1/review',
+        body: JSON.stringify({ action: 'approve' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(409);
+      expect(JSON.parse(result.body).code).toBe('RESERVATION_ALREADY_REVIEWED');
+    });
+
+    it('uses reservationApprovalPoints from feature toggles when available', async () => {
+      mockUserRoles = ['Admin'];
+      vi.mocked(getFeatureToggles).mockResolvedValue({
+        codeRedemptionEnabled: true,
+        pointsClaimEnabled: true,
+        adminProductsEnabled: true,
+        adminOrdersEnabled: true,
+        adminContentReviewEnabled: false,
+        adminCategoriesEnabled: true,
+        contentRolePermissions: {
+          Speaker:         { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+          UserGroupLeader: { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+          Volunteer:       { canAccess: true, canUpload: true, canDownload: true, canReserve: true },
+        },
+        emailPointsEarnedEnabled: false,
+        emailNewOrderEnabled: false,
+        emailOrderShippedEnabled: false,
+        emailNewProductEnabled: false,
+        emailNewContentEnabled: false,
+        adminEmailProductsEnabled: false,
+        adminEmailContentEnabled: false,
+        reservationApprovalPoints: 25,
+      } as any);
+      vi.mocked(reviewReservation).mockResolvedValue({ success: true });
+
+      const event = makeEvent({
+        httpMethod: 'PATCH',
+        path: '/api/admin/reservation-approvals/user1%23content1/review',
+        body: JSON.stringify({ action: 'approve' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(reviewReservation).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        25, // custom reservationApprovalPoints
+      );
+    });
+
+    it('SuperAdmin can review a reservation', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(reviewReservation).mockResolvedValue({ success: true });
+
+      const event = makeEvent({
+        httpMethod: 'PATCH',
+        path: '/api/admin/reservation-approvals/user1%23content1/review',
+        body: JSON.stringify({ action: 'approve' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body).success).toBe(true);
+    });
+  });
+
+  // ---- Report Routes ----
+
+  describe('GET /api/admin/reports/points-detail', () => {
+    it('returns 403 for non-SuperAdmin', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/points-detail',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+    });
+
+    it('returns report data for SuperAdmin', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(queryPointsDetail).mockResolvedValue({
+        success: true,
+        records: [{ recordId: 'r1', createdAt: '2024-01-01', userId: 'u1', nickname: 'User1', amount: 10, type: 'earn', source: 'batch', activityUG: 'UG1', activityTopic: 'Topic1', activityId: 'a1', targetRole: 'Speaker', distributorNickname: 'Admin1' }],
+        lastKey: undefined,
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/points-detail',
+        queryStringParameters: {
+          startDate: '2024-01-01',
+          endDate: '2024-01-31',
+          ugName: 'UG1',
+          targetRole: 'Speaker',
+          type: 'earn',
+          pageSize: '50',
+          lastKey: 'abc123',
+        },
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.records).toHaveLength(1);
+      expect(queryPointsDetail).toHaveBeenCalledWith(
+        {
+          startDate: '2024-01-01',
+          endDate: '2024-01-31',
+          ugName: 'UG1',
+          targetRole: 'Speaker',
+          activityId: undefined,
+          type: 'earn',
+          pageSize: 50,
+          lastKey: 'abc123',
+        },
+        expect.anything(),
+        expect.objectContaining({
+          pointsRecordsTable: expect.any(String),
+          usersTable: expect.any(String),
+          batchDistributionsTable: expect.any(String),
+        }),
+      );
+    });
+
+    it('passes undefined for missing query params', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(queryPointsDetail).mockResolvedValue({ success: true, records: [] });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/points-detail',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(queryPointsDetail).toHaveBeenCalledWith(
+        {
+          startDate: undefined,
+          endDate: undefined,
+          ugName: undefined,
+          targetRole: undefined,
+          activityId: undefined,
+          type: undefined,
+          pageSize: undefined,
+          lastKey: undefined,
+        },
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+  });
+
+  describe('GET /api/admin/reports/ug-activity-summary', () => {
+    it('returns 403 for non-SuperAdmin', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/ug-activity-summary',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+    });
+
+    it('returns summary data for SuperAdmin with filters', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(queryUGActivitySummary).mockResolvedValue({
+        success: true,
+        records: [{ ugName: 'UG1', activityCount: 5, totalPoints: 100, participantCount: 10 }],
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/ug-activity-summary',
+        queryStringParameters: { startDate: '2024-01-01', endDate: '2024-06-30' },
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body).records).toHaveLength(1);
+      expect(queryUGActivitySummary).toHaveBeenCalledWith(
+        { startDate: '2024-01-01', endDate: '2024-06-30' },
+        expect.anything(),
+        expect.objectContaining({ pointsRecordsTable: expect.any(String) }),
+      );
+    });
+  });
+
+  describe('GET /api/admin/reports/user-points-ranking', () => {
+    it('returns 403 for non-SuperAdmin', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/user-points-ranking',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+    });
+
+    it('returns ranking data for SuperAdmin with filters', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(queryUserPointsRanking).mockResolvedValue({
+        success: true,
+        records: [{ rank: 1, userId: 'u1', nickname: 'User1', totalEarnPoints: 500, targetRole: 'Speaker' }],
+        lastKey: 'nextPage',
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/user-points-ranking',
+        queryStringParameters: {
+          startDate: '2024-01-01',
+          endDate: '2024-12-31',
+          targetRole: 'Speaker',
+          pageSize: '25',
+          lastKey: 'prevPage',
+        },
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.records).toHaveLength(1);
+      expect(body.lastKey).toBe('nextPage');
+      expect(queryUserPointsRanking).toHaveBeenCalledWith(
+        {
+          startDate: '2024-01-01',
+          endDate: '2024-12-31',
+          targetRole: 'Speaker',
+          pageSize: 25,
+          lastKey: 'prevPage',
+        },
+        expect.anything(),
+        expect.objectContaining({
+          pointsRecordsTable: expect.any(String),
+          usersTable: expect.any(String),
+        }),
+      );
+    });
+  });
+
+  describe('GET /api/admin/reports/activity-points-summary', () => {
+    it('returns 403 for non-SuperAdmin', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/activity-points-summary',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+    });
+
+    it('returns activity summary for SuperAdmin with filters', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(queryActivityPointsSummary).mockResolvedValue({
+        success: true,
+        records: [{ activityId: 'a1', activityTopic: 'Topic1', activityDate: '2024-03-15', activityUG: 'UG1', totalPoints: 200, participantCount: 15, uglCount: 2, speakerCount: 5, volunteerCount: 8 }],
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/activity-points-summary',
+        queryStringParameters: { startDate: '2024-01-01', ugName: 'UG1' },
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body).records).toHaveLength(1);
+      expect(queryActivityPointsSummary).toHaveBeenCalledWith(
+        { startDate: '2024-01-01', endDate: undefined, ugName: 'UG1' },
+        expect.anything(),
+        expect.objectContaining({ pointsRecordsTable: expect.any(String) }),
+      );
+    });
+  });
+
+  describe('POST /api/admin/reports/export', () => {
+    it('returns 403 for non-SuperAdmin', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/reports/export',
+        body: JSON.stringify({ reportType: 'points-detail', format: 'csv', filters: {} }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+    });
+
+    it('returns 400 when body is empty', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/reports/export',
+        body: null,
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+    });
+
+    it('returns 400 when validation fails', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(validateExportInput).mockReturnValue({
+        valid: false,
+        error: { code: 'INVALID_REPORT_TYPE', message: '不支持的报表类型' },
+      });
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/reports/export',
+        body: JSON.stringify({ reportType: 'invalid', format: 'csv', filters: {} }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REPORT_TYPE');
+    });
+
+    it('returns download URL on successful export', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(validateExportInput).mockReturnValue({ valid: true });
+      vi.mocked(executeExport).mockResolvedValue({
+        success: true,
+        downloadUrl: 'https://s3.presigned/export.csv',
+      });
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/reports/export',
+        body: JSON.stringify({
+          reportType: 'points-detail',
+          format: 'csv',
+          filters: { startDate: '2024-01-01', endDate: '2024-01-31' },
+        }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body).downloadUrl).toBe('https://s3.presigned/export.csv');
+      expect(executeExport).toHaveBeenCalledWith(
+        { reportType: 'points-detail', format: 'csv', filters: { startDate: '2024-01-01', endDate: '2024-01-31' } },
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({
+          pointsRecordsTable: expect.any(String),
+          usersTable: expect.any(String),
+          batchDistributionsTable: expect.any(String),
+        }),
+        expect.any(String),
+        expect.any(Number),
+      );
+    });
+
+    it('returns 504 on export timeout', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(validateExportInput).mockReturnValue({ valid: true });
+      vi.mocked(executeExport).mockResolvedValue({
+        success: false,
+        error: { code: 'EXPORT_TIMEOUT', message: '导出超时，请缩小筛选范围后重试' },
+      });
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/reports/export',
+        body: JSON.stringify({ reportType: 'points-detail', format: 'xlsx', filters: {} }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(504);
+      expect(JSON.parse(result.body).code).toBe('EXPORT_TIMEOUT');
+    });
+  });
+
+  // ---- Insight Report Routes ----
+
+  describe('GET /api/admin/reports/popular-products', () => {
+    it('returns 403 for non-SuperAdmin', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/popular-products',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+    });
+
+    it('returns report data for SuperAdmin with filters', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(queryPopularProducts).mockResolvedValue({
+        success: true,
+        records: [{ productId: 'p1', productName: 'Product1', productType: 'points', redemptionCount: 10, totalPointsSpent: 500, currentStock: 5, stockConsumptionRate: 66.7 }],
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/popular-products',
+        queryStringParameters: {
+          startDate: '2024-01-01',
+          endDate: '2024-06-30',
+          productType: 'points',
+        },
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.records).toHaveLength(1);
+      expect(queryPopularProducts).toHaveBeenCalledWith(
+        { startDate: '2024-01-01', endDate: '2024-06-30', productType: 'points' },
+        expect.anything(),
+        expect.objectContaining({ redemptionsTable: expect.any(String), productsTable: expect.any(String) }),
+      );
+    });
+
+    it('passes undefined for missing query params', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(queryPopularProducts).mockResolvedValue({ success: true, records: [] });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/popular-products',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(queryPopularProducts).toHaveBeenCalledWith(
+        { startDate: undefined, endDate: undefined, productType: undefined },
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+  });
+
+  describe('GET /api/admin/reports/hot-content', () => {
+    it('returns 403 for non-SuperAdmin', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/hot-content',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+    });
+
+    it('returns report data for SuperAdmin with filters', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(queryHotContent).mockResolvedValue({
+        success: true,
+        records: [{ contentId: 'c1', title: 'Hot Article', uploaderNickname: 'Author1', categoryName: 'Tech', likeCount: 50, commentCount: 20, reservationCount: 5, engagementScore: 75 }],
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/hot-content',
+        queryStringParameters: {
+          startDate: '2024-01-01',
+          endDate: '2024-06-30',
+          categoryId: 'cat-1',
+        },
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.records).toHaveLength(1);
+      expect(queryHotContent).toHaveBeenCalledWith(
+        { startDate: '2024-01-01', endDate: '2024-06-30', categoryId: 'cat-1' },
+        expect.anything(),
+        expect.objectContaining({ contentItemsTable: expect.any(String), contentCategoriesTable: expect.any(String), usersTable: expect.any(String) }),
+      );
+    });
+  });
+
+  describe('GET /api/admin/reports/content-contributors', () => {
+    it('returns 403 for non-SuperAdmin', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/content-contributors',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+    });
+
+    it('returns report data for SuperAdmin with filters', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(queryContentContributors).mockResolvedValue({
+        success: true,
+        records: [{ rank: 1, userId: 'u1', nickname: 'TopContributor', approvedCount: 15, totalLikes: 200, totalComments: 80 }],
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/content-contributors',
+        queryStringParameters: {
+          startDate: '2024-01-01',
+          endDate: '2024-06-30',
+        },
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.records).toHaveLength(1);
+      expect(queryContentContributors).toHaveBeenCalledWith(
+        { startDate: '2024-01-01', endDate: '2024-06-30' },
+        expect.anything(),
+        expect.objectContaining({ contentItemsTable: expect.any(String), usersTable: expect.any(String) }),
+      );
+    });
+  });
+
+  describe('GET /api/admin/reports/inventory-alert', () => {
+    it('returns 403 for non-SuperAdmin', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/inventory-alert',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+    });
+
+    it('returns report data for SuperAdmin with filters', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(queryInventoryAlert).mockResolvedValue({
+        success: true,
+        records: [{ productId: 'p1', productName: 'LowStockItem', productType: 'points', currentStock: 2, totalStock: 2, productStatus: 'active' }],
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/inventory-alert',
+        queryStringParameters: {
+          stockThreshold: '10',
+          productType: 'points',
+          productStatus: 'active',
+        },
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.records).toHaveLength(1);
+      expect(queryInventoryAlert).toHaveBeenCalledWith(
+        { stockThreshold: 10, productType: 'points', productStatus: 'active' },
+        expect.anything(),
+        expect.objectContaining({ productsTable: expect.any(String) }),
+      );
+    });
+
+    it('defaults stockThreshold to 5 when not provided or invalid', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(queryInventoryAlert).mockResolvedValue({ success: true, records: [] });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/inventory-alert',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(queryInventoryAlert).toHaveBeenCalledWith(
+        { stockThreshold: 5, productType: undefined, productStatus: undefined },
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+  });
+
+  describe('GET /api/admin/reports/travel-statistics', () => {
+    it('returns 403 for non-SuperAdmin', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/travel-statistics',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+    });
+
+    it('returns report data for SuperAdmin with filters', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(queryTravelStatistics).mockResolvedValue({
+        success: true,
+        records: [{ period: '2024-01', totalApplications: 20, approvedCount: 15, rejectedCount: 3, pendingCount: 2, approvalRate: 75.0, totalSponsoredAmount: 50000 }],
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/travel-statistics',
+        queryStringParameters: {
+          startDate: '2024-01-01',
+          endDate: '2024-06-30',
+          periodType: 'month',
+          category: 'domestic',
+        },
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.records).toHaveLength(1);
+      expect(queryTravelStatistics).toHaveBeenCalledWith(
+        { startDate: '2024-01-01', endDate: '2024-06-30', periodType: 'month', category: 'domestic' },
+        expect.anything(),
+        expect.objectContaining({ travelApplicationsTable: expect.any(String) }),
+      );
+    });
+  });
+
+  describe('GET /api/admin/reports/invite-conversion', () => {
+    it('returns 403 for non-SuperAdmin', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/invite-conversion',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+    });
+
+    it('returns single record for SuperAdmin with filters', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(queryInviteConversion).mockResolvedValue({
+        success: true,
+        record: { totalInvites: 100, usedCount: 60, expiredCount: 25, pendingCount: 15, conversionRate: 60.0 },
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/invite-conversion',
+        queryStringParameters: {
+          startDate: '2024-01-01',
+          endDate: '2024-06-30',
+        },
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.record).toBeDefined();
+      expect(body.record.totalInvites).toBe(100);
+      expect(body.record.conversionRate).toBe(60.0);
+      expect(queryInviteConversion).toHaveBeenCalledWith(
+        { startDate: '2024-01-01', endDate: '2024-06-30' },
+        expect.anything(),
+        expect.objectContaining({ invitesTable: expect.any(String) }),
+      );
+    });
+
+    it('passes undefined for missing query params', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(queryInviteConversion).mockResolvedValue({
+        success: true,
+        record: { totalInvites: 0, usedCount: 0, expiredCount: 0, pendingCount: 0, conversionRate: 0 },
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/admin/reports/invite-conversion',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(queryInviteConversion).toHaveBeenCalledWith(
+        { startDate: undefined, endDate: undefined },
+        expect.anything(),
+        expect.anything(),
+      );
     });
   });
 });

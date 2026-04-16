@@ -1,8 +1,9 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { SESClient } from '@aws-sdk/client-ses';
 import { S3Client } from '@aws-sdk/client-s3';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { ErrorHttpStatus, isSuperAdmin, ErrorCodes, ErrorMessages, isOrderAdmin } from '@points-mall/shared';
 import type { Product, UserRole } from '@points-mall/shared';
 import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware';
@@ -12,11 +13,12 @@ import { createPointsProduct, createCodeExclusiveProduct, updateProduct, setProd
 import { getUploadUrl, getTempUploadUrl, deleteImage } from './images';
 import { batchGenerateInvites, listInvites, revokeInvite } from './invites';
 import { listUsers, setUserStatus, deleteUser } from './users';
-import { executeBatchDistribution, validateBatchDistributionInput, listDistributionHistory, getDistributionDetail } from './batch-points';
+import { executeBatchDistribution, validateBatchDistributionInput, listDistributionHistory, getDistributionDetail, getAwardedUserIds } from './batch-points';
 import { reviewClaim, listAllClaims } from '../claims/review';
 import { reviewContent, listAllContent, deleteContent, createCategory, updateCategory, deleteCategory } from '../content/admin';
 import { listAllTags, mergeTags, deleteTag } from '../content/admin-tags';
 import { updateFeatureToggles, getFeatureToggles, updateContentRolePermissions } from '../settings/feature-toggles';
+import type { PointsRuleConfig } from '../settings/feature-toggles';
 import { checkReviewPermission } from '../content/content-permission';
 import { getInviteSettings, updateInviteSettings } from '../settings/invite-settings';
 import { transferSuperAdmin } from './superadmin-transfer';
@@ -27,11 +29,25 @@ import { seedDefaultTemplates } from '../email/seed';
 import { sendNewProductNotification, sendNewContentNotification, sendPointsEarnedEmail } from '../email/notifications';
 import type { NotificationContext, SubscribedUser } from '../email/notifications';
 import type { NotificationType, EmailLocale } from '../email/send';
+import { createUG, deleteUG, updateUGStatus, updateUGName, listUGs, assignLeader, removeLeader, getMyUGs } from './ug';
+import { listActivities } from './activities';
+import { reviewReservation, listReservationApprovals, getVisibleUGNames } from '../content/reservation-approval';
+import { queryPointsDetail, queryUGActivitySummary, queryUserPointsRanking, queryActivityPointsSummary } from '../reports/query';
+import { executeExport, validateExportInput } from '../reports/export';
+import {
+  queryPopularProducts,
+  queryHotContent,
+  queryContentContributors,
+  queryInventoryAlert,
+  queryTravelStatistics,
+  queryInviteConversion,
+} from '../reports/insight-query';
 
 // Create client outside handler for Lambda container reuse
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const s3Client = new S3Client({});
 const sesClient = new SESClient({});
+const lambdaClient = new LambdaClient({});
 
 const USERS_TABLE = process.env.USERS_TABLE ?? '';
 const PRODUCTS_TABLE = process.env.PRODUCTS_TABLE ?? '';
@@ -49,7 +65,11 @@ const CONTENT_RESERVATIONS_TABLE = process.env.CONTENT_RESERVATIONS_TABLE ?? '';
 const BATCH_DISTRIBUTIONS_TABLE = process.env.BATCH_DISTRIBUTIONS_TABLE ?? '';
 const CONTENT_TAGS_TABLE = process.env.CONTENT_TAGS_TABLE ?? '';
 const TRAVEL_APPLICATIONS_TABLE = process.env.TRAVEL_APPLICATIONS_TABLE ?? '';
+const REDEMPTIONS_TABLE = process.env.REDEMPTIONS_TABLE ?? '';
 const EMAIL_TEMPLATES_TABLE = process.env.EMAIL_TEMPLATES_TABLE ?? '';
+const UGS_TABLE = process.env.UGS_TABLE ?? '';
+const ACTIVITIES_TABLE = process.env.ACTIVITIES_TABLE ?? '';
+const SYNC_FUNCTION_NAME = process.env.SYNC_FUNCTION_NAME ?? '';
 
 const CORS_HEADERS = {
   'Content-Type': 'application/json',
@@ -100,6 +120,11 @@ const BATCH_POINTS_HISTORY_DETAIL_REGEX = /^\/api\/admin\/batch-points\/history\
 const TRAVEL_REVIEW_REGEX = /^\/api\/admin\/travel\/([^/]+)\/review$/;
 const TAGS_DELETE_REGEX = /^\/api\/admin\/tags\/([^/]+)$/;
 const EMAIL_TEMPLATES_UPDATE_REGEX = /^\/api\/admin\/email-templates\/([^/]+)\/([^/]+)$/;
+const UGS_STATUS_REGEX = /^\/api\/admin\/ugs\/([^/]+)\/status$/;
+const UGS_RENAME_REGEX = /^\/api\/admin\/ugs\/([^/]+)$/;
+const UGS_LEADER_REGEX = /^\/api\/admin\/ugs\/([^/]+)\/leader$/;
+const UGS_DELETE_REGEX = /^\/api\/admin\/ugs\/([^/]+)$/;
+const RESERVATION_APPROVAL_REVIEW_REGEX = /^\/api\/admin\/reservation-approvals\/([^/]+)\/review$/;
 
 /**
  * Check if the authenticated user has admin privileges.
@@ -171,6 +196,41 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
       return await handleUpdateContentRolePermissions(event);
     }
 
+    // PUT /api/admin/ugs/{ugId}/status — SuperAdmin only
+    const ugsStatusMatch = path.match(UGS_STATUS_REGEX);
+    if (ugsStatusMatch) {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleUpdateUGStatus(ugsStatusMatch[1], event);
+    }
+
+    // PUT /api/admin/ugs/{ugId}/leader — SuperAdmin only
+    const ugsLeaderMatch = path.match(UGS_LEADER_REGEX);
+    if (ugsLeaderMatch) {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleAssignLeader(ugsLeaderMatch[1], event);
+    }
+
+    // PUT /api/admin/ugs/{ugId} — rename UG, SuperAdmin only (must be after more-specific routes)
+    const ugsRenameMatch = path.match(UGS_RENAME_REGEX);
+    if (ugsRenameMatch && path.startsWith('/api/admin/ugs/')) {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleRenameUG(ugsRenameMatch[1], event);
+    }
+
+    // PUT /api/admin/settings/activity-sync-config — SuperAdmin only
+    if (path === '/api/admin/settings/activity-sync-config') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleUpdateSyncConfig(event);
+    }
+
     // PUT /api/admin/email-templates/{type}/{locale} — SuperAdmin only
     const emailTemplateMatch = path.match(EMAIL_TEMPLATES_UPDATE_REGEX);
     if (emailTemplateMatch) {
@@ -234,6 +294,29 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     if (path === '/api/admin/batch-points') {
       return await handleBatchDistribution(event);
     }
+
+    if (path === '/api/admin/quarterly-award') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleQuarterlyAward(event);
+    }
+
+    // POST /api/admin/ugs — SuperAdmin only
+    if (path === '/api/admin/ugs') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleCreateUG(event);
+    }
+
+    // POST /api/admin/sync/activities — SuperAdmin only, invoke Sync Lambda
+    if (path === '/api/admin/sync/activities') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleManualSync();
+    }
     // POST /api/admin/email-templates/seed — SuperAdmin only, seed default templates
     if (path === '/api/admin/email-templates/seed') {
       if (!isSuperAdmin(event.user.roles as UserRole[])) {
@@ -249,11 +332,23 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     if (path === '/api/admin/email/send-content-notification') {
       return await handleSendContentNotification(event);
     }
+
+    // POST /api/admin/reports/export — SuperAdmin only
+    if (path === '/api/admin/reports/export') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleReportExport(event);
+    }
   }
 
   // GET routes
   if (method === 'GET' && path === '/api/admin/batch-points/history') {
     return await handleListDistributionHistory(event);
+  }
+
+  if (method === 'GET' && path === '/api/admin/batch-points/awarded') {
+    return await handleGetAwardedUsers(event);
   }
 
   if (method === 'GET') {
@@ -283,6 +378,37 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     return await handleListAllTags();
   }
 
+  // GET /api/admin/ugs/my-ugs — Admin/SuperAdmin
+  if (method === 'GET' && path === '/api/admin/ugs/my-ugs') {
+    return await handleGetMyUGs(event);
+  }
+
+  // GET /api/admin/ugs — SuperAdmin only
+  if (method === 'GET' && path === '/api/admin/ugs') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handleListUGs(event);
+  }
+
+  // GET /api/admin/activities — Admin/SuperAdmin
+  if (method === 'GET' && path === '/api/admin/activities') {
+    return await handleListActivities(event);
+  }
+
+  // GET /api/admin/reservation-approvals — Admin/SuperAdmin
+  if (method === 'GET' && path === '/api/admin/reservation-approvals') {
+    return await handleListReservationApprovals(event);
+  }
+
+  // GET /api/admin/settings/activity-sync-config — SuperAdmin only
+  if (method === 'GET' && path === '/api/admin/settings/activity-sync-config') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handleGetSyncConfig();
+  }
+
   // GET /api/admin/email-templates — Admin and SuperAdmin can access
   if (method === 'GET' && path === '/api/admin/email-templates') {
     return await handleListEmailTemplates(event);
@@ -294,6 +420,83 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
 
   if (method === 'GET' && path === '/api/admin/travel/applications') {
     return await handleListAllTravelApplications(event);
+  }
+
+  // GET /api/admin/reports/* — SuperAdmin only
+  if (method === 'GET' && path === '/api/admin/reports/points-detail') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handlePointsDetailReport(event);
+  }
+
+  if (method === 'GET' && path === '/api/admin/reports/ug-activity-summary') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handleUGActivitySummary(event);
+  }
+
+  if (method === 'GET' && path === '/api/admin/reports/user-points-ranking') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handleUserPointsRanking(event);
+  }
+
+  if (method === 'GET' && path === '/api/admin/reports/activity-points-summary') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handleActivityPointsSummary(event);
+  }
+
+  // GET /api/admin/reports/popular-products — SuperAdmin only
+  if (method === 'GET' && path === '/api/admin/reports/popular-products') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handlePopularProductsReport(event);
+  }
+
+  // GET /api/admin/reports/hot-content — SuperAdmin only
+  if (method === 'GET' && path === '/api/admin/reports/hot-content') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handleHotContentReport(event);
+  }
+
+  // GET /api/admin/reports/content-contributors — SuperAdmin only
+  if (method === 'GET' && path === '/api/admin/reports/content-contributors') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handleContentContributorsReport(event);
+  }
+
+  // GET /api/admin/reports/inventory-alert — SuperAdmin only
+  if (method === 'GET' && path === '/api/admin/reports/inventory-alert') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handleInventoryAlertReport(event);
+  }
+
+  // GET /api/admin/reports/travel-statistics — SuperAdmin only
+  if (method === 'GET' && path === '/api/admin/reports/travel-statistics') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handleTravelStatisticsReport(event);
+  }
+
+  // GET /api/admin/reports/invite-conversion — SuperAdmin only
+  if (method === 'GET' && path === '/api/admin/reports/invite-conversion') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handleInviteConversionReport(event);
   }
 
   // PATCH routes
@@ -336,10 +539,34 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     if (travelReviewMatch) {
       return await handleReviewTravelApplication(travelReviewMatch[1], event);
     }
+
+    // PATCH /api/admin/reservation-approvals/{pk}/review — Admin/SuperAdmin
+    const reservationApprovalReviewMatch = path.match(RESERVATION_APPROVAL_REVIEW_REGEX);
+    if (reservationApprovalReviewMatch) {
+      return await handleReviewReservationApproval(decodeURIComponent(reservationApprovalReviewMatch[1]), event);
+    }
   }
 
   // DELETE routes
   if (method === 'DELETE') {
+    // DELETE /api/admin/ugs/{ugId}/leader — SuperAdmin only (must check before UGS_DELETE_REGEX)
+    const ugsLeaderDeleteMatch = path.match(UGS_LEADER_REGEX);
+    if (ugsLeaderDeleteMatch) {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleRemoveLeader(ugsLeaderDeleteMatch[1]);
+    }
+
+    // DELETE /api/admin/ugs/{ugId} — SuperAdmin only (must check before generic patterns)
+    const ugsDeleteMatch = path.match(UGS_DELETE_REGEX);
+    if (ugsDeleteMatch && path.startsWith('/api/admin/ugs/')) {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleDeleteUG(ugsDeleteMatch[1]);
+    }
+
     // DELETE /api/admin/tags/:id — must check before generic content delete
     const tagsDeleteMatch = path.match(TAGS_DELETE_REGEX);
     if (tagsDeleteMatch && path.startsWith('/api/admin/tags/')) {
@@ -519,6 +746,8 @@ async function handleCreateProduct(event: AuthenticatedEvent): Promise<APIGatewa
       },
       dynamoClient,
       PRODUCTS_TABLE,
+      s3Client,
+      IMAGES_BUCKET,
     );
 
     if (!result.success) {
@@ -543,6 +772,8 @@ async function handleCreateProduct(event: AuthenticatedEvent): Promise<APIGatewa
       },
       dynamoClient,
       PRODUCTS_TABLE,
+      s3Client,
+      IMAGES_BUCKET,
     );
 
     if (!result.success) {
@@ -644,7 +875,7 @@ async function handleDeleteImage(productId: string, imageKey: string): Promise<A
   }
 
   const images = product.images ?? [];
-  const fullKey = `products/${productId}/images/${imageKey}`;
+  const fullKey = `products/${productId}/${imageKey}`;
 
   // Try matching with the full constructed key first, then the raw imageKey
   const imageIndex = images.findIndex(img => img.key === fullKey || img.key === imageKey);
@@ -886,7 +1117,7 @@ async function handleBatchDistribution(event: AuthenticatedEvent): Promise<APIGa
     return errorResponse(validation.error.code, validation.error.message, 400);
   }
 
-  const { userIds, points, reason, targetRole } = body as Record<string, unknown>;
+  const { userIds, points, reason, targetRole, activityId, activityType, activityUG, activityTopic, activityDate, speakerType } = body as Record<string, unknown>;
 
   // Fetch distributor's nickname from Users table
   const distributorResult = await dynamoClient.send(
@@ -900,14 +1131,21 @@ async function handleBatchDistribution(event: AuthenticatedEvent): Promise<APIGa
       points: points as number,
       reason: reason as string,
       targetRole: targetRole as 'UserGroupLeader' | 'Speaker' | 'Volunteer',
+      speakerType: speakerType as 'typeA' | 'typeB' | 'roundtable' | undefined,
       distributorId: event.user.userId,
       distributorNickname,
+      activityId: activityId as string,
+      activityType: activityType as string,
+      activityUG: activityUG as string,
+      activityTopic: activityTopic as string,
+      activityDate: activityDate as string,
     },
     dynamoClient,
     {
       usersTable: USERS_TABLE,
       pointsRecordsTable: POINTS_RECORDS_TABLE,
       batchDistributionsTable: BATCH_DISTRIBUTIONS_TABLE,
+      activitiesTable: ACTIVITIES_TABLE,
     },
   );
 
@@ -958,19 +1196,136 @@ async function handleBatchDistribution(event: AuthenticatedEvent): Promise<APIGa
   });
 }
 
-async function handleListDistributionHistory(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
-  // SuperAdmin permission check
-  if (!isSuperAdmin(event.user.roles as UserRole[])) {
-    return errorResponse('FORBIDDEN', '需要超级管理员权限', 403);
+// ---- Awarded Users Handler ----
+
+async function handleGetAwardedUsers(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const activityId = event.queryStringParameters?.activityId;
+  const targetRole = event.queryStringParameters?.targetRole;
+
+  if (!activityId || !targetRole) {
+    return errorResponse('INVALID_REQUEST', 'activityId 和 targetRole 为必填参数', 400);
   }
 
+  const validRoles = ['UserGroupLeader', 'Speaker', 'Volunteer'];
+  if (!validRoles.includes(targetRole)) {
+    return errorResponse('INVALID_REQUEST', 'targetRole 必须为 UserGroupLeader、Speaker 或 Volunteer', 400);
+  }
+
+  const userIds = await getAwardedUserIds(activityId, targetRole, dynamoClient, BATCH_DISTRIBUTIONS_TABLE);
+  return jsonResponse(200, { userIds });
+}
+
+// ---- Quarterly Award Handler ----
+
+async function handleQuarterlyAward(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || typeof body !== 'object') {
+    return errorResponse('INVALID_REQUEST', '请求体无效', 400);
+  }
+
+  const { userIds, points, reason, targetRole, awardDate } = body as Record<string, unknown>;
+
+  // Validate userIds
+  if (!Array.isArray(userIds) || userIds.length === 0 || !userIds.every(id => typeof id === 'string' && id.length > 0)) {
+    return errorResponse('INVALID_REQUEST', 'userIds 必须为非空字符串数组', 400);
+  }
+  // Validate points
+  if (typeof points !== 'number' || !Number.isInteger(points) || points < 1) {
+    return errorResponse('INVALID_REQUEST', 'points 必须为正整数', 400);
+  }
+  // Validate reason
+  if (typeof reason !== 'string' || reason.length < 1 || reason.length > 200) {
+    return errorResponse('INVALID_REQUEST', 'reason 必须为 1~200 字符的字符串', 400);
+  }
+  // Validate targetRole
+  const VALID_ROLES = ['UserGroupLeader', 'Speaker', 'Volunteer'];
+  if (typeof targetRole !== 'string' || !VALID_ROLES.includes(targetRole)) {
+    return errorResponse('INVALID_REQUEST', 'targetRole 必须为 UserGroupLeader、Speaker 或 Volunteer', 400);
+  }
+  // Validate awardDate (YYYY-MM-DD)
+  if (typeof awardDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(awardDate)) {
+    return errorResponse('INVALID_REQUEST', 'awardDate 格式必须为 YYYY-MM-DD', 400);
+  }
+
+  // Fetch distributor nickname
+  const distributorResult = await dynamoClient.send(
+    new GetCommand({ TableName: USERS_TABLE, Key: { userId: event.user.userId }, ProjectionExpression: 'nickname' }),
+  );
+  const distributorNickname = distributorResult.Item?.nickname ?? '';
+
+  // Reuse executeBatchDistribution without activity validation
+  const result = await executeBatchDistribution(
+    {
+      userIds: userIds as string[],
+      points: points as number,
+      reason: reason as string,
+      targetRole: targetRole as 'UserGroupLeader' | 'Speaker' | 'Volunteer',
+      distributorId: event.user.userId,
+      distributorNickname,
+      activityId: `quarterly-award:${awardDate}`,
+      activityType: '季度贡献奖',
+      activityUG: '',
+      activityTopic: `季度贡献奖`,
+      activityDate: awardDate as string,
+    },
+    dynamoClient,
+    {
+      usersTable: USERS_TABLE,
+      pointsRecordsTable: POINTS_RECORDS_TABLE,
+      batchDistributionsTable: BATCH_DISTRIBUTIONS_TABLE,
+      // No activitiesTable — skip activity existence check
+    },
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message);
+  }
+
+  // Best-effort email notifications
+  try {
+    const notificationCtx: NotificationContext = {
+      sesClient,
+      dynamoClient,
+      emailTemplatesTable: EMAIL_TEMPLATES_TABLE,
+      usersTable: USERS_TABLE,
+      senderEmail: 'store@awscommunity.cn',
+    };
+    const uniqueUserIds = [...new Set(userIds as string[])];
+    for (const userId of uniqueUserIds) {
+      try {
+        const userBalanceResult = await dynamoClient.send(
+          new GetCommand({ TableName: USERS_TABLE, Key: { userId }, ProjectionExpression: 'points' }),
+        );
+        const currentBalance = userBalanceResult.Item?.points ?? 0;
+        await sendPointsEarnedEmail(notificationCtx, userId, points as number, '季度贡献奖', currentBalance);
+      } catch (emailErr) {
+        console.error(`[Email] Failed to send quarterly award email to user ${userId}:`, emailErr);
+      }
+    }
+  } catch (err) {
+    console.error('[Email] Failed to send quarterly award emails:', err);
+  }
+
+  return jsonResponse(201, {
+    distributionId: result.distributionId,
+    successCount: result.successCount,
+    totalPoints: result.totalPoints,
+  });
+}
+
+async function handleListDistributionHistory(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
   const pageSize = event.queryStringParameters?.pageSize
     ? parseInt(event.queryStringParameters.pageSize, 10)
     : undefined;
   const lastKey = event.queryStringParameters?.lastKey;
 
+  // Admin users can only see their own distribution history
+  const distributorId = isSuperAdmin(event.user.roles as UserRole[])
+    ? undefined
+    : event.user.userId;
+
   const result = await listDistributionHistory(
-    { pageSize, lastKey },
+    { pageSize, lastKey, distributorId },
     dynamoClient,
     BATCH_DISTRIBUTIONS_TABLE,
   );
@@ -983,16 +1338,16 @@ async function handleListDistributionHistory(event: AuthenticatedEvent): Promise
 }
 
 async function handleGetDistributionDetail(distributionId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
-  // SuperAdmin permission check
-  if (!isSuperAdmin(event.user.roles as UserRole[])) {
-    return errorResponse('FORBIDDEN', '需要超级管理员权限', 403);
-  }
-
   const result = await getDistributionDetail(distributionId, dynamoClient, BATCH_DISTRIBUTIONS_TABLE);
 
   if (!result.success) {
     const statusCode = result.error!.code === 'DISTRIBUTION_NOT_FOUND' ? 404 : 400;
     return jsonResponse(statusCode, result.error);
+  }
+
+  // Admin users can only view their own distribution records
+  if (!isSuperAdmin(event.user.roles as UserRole[]) && result.distribution!.distributorId !== event.user.userId) {
+    return errorResponse('FORBIDDEN', '无权查看此发放记录', 403);
   }
 
   return jsonResponse(200, { distribution: result.distribution });
@@ -1156,6 +1511,13 @@ async function handleUpdateFeatureToggles(event: AuthenticatedEvent): Promise<AP
       emailNewContentEnabled: body.emailNewContentEnabled === true,        // default false
       adminEmailProductsEnabled: body.adminEmailProductsEnabled === true,  // default false
       adminEmailContentEnabled: body.adminEmailContentEnabled === true,    // default false
+      reservationApprovalPoints: typeof body.reservationApprovalPoints === 'number' && Number.isInteger(body.reservationApprovalPoints) && body.reservationApprovalPoints >= 1
+        ? body.reservationApprovalPoints
+        : 10,  // default 10
+      leaderboardRankingEnabled: body.leaderboardRankingEnabled === true,           // default false
+      leaderboardAnnouncementEnabled: body.leaderboardAnnouncementEnabled === true, // default false
+      leaderboardUpdateFrequency: (body.leaderboardUpdateFrequency || 'weekly') as 'daily' | 'weekly' | 'monthly',     // default 'weekly', validated in updateFeatureToggles
+      pointsRuleConfig: body.pointsRuleConfig as PointsRuleConfig | undefined,
       updatedBy: event.user.userId,
     },
     dynamoClient,
@@ -1634,4 +1996,595 @@ async function handleUpdateEmailTemplate(type: string, locale: string, event: Au
     const message = err instanceof Error ? err.message : 'Failed to update template';
     return errorResponse('INVALID_REQUEST', message, 400);
   }
+}
+
+// ---- UG Management Route Handlers ----
+
+async function handleCreateUG(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || !body.name) {
+    return errorResponse('INVALID_REQUEST', 'Missing required field: name', 400);
+  }
+
+  const result = await createUG({ name: body.name as string }, dynamoClient, UGS_TABLE);
+
+  if (!result.success) {
+    const statusCode = result.error!.code === 'DUPLICATE_UG_NAME' ? 409 : (ErrorHttpStatus as Record<string, number>)[result.error!.code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(201, { ug: result.ug });
+}
+
+async function handleListUGs(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const status = event.queryStringParameters?.status as 'active' | 'inactive' | 'all' | undefined;
+
+  const result = await listUGs({ status: status ?? 'all' }, dynamoClient, UGS_TABLE);
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 400);
+  }
+
+  return jsonResponse(200, { ugs: result.ugs });
+}
+
+async function handleUpdateUGStatus(ugId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || !body.status) {
+    return errorResponse('INVALID_REQUEST', 'Missing required field: status', 400);
+  }
+
+  const status = body.status as string;
+  if (status !== 'active' && status !== 'inactive') {
+    return errorResponse('INVALID_REQUEST', 'status 必须为 active 或 inactive', 400);
+  }
+
+  const result = await updateUGStatus(ugId, status, dynamoClient, UGS_TABLE);
+
+  if (!result.success) {
+    const statusCode = result.error!.code === 'UG_NOT_FOUND' ? 404 : (ErrorHttpStatus as Record<string, number>)[result.error!.code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { message: 'UG 状态更新成功' });
+}
+
+async function handleDeleteUG(ugId: string): Promise<APIGatewayProxyResult> {
+  const result = await deleteUG(ugId, dynamoClient, UGS_TABLE);
+
+  if (!result.success) {
+    const statusCode = result.error!.code === 'UG_NOT_FOUND' ? 404 : (ErrorHttpStatus as Record<string, number>)[result.error!.code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { message: 'UG 已删除' });
+}
+
+async function handleRenameUG(ugId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || !body.name) {
+    return errorResponse('INVALID_REQUEST', '缺少必填字段: name', 400);
+  }
+
+  const result = await updateUGName(ugId, body.name as string, dynamoClient, UGS_TABLE);
+
+  if (!result.success) {
+    const statusCode = result.error!.code === 'UG_NOT_FOUND' ? 404 : (ErrorHttpStatus as Record<string, number>)[result.error!.code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { message: 'UG 名称更新成功' });
+}
+
+async function handleAssignLeader(ugId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || !body.leaderId) {
+    return errorResponse('INVALID_REQUEST', '缺少必填字段: leaderId', 400);
+  }
+
+  const result = await assignLeader(
+    { ugId, leaderId: body.leaderId as string },
+    dynamoClient,
+    UGS_TABLE,
+    USERS_TABLE,
+  );
+
+  if (!result.success) {
+    const code = result.error!.code;
+    const statusCode = code === 'UG_NOT_FOUND' || code === 'USER_NOT_FOUND' ? 404
+      : (ErrorHttpStatus as Record<string, number>)[code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { message: '负责人分配成功' });
+}
+
+async function handleRemoveLeader(ugId: string): Promise<APIGatewayProxyResult> {
+  const result = await removeLeader(ugId, dynamoClient, UGS_TABLE);
+
+  if (!result.success) {
+    const statusCode = result.error!.code === 'UG_NOT_FOUND' ? 404 : (ErrorHttpStatus as Record<string, number>)[result.error!.code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { message: '负责人已移除' });
+}
+
+async function handleGetMyUGs(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const result = await getMyUGs(event.user.userId, dynamoClient, UGS_TABLE);
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 400);
+  }
+
+  return jsonResponse(200, { ugs: result.ugs });
+}
+
+// ---- Activity Route Handlers ----
+
+async function handleListActivities(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const ugName = event.queryStringParameters?.ugName;
+  const startDate = event.queryStringParameters?.startDate;
+  const endDate = event.queryStringParameters?.endDate;
+  const keyword = event.queryStringParameters?.keyword;
+  const pageSize = event.queryStringParameters?.pageSize
+    ? parseInt(event.queryStringParameters.pageSize, 10)
+    : undefined;
+  const lastKey = event.queryStringParameters?.lastKey;
+
+  const result = await listActivities(
+    { ugName, startDate, endDate, keyword, pageSize, lastKey },
+    dynamoClient,
+    ACTIVITIES_TABLE,
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 400);
+  }
+
+  return jsonResponse(200, { activities: result.activities, lastKey: result.lastKey });
+}
+
+// ---- Manual Sync Route Handler ----
+
+async function handleManualSync(): Promise<APIGatewayProxyResult> {
+  if (!SYNC_FUNCTION_NAME) {
+    return errorResponse('INTERNAL_ERROR', '同步 Lambda 未配置', 500);
+  }
+
+  try {
+    const response = await lambdaClient.send(
+      new InvokeCommand({
+        FunctionName: SYNC_FUNCTION_NAME,
+        InvocationType: 'RequestResponse',
+        Payload: Buffer.from(JSON.stringify({ source: 'manual' })),
+      }),
+    );
+
+    if (response.FunctionError) {
+      const errorPayload = response.Payload ? JSON.parse(Buffer.from(response.Payload).toString('utf-8')) : {};
+      return errorResponse('SYNC_FAILED', `同步失败: ${errorPayload.errorMessage ?? response.FunctionError}`, 500);
+    }
+
+    const payload = response.Payload ? JSON.parse(Buffer.from(response.Payload).toString('utf-8')) : {};
+    const syncBody = typeof payload.body === 'string' ? JSON.parse(payload.body) : payload;
+
+    return jsonResponse(200, syncBody);
+  } catch (err) {
+    console.error('[ManualSync] Failed to invoke Sync Lambda:', err);
+    const message = err instanceof Error ? err.message : String(err);
+    return errorResponse('SYNC_FAILED', `同步调用失败: ${message}`, 500);
+  }
+}
+
+// ---- Sync Config Route Handlers ----
+
+const SYNC_CONFIG_KEY = 'activity-sync-config';
+
+async function handleUpdateSyncConfig(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body) {
+    return errorResponse('INVALID_REQUEST', '请求参数无效', 400);
+  }
+
+  const { syncIntervalDays, feishuTableUrl, feishuAppId, feishuAppSecret } = body;
+
+  // Validate syncIntervalDays: integer 1~30
+  if (syncIntervalDays !== undefined) {
+    if (typeof syncIntervalDays !== 'number' || !Number.isInteger(syncIntervalDays) || syncIntervalDays < 1 || syncIntervalDays > 30) {
+      return errorResponse('INVALID_REQUEST', 'syncIntervalDays 必须为 1~30 的整数', 400);
+    }
+  }
+
+  // Validate feishuTableUrl: string
+  if (feishuTableUrl !== undefined && typeof feishuTableUrl !== 'string') {
+    return errorResponse('INVALID_REQUEST', 'feishuTableUrl 必须为字符串', 400);
+  }
+
+  const now = new Date().toISOString();
+
+  // Read existing config first
+  const existing = await dynamoClient.send(
+    new GetCommand({
+      TableName: USERS_TABLE,
+      Key: { userId: SYNC_CONFIG_KEY },
+    }),
+  );
+
+  const currentConfig = existing.Item ?? {};
+
+  // If secret is the masked value '***', keep the existing value from DB
+  const resolvedSecret =
+    feishuAppSecret === '***' || feishuAppSecret === undefined
+      ? (currentConfig.feishuAppSecret as string) ?? ''
+      : (feishuAppSecret as string);
+
+  const updatedConfig = {
+    userId: SYNC_CONFIG_KEY,
+    syncIntervalDays: (syncIntervalDays as number) ?? currentConfig.syncIntervalDays ?? 1,
+    feishuTableUrl: (feishuTableUrl as string) ?? currentConfig.feishuTableUrl ?? '',
+    feishuAppId: (feishuAppId as string) ?? currentConfig.feishuAppId ?? '',
+    feishuAppSecret: resolvedSecret,
+    updatedAt: now,
+    updatedBy: event.user.userId,
+  };
+
+  await dynamoClient.send(
+    new PutCommand({
+      TableName: USERS_TABLE,
+      Item: updatedConfig,
+    }),
+  );
+
+  // Return config without sensitive fields
+  return jsonResponse(200, {
+    syncIntervalDays: updatedConfig.syncIntervalDays,
+    feishuTableUrl: updatedConfig.feishuTableUrl,
+    feishuAppId: updatedConfig.feishuAppId,
+    feishuAppSecret: updatedConfig.feishuAppSecret ? '***' : '',
+    updatedAt: updatedConfig.updatedAt,
+    updatedBy: updatedConfig.updatedBy,
+  });
+}
+
+async function handleGetSyncConfig(): Promise<APIGatewayProxyResult> {
+  const result = await dynamoClient.send(
+    new GetCommand({
+      TableName: USERS_TABLE,
+      Key: { userId: SYNC_CONFIG_KEY },
+    }),
+  );
+
+  if (!result.Item) {
+    // Return default config
+    return jsonResponse(200, {
+      syncIntervalDays: 1,
+      feishuTableUrl: '',
+      feishuAppId: '',
+      feishuAppSecret: '',
+      updatedAt: '',
+      updatedBy: '',
+    });
+  }
+
+  return jsonResponse(200, {
+    syncIntervalDays: result.Item.syncIntervalDays ?? 1,
+    feishuTableUrl: result.Item.feishuTableUrl ?? '',
+    feishuAppId: result.Item.feishuAppId ?? '',
+    feishuAppSecret: result.Item.feishuAppSecret ? '***' : '',
+    updatedAt: result.Item.updatedAt ?? '',
+    updatedBy: result.Item.updatedBy ?? '',
+  });
+}
+
+// ---- Reservation Approval Route Handlers ----
+
+async function handleListReservationApprovals(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  // Get all UGs to determine visibility
+  const ugsResult = await dynamoClient.send(
+    new ScanCommand({ TableName: UGS_TABLE }),
+  );
+  const ugs = (ugsResult.Items ?? []) as Array<{ ugId: string; name: string; status: string; leaderId?: string; leaderNickname?: string }>;
+
+  // Determine visible UG names based on role and leader assignments
+  const ugNames = getVisibleUGNames(event.user.roles, event.user.userId, ugs as any);
+
+  const status = event.queryStringParameters?.status as 'pending' | 'approved' | 'rejected' | undefined;
+  const pageSize = event.queryStringParameters?.pageSize
+    ? parseInt(event.queryStringParameters.pageSize, 10)
+    : undefined;
+  const lastKey = event.queryStringParameters?.lastKey;
+
+  const result = await listReservationApprovals(
+    { status, ugNames, pageSize, lastKey },
+    dynamoClient,
+    {
+      reservationsTable: CONTENT_RESERVATIONS_TABLE,
+      contentItemsTable: CONTENT_ITEMS_TABLE,
+      usersTable: USERS_TABLE,
+    },
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 400);
+  }
+
+  return jsonResponse(200, { reservations: result.reservations, lastKey: result.lastKey });
+}
+
+async function handleReviewReservationApproval(pk: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || !body.action) {
+    return errorResponse('INVALID_REQUEST', 'Missing required field: action', 400);
+  }
+
+  const action = body.action as string;
+  if (action !== 'approve' && action !== 'reject') {
+    return errorResponse('INVALID_REQUEST', 'action must be "approve" or "reject"', 400);
+  }
+
+  // Get reservationApprovalPoints from feature toggles (default 10)
+  const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+  const rewardPoints = (toggles as any).reservationApprovalPoints ?? 10;
+
+  const result = await reviewReservation(
+    {
+      pk,
+      reviewerId: event.user.userId,
+      action: action as 'approve' | 'reject',
+    },
+    dynamoClient,
+    {
+      reservationsTable: CONTENT_RESERVATIONS_TABLE,
+      contentItemsTable: CONTENT_ITEMS_TABLE,
+      usersTable: USERS_TABLE,
+      pointsRecordsTable: POINTS_RECORDS_TABLE,
+    },
+    rewardPoints,
+  );
+
+  if (!result.success) {
+    const statusCode = (ErrorHttpStatus as Record<string, number>)[result.error!.code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { success: true });
+}
+
+// ---- Report Route Handlers ----
+
+async function handlePointsDetailReport(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const qs = event.queryStringParameters ?? {};
+  const result = await queryPointsDetail(
+    {
+      startDate: qs.startDate,
+      endDate: qs.endDate,
+      ugName: qs.ugName,
+      targetRole: qs.targetRole,
+      activityId: qs.activityId,
+      type: qs.type as 'earn' | 'spend' | 'all' | undefined,
+      pageSize: qs.pageSize ? parseInt(qs.pageSize, 10) : undefined,
+      lastKey: qs.lastKey,
+    },
+    dynamoClient,
+    {
+      pointsRecordsTable: POINTS_RECORDS_TABLE,
+      usersTable: USERS_TABLE,
+      batchDistributionsTable: BATCH_DISTRIBUTIONS_TABLE,
+    },
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 400);
+  }
+
+  return jsonResponse(200, { records: result.records, lastKey: result.lastKey });
+}
+
+async function handleUGActivitySummary(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const qs = event.queryStringParameters ?? {};
+  const result = await queryUGActivitySummary(
+    {
+      startDate: qs.startDate,
+      endDate: qs.endDate,
+    },
+    dynamoClient,
+    { pointsRecordsTable: POINTS_RECORDS_TABLE },
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 400);
+  }
+
+  return jsonResponse(200, { records: result.records });
+}
+
+async function handleUserPointsRanking(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const qs = event.queryStringParameters ?? {};
+  const result = await queryUserPointsRanking(
+    {
+      startDate: qs.startDate,
+      endDate: qs.endDate,
+      targetRole: qs.targetRole,
+      pageSize: qs.pageSize ? parseInt(qs.pageSize, 10) : undefined,
+      lastKey: qs.lastKey,
+    },
+    dynamoClient,
+    {
+      pointsRecordsTable: POINTS_RECORDS_TABLE,
+      usersTable: USERS_TABLE,
+    },
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 400);
+  }
+
+  return jsonResponse(200, { records: result.records, lastKey: result.lastKey });
+}
+
+async function handleActivityPointsSummary(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const qs = event.queryStringParameters ?? {};
+  const result = await queryActivityPointsSummary(
+    {
+      startDate: qs.startDate,
+      endDate: qs.endDate,
+      ugName: qs.ugName,
+    },
+    dynamoClient,
+    { pointsRecordsTable: POINTS_RECORDS_TABLE },
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 400);
+  }
+
+  return jsonResponse(200, { records: result.records });
+}
+
+async function handleReportExport(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body) {
+    return errorResponse('INVALID_REQUEST', '请求体不能为空', 400);
+  }
+
+  const validation = validateExportInput(body);
+  if (!validation.valid) {
+    return errorResponse(validation.error!.code, validation.error!.message, 400);
+  }
+
+  const result = await executeExport(
+    body as any,
+    dynamoClient,
+    s3Client,
+    {
+      pointsRecordsTable: POINTS_RECORDS_TABLE,
+      usersTable: USERS_TABLE,
+      batchDistributionsTable: BATCH_DISTRIBUTIONS_TABLE,
+    },
+    IMAGES_BUCKET,
+    Date.now(),
+  );
+
+  if (!result.success) {
+    const statusCode = result.error!.code === 'EXPORT_TIMEOUT' ? 504 : 400;
+    return errorResponse(result.error!.code, result.error!.message, statusCode);
+  }
+
+  return jsonResponse(200, { downloadUrl: result.downloadUrl });
+}
+
+// ---- Insight Report Route Handlers ----
+
+async function handlePopularProductsReport(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const qs = event.queryStringParameters ?? {};
+  const result = await queryPopularProducts(
+    {
+      startDate: qs.startDate,
+      endDate: qs.endDate,
+      productType: qs.productType as 'points' | 'code_exclusive' | 'all' | undefined,
+    },
+    dynamoClient,
+    { redemptionsTable: REDEMPTIONS_TABLE, productsTable: PRODUCTS_TABLE },
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 400);
+  }
+
+  return jsonResponse(200, { records: result.records });
+}
+
+async function handleHotContentReport(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const qs = event.queryStringParameters ?? {};
+  const result = await queryHotContent(
+    {
+      startDate: qs.startDate,
+      endDate: qs.endDate,
+      categoryId: qs.categoryId,
+    },
+    dynamoClient,
+    { contentItemsTable: CONTENT_ITEMS_TABLE, contentCategoriesTable: CONTENT_CATEGORIES_TABLE, usersTable: USERS_TABLE },
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 400);
+  }
+
+  return jsonResponse(200, { records: result.records });
+}
+
+async function handleContentContributorsReport(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const qs = event.queryStringParameters ?? {};
+  const result = await queryContentContributors(
+    {
+      startDate: qs.startDate,
+      endDate: qs.endDate,
+    },
+    dynamoClient,
+    { contentItemsTable: CONTENT_ITEMS_TABLE, usersTable: USERS_TABLE },
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 400);
+  }
+
+  return jsonResponse(200, { records: result.records });
+}
+
+async function handleInventoryAlertReport(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const qs = event.queryStringParameters ?? {};
+  const result = await queryInventoryAlert(
+    {
+      stockThreshold: Number(qs.stockThreshold) || 5,
+      productType: qs.productType as 'points' | 'code_exclusive' | 'all' | undefined,
+      productStatus: qs.productStatus as 'active' | 'inactive' | 'all' | undefined,
+    },
+    dynamoClient,
+    { productsTable: PRODUCTS_TABLE },
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 400);
+  }
+
+  return jsonResponse(200, { records: result.records });
+}
+
+async function handleTravelStatisticsReport(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const qs = event.queryStringParameters ?? {};
+  const result = await queryTravelStatistics(
+    {
+      startDate: qs.startDate,
+      endDate: qs.endDate,
+      periodType: qs.periodType as 'month' | 'quarter' | undefined,
+      category: qs.category as 'domestic' | 'international' | 'all' | undefined,
+    },
+    dynamoClient,
+    { travelApplicationsTable: TRAVEL_APPLICATIONS_TABLE },
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 400);
+  }
+
+  return jsonResponse(200, { records: result.records });
+}
+
+async function handleInviteConversionReport(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const qs = event.queryStringParameters ?? {};
+  const result = await queryInviteConversion(
+    {
+      startDate: qs.startDate,
+      endDate: qs.endDate,
+    },
+    dynamoClient,
+    { invitesTable: INVITES_TABLE },
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 400);
+  }
+
+  return jsonResponse(200, { record: result.record });
 }
