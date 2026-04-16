@@ -66,6 +66,7 @@ const BATCH_DISTRIBUTIONS_TABLE = process.env.BATCH_DISTRIBUTIONS_TABLE ?? '';
 const CONTENT_TAGS_TABLE = process.env.CONTENT_TAGS_TABLE ?? '';
 const TRAVEL_APPLICATIONS_TABLE = process.env.TRAVEL_APPLICATIONS_TABLE ?? '';
 const REDEMPTIONS_TABLE = process.env.REDEMPTIONS_TABLE ?? '';
+const ORDERS_TABLE = process.env.ORDERS_TABLE ?? '';
 const EMAIL_TEMPLATES_TABLE = process.env.EMAIL_TEMPLATES_TABLE ?? '';
 const UGS_TABLE = process.env.UGS_TABLE ?? '';
 const ACTIVITIES_TABLE = process.env.ACTIVITIES_TABLE ?? '';
@@ -2461,6 +2462,12 @@ async function handleReportExport(event: AuthenticatedEvent): Promise<APIGateway
       pointsRecordsTable: POINTS_RECORDS_TABLE,
       usersTable: USERS_TABLE,
       batchDistributionsTable: BATCH_DISTRIBUTIONS_TABLE,
+      productsTable: PRODUCTS_TABLE,
+      ordersTable: ORDERS_TABLE,
+      contentItemsTable: CONTENT_ITEMS_TABLE,
+      contentCategoriesTable: CONTENT_CATEGORIES_TABLE,
+      travelApplicationsTable: TRAVEL_APPLICATIONS_TABLE,
+      invitesTable: INVITES_TABLE,
     },
     IMAGES_BUCKET,
     Date.now(),
@@ -2485,7 +2492,7 @@ async function handlePopularProductsReport(event: AuthenticatedEvent): Promise<A
       productType: qs.productType as 'points' | 'code_exclusive' | 'all' | undefined,
     },
     dynamoClient,
-    { redemptionsTable: REDEMPTIONS_TABLE, productsTable: PRODUCTS_TABLE },
+    { ordersTable: ORDERS_TABLE, productsTable: PRODUCTS_TABLE },
   );
 
   if (!result.success) {

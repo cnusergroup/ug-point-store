@@ -3743,7 +3743,7 @@ describe('Admin Lambda Handler', () => {
       expect(queryPopularProducts).toHaveBeenCalledWith(
         { startDate: '2024-01-01', endDate: '2024-06-30', productType: 'points' },
         expect.anything(),
-        expect.objectContaining({ redemptionsTable: expect.any(String), productsTable: expect.any(String) }),
+        expect.objectContaining({ ordersTable: expect.any(String), productsTable: expect.any(String) }),
       );
     });
 

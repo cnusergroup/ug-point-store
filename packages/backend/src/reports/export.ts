@@ -265,7 +265,7 @@ export async function executeExport(
     usersTable: string;
     batchDistributionsTable: string;
     productsTable?: string;
-    redemptionsTable?: string;
+    ordersTable?: string;
     contentItemsTable?: string;
     contentCategoriesTable?: string;
     travelApplicationsTable?: string;
@@ -469,7 +469,7 @@ export async function executeExport(
       const queryResult = await queryPopularProducts(
         { startDate, endDate, productType: filters.productType as 'points' | 'code_exclusive' | 'all' | undefined },
         dynamoClient,
-        { redemptionsTable: tables.redemptionsTable!, productsTable: tables.productsTable! },
+        { ordersTable: tables.ordersTable!, productsTable: tables.productsTable! },
       );
       if (!queryResult.success || !queryResult.records) {
         return { success: false, error: queryResult.error ?? { code: 'INTERNAL_ERROR', message: 'Internal server error' } };

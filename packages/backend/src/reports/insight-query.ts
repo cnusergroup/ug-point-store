@@ -14,7 +14,7 @@ import {
 
 /** 人气商品排行筛选条件 */
 export interface PopularProductsFilter {
-  startDate?: string;   // 按 Redemptions 的 createdAt 筛选
+  startDate?: string;   // 按 Orders 的 createdAt 筛选
   endDate?: string;
   productType?: 'points' | 'code_exclusive' | 'all'; // 默认 all
 }
@@ -553,77 +553,97 @@ async function batchGetItems(
 export async function queryPopularProducts(
   filter: PopularProductsFilter,
   dynamoClient: DynamoDBDocumentClient,
-  tables: { redemptionsTable: string; productsTable: string },
+  tables: { ordersTable: string; productsTable: string },
 ): Promise<PopularProductsResult> {
   try {
-    // 1. Scan Redemptions table with optional date range filter
-    const filterExpressions: string[] = [];
-    const expressionAttributeValues: Record<string, unknown> = {};
-
-    if (filter.startDate) {
-      filterExpressions.push('createdAt >= :startDate');
-      expressionAttributeValues[':startDate'] = filter.startDate;
-    }
-    if (filter.endDate) {
-      filterExpressions.push('createdAt <= :endDate');
-      expressionAttributeValues[':endDate'] = filter.endDate;
-    }
-
-    const redemptionItems = await scanAll(dynamoClient, tables.redemptionsTable, {
-      filterExpression: filterExpressions.length > 0 ? filterExpressions.join(' AND ') : undefined,
-      expressionAttributeValues: Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
-    });
-
-    // 2. Aggregate by productId
-    const redemptions = redemptionItems.map(item => ({
-      productId: (item.productId as string) ?? '',
-      pointsSpent: (item.pointsSpent as number) ?? 0,
-    }));
-    const aggregated = aggregateRedemptionsByProduct(redemptions);
-
-    // 3. BatchGet Products table for name, type, stock
-    const productIds = [...aggregated.keys()];
-    const productKeys = productIds.map(id => ({ productId: id }));
-    const productItemsFull = await batchGetItems(dynamoClient, tables.productsTable, productKeys);
-
-    const productMap = new Map<string, {
-      name: string;
-      type: 'points' | 'code_exclusive';
-      stock: number;
-    }>();
-    for (const item of productItemsFull) {
-      productMap.set(item.productId as string, {
-        name: (item.name as string) ?? '',
-        type: (item.type as 'points' | 'code_exclusive') ?? 'points',
-        stock: (item.stock as number) ?? 0,
-      });
-    }
-
-    // 4. Build records with optional productType filter
     const productType = filter.productType ?? 'all';
+
+    // 1. Scan Products table to get all products with their redemptionCount
+    const productItems = await scanAll(dynamoClient, tables.productsTable);
+
+    // 2. If date range is specified, scan Orders table and aggregate by productId
+    let orderAggregation: Map<string, { redemptionCount: number; totalPointsSpent: number }> | null = null;
+
+    if (filter.startDate || filter.endDate) {
+      const filterExpressions: string[] = [];
+      const expressionAttributeValues: Record<string, unknown> = {};
+
+      if (filter.startDate) {
+        filterExpressions.push('createdAt >= :startDate');
+        expressionAttributeValues[':startDate'] = filter.startDate;
+      }
+      if (filter.endDate) {
+        filterExpressions.push('createdAt <= :endDate');
+        expressionAttributeValues[':endDate'] = filter.endDate;
+      }
+
+      const orderItems = await scanAll(dynamoClient, tables.ordersTable, {
+        filterExpression: filterExpressions.length > 0 ? filterExpressions.join(' AND ') : undefined,
+        expressionAttributeValues: Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
+      });
+
+      // Aggregate orders by productId (each order may contain multiple items)
+      orderAggregation = new Map();
+      for (const order of orderItems) {
+        const items = (order.items as { productId: string; quantity: number; subtotal: number }[]) ?? [];
+        const totalPoints = (order.totalPoints as number) ?? 0;
+        for (const item of items) {
+          const pid = item.productId;
+          const existing = orderAggregation.get(pid);
+          const qty = item.quantity ?? 1;
+          const spent = item.subtotal ?? totalPoints;
+          if (existing) {
+            existing.redemptionCount += qty;
+            existing.totalPointsSpent += spent;
+          } else {
+            orderAggregation.set(pid, { redemptionCount: qty, totalPointsSpent: spent });
+          }
+        }
+      }
+    }
+
+    // 3. Build records
     const records: PopularProductRecord[] = [];
 
-    for (const [productId, agg] of aggregated) {
-      const product = productMap.get(productId);
-      if (!product) continue;
+    for (const item of productItems) {
+      const pid = (item.productId as string) ?? '';
+      const type = (item.type as 'points' | 'code_exclusive') ?? 'points';
+      const stock = (item.stock as number) ?? 0;
+      const name = (item.name as string) ?? '';
 
       // Optional filter by productType
-      if (productType !== 'all' && product.type !== productType) continue;
+      if (productType !== 'all' && type !== productType) continue;
 
-      const stockConsumptionRate = calculateStockConsumptionRate(product.stock, agg.redemptionCount);
+      let redemptionCount: number;
+      let totalPointsSpent: number;
+
+      if (orderAggregation) {
+        // Use date-filtered order aggregation
+        const agg = orderAggregation.get(pid);
+        if (!agg || agg.redemptionCount === 0) continue; // Skip products with no orders in date range
+        redemptionCount = agg.redemptionCount;
+        totalPointsSpent = agg.totalPointsSpent;
+      } else {
+        // No date filter: use Products table's redemptionCount (all-time total)
+        redemptionCount = (item.redemptionCount as number) ?? 0;
+        totalPointsSpent = redemptionCount * ((item.pointsCost as number) ?? 0);
+        if (redemptionCount === 0) continue; // Skip products with no redemptions
+      }
+
+      const stockConsumptionRate = calculateStockConsumptionRate(stock, redemptionCount);
 
       records.push({
-        productId,
-        productName: product.name,
-        productType: product.type,
-        redemptionCount: agg.redemptionCount,
-        totalPointsSpent: agg.totalPointsSpent,
-        currentStock: product.stock,
+        productId: pid,
+        productName: name,
+        productType: type,
+        redemptionCount,
+        totalPointsSpent,
+        currentStock: stock,
         stockConsumptionRate,
       });
     }
 
-    // 5. Sort by redemptionCount desc
+    // 4. Sort by redemptionCount desc
     records.sort((a, b) => b.redemptionCount - a.redemptionCount);
 
     return { success: true, records };

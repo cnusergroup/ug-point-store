@@ -584,7 +584,7 @@ describe('executeExport — new report type branches', () => {
   const EXTENDED_TABLES = {
     ...TABLES,
     productsTable: 'Products',
-    redemptionsTable: 'Redemptions',
+    ordersTable: 'Orders',
     contentItemsTable: 'ContentItems',
     contentCategoriesTable: 'ContentCategories',
     travelApplicationsTable: 'TravelApplications',
@@ -629,7 +629,7 @@ describe('executeExport — new report type branches', () => {
     expect(queryPopularProducts).toHaveBeenCalledWith(
       expect.objectContaining({ productType: 'all' }),
       dynamoClient,
-      { redemptionsTable: 'Redemptions', productsTable: 'Products' },
+      { ordersTable: 'Orders', productsTable: 'Products' },
     );
     const putCall = s3Client.send.mock.calls[0][0];
     expect(putCall.input.Key).toMatch(/^exports\/popular-products\/.+\.csv$/);
