@@ -693,7 +693,7 @@ function getColumns(tab: ReportTab, t: (key: string) => string): ColumnDef[] {
         { key: 'redemptionCount', labelKey: 'admin.reports.colRedemptionCount', width: '100px', render: (r: PopularProductRecord) => <Text style={{ fontFamily: 'var(--font-display)', fontWeight: '600' }}>{r.redemptionCount}</Text> },
         { key: 'totalPointsSpent', labelKey: 'admin.reports.colTotalPointsSpent', width: '120px', render: (r: PopularProductRecord) => <Text style={{ fontFamily: 'var(--font-display)', fontWeight: '600' }}>{r.totalPointsSpent}</Text> },
         { key: 'currentStock', labelKey: 'admin.reports.colCurrentStock', width: '100px' },
-        { key: 'stockConsumptionRate', labelKey: 'admin.reports.colStockConsumptionRate', width: '120px', render: (r: PopularProductRecord) => <Text style={{ fontFamily: 'var(--font-display)', fontWeight: '600' }}>{r.stockConsumptionRate.toFixed(1)}%</Text> },
+        { key: 'stockConsumptionRate', labelKey: 'admin.reports.colStockConsumptionRate', width: '120px', render: (r: PopularProductRecord) => <Text style={{ fontFamily: 'var(--font-display)', fontWeight: '600' }}>{(r.stockConsumptionRate ?? 0).toFixed(1)}%</Text> },
       ];
     case 'hot-content':
       return [
@@ -728,7 +728,7 @@ function getColumns(tab: ReportTab, t: (key: string) => string): ColumnDef[] {
         { key: 'approvedCount', labelKey: 'admin.reports.colApprovedCount', width: '100px' },
         { key: 'rejectedCount', labelKey: 'admin.reports.colRejectedCount', width: '100px' },
         { key: 'pendingCount', labelKey: 'admin.reports.colPendingCount', width: '100px' },
-        { key: 'approvalRate', labelKey: 'admin.reports.colApprovalRate', width: '110px', render: (r: TravelStatisticsRecord) => <Text style={{ fontFamily: 'var(--font-display)', fontWeight: '600' }}>{r.approvalRate.toFixed(1)}%</Text> },
+        { key: 'approvalRate', labelKey: 'admin.reports.colApprovalRate', width: '110px', render: (r: TravelStatisticsRecord) => <Text style={{ fontFamily: 'var(--font-display)', fontWeight: '600' }}>{(r.approvalRate ?? 0).toFixed(1)}%</Text> },
         { key: 'totalSponsoredAmount', labelKey: 'admin.reports.colTotalSponsoredAmount', width: '120px', render: (r: TravelStatisticsRecord) => <Text style={{ fontFamily: 'var(--font-display)', fontWeight: '600' }}>{r.totalSponsoredAmount}</Text> },
       ];
     default:
@@ -831,7 +831,7 @@ function MetricCards({ record }: { record: InviteConversionRecord | null }) {
     { labelKey: 'admin.reports.metricUsedCount', value: record.usedCount, highlight: false },
     { labelKey: 'admin.reports.metricExpiredCount', value: record.expiredCount, highlight: false },
     { labelKey: 'admin.reports.metricPendingCount', value: record.pendingCount, highlight: false },
-    { labelKey: 'admin.reports.metricConversionRate', value: `${record.conversionRate.toFixed(1)}%`, highlight: true },
+    { labelKey: 'admin.reports.metricConversionRate', value: `${(record.conversionRate ?? 0).toFixed(1)}%`, highlight: true },
   ];
 
   return (
