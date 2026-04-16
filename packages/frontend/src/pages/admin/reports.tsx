@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, Picker, Input } from '@tarojs/components';
+import { View, Text, Picker } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { request, RequestError } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
@@ -540,28 +540,30 @@ function FilterPanel({ activeTab, filters, onFilterChange, ugOptions, activityOp
       )}
 
       {/* Stock Threshold Input — inventory-alert */}
-      {showStockThreshold && (
-        <View className='report-filter__group'>
-          <Text className='report-filter__label'>{t('admin.reports.filterStockThreshold')}</Text>
-          <Input
-            className='report-filter__input'
-            type='number'
-            placeholder='5'
-            value={(currentFilters as any).stockThreshold || '5'}
-            onBlur={(e) => {
-              const val = (e.detail.value || '').trim();
-              const num = parseInt(val, 10);
-              if (!val || isNaN(num) || num < 1) {
-                onFilterChange(activeTab, 'stockThreshold', '5');
-              } else if (num > 999) {
-                onFilterChange(activeTab, 'stockThreshold', '999');
-              } else {
-                onFilterChange(activeTab, 'stockThreshold', String(num));
-              }
-            }}
-          />
-        </View>
-      )}
+      {showStockThreshold && (() => {
+        const thresholdOptions = ['3', '5', '8', '10', '15', '20', '50', '100'];
+        const thresholdLabels = thresholdOptions.map(v => `< ${v}`);
+        const currentVal = (currentFilters as any).stockThreshold || '5';
+        const selectedIdx = Math.max(0, thresholdOptions.indexOf(currentVal));
+        return (
+          <View className='report-filter__group'>
+            <Text className='report-filter__label'>{t('admin.reports.filterStockThreshold')}</Text>
+            <Picker
+              mode='selector'
+              range={thresholdLabels}
+              value={selectedIdx}
+              onChange={(e) => {
+                const idx = Number(e.detail.value);
+                onFilterChange(activeTab, 'stockThreshold', thresholdOptions[idx]);
+              }}
+            >
+              <View className='report-filter__select'>
+                {`< ${currentVal}`}
+              </View>
+            </Picker>
+          </View>
+        );
+      })()}
 
       {/* Product Status Selector — inventory-alert */}
       {showProductStatus && (
@@ -1001,8 +1003,14 @@ export default function AdminReportsPage() {
       Taro.hideToast();
 
       if (res.downloadUrl) {
-        // Use window.open for H5 compatibility
-        window.open(res.downloadUrl, '_blank');
+        // Create a temporary link and click it to trigger download (avoids popup blocker)
+        const link = document.createElement('a');
+        link.href = res.downloadUrl;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
         Taro.showToast({ title: t('admin.reports.exportSuccess'), icon: 'none' });
       } else {
         Taro.showToast({ title: t('admin.reports.exportFailed'), icon: 'none' });
