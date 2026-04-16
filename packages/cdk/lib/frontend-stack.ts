@@ -48,6 +48,18 @@ export class FrontendStack extends cdk.Stack {
           allowedHeaders: ['*'],
         },
       ],
+      lifecycleRules: [
+        {
+          id: 'cleanup-temp-uploads',
+          prefix: 'products/temp/',
+          expiration: cdk.Duration.days(1),
+        },
+        {
+          id: 'cleanup-report-exports',
+          prefix: 'exports/',
+          expiration: cdk.Duration.days(1),
+        },
+      ],
     });
 
     // --- CloudFront Distribution ---
