@@ -546,12 +546,17 @@ function FilterPanel({ activeTab, filters, onFilterChange, ugOptions, activityOp
           <Input
             className='report-filter__input'
             type='number'
+            placeholder='5'
             value={(currentFilters as any).stockThreshold || '5'}
-            onInput={(e) => {
-              const val = e.detail.value;
+            onBlur={(e) => {
+              const val = (e.detail.value || '').trim();
               const num = parseInt(val, 10);
-              if (val === '' || (num >= 1 && num <= 999)) {
-                onFilterChange(activeTab, 'stockThreshold', val);
+              if (!val || isNaN(num) || num < 1) {
+                onFilterChange(activeTab, 'stockThreshold', '5');
+              } else if (num > 999) {
+                onFilterChange(activeTab, 'stockThreshold', '999');
+              } else {
+                onFilterChange(activeTab, 'stockThreshold', String(num));
               }
             }}
           />
