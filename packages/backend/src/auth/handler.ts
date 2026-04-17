@@ -312,7 +312,7 @@ async function handleForgotPassword(event: APIGatewayProxyEvent): Promise<APIGat
   if (!resetBase) {
     const origin = event.headers?.origin || event.headers?.Origin || '';
     if (origin) {
-      resetBase = `${origin}/reset-password/index.html`;
+      resetBase = `${origin}/#/pages/reset-password/index`;
     }
   }
 
