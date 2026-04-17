@@ -5,3 +5,14 @@ dist/
 coverage/
 cdk.out/
 scripts/
+
+# Temporary debug/test files
+delkey.json
+key.json
+out.json
+payload.json
+response.json
+response_test.json
+scan-filter.json
+syncout.json
+vals.json
