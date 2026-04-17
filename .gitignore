@@ -16,3 +16,7 @@ response_test.json
 scan-filter.json
 syncout.json
 vals.json
+
+# Sensitive documents - DO NOT commit
+docs/
+
