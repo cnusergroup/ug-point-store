@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "Pre-Commit Security Audit",
+  "description": "Before any git commit or push operation, scan staged files for security risks: hardcoded passwords, API keys, secrets, tokens, AWS account IDs, internal URLs with credentials, .env files, and sensitive documents (SOP, docs/). Block the commit if risks are found.",
+  "version": "1",
+  "when": {
+    "type": "preToolUse",
+    "toolTypes": [
+      "shell"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "If this shell command is a `git commit` or `git add` or `git push` command, you MUST perform a security audit BEFORE allowing it to proceed.\n\n## Security Audit Checklist\n\nRun `git diff --cached --name-only` (for commits) or check the files being added to determine what's being committed. Then scan for:\n\n### 🔴 BLOCK — Must not commit:\n1. **Plaintext passwords** — scan for patterns like `password`, `密码`, `pwd` followed by actual values\n2. **API keys/secrets** — look for `secret`, `token`, `apiKey`, `API_KEY`, `PRIVATE_KEY` with hardcoded values (not env vars or placeholders)\n3. **AWS credentials** — `AKIA`, `aws_access_key_id`, `aws_secret_access_key`\n4. **.env files** — any `.env`, `.env.local`, `.env.production` files\n5. **Sensitive documents** — files in `docs/` directory (contains SOP with test credentials)\n6. **Private keys** — `-----BEGIN.*PRIVATE KEY-----`\n7. **Connection strings** — database URLs with embedded credentials\n8. **Hardcoded emails with passwords** — patterns like `email.*password` in non-test files\n\n### 🟡 WARN — Flag but allow:\n1. **AWS Account IDs** — 12-digit numbers in ARN patterns\n2. **Internal URLs** — production domain names with paths\n3. **Default placeholder secrets** — like `change-me-in-production`\n\n### ✅ SAFE — Always allow:\n- Source code (.ts, .tsx, .scss, .json config files)\n- Test files with mock/fake credentials\n- Spec documents (.kiro/specs/)\n- Package files (package.json, package-lock.json)\n- Git config files (.gitignore)\n\n## Response Format\nIf risks found: List each risk with file path and line, then DENY the operation.\nIf clean: Say \"Security audit passed\" and allow the operation to proceed."
+  }
+}
