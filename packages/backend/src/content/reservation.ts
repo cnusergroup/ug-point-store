@@ -3,6 +3,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   DynamoDBDocumentClient,
   GetCommand,
+  QueryCommand,
   TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { ulid } from 'ulid';
@@ -16,6 +17,11 @@ const DOWNLOAD_URL_EXPIRES_IN = 3600; // 1 hour
 export interface CreateReservationInput {
   contentId: string;
   userId: string;
+  activityId: string;
+  activityType: string;
+  activityUG: string;
+  activityTopic: string;
+  activityDate: string;
 }
 
 export interface CreateReservationResult {
@@ -28,11 +34,11 @@ export interface CreateReservationResult {
  * Create a reservation for a content item.
  * - PK = `{userId}#{contentId}`, ConditionExpression `attribute_not_exists(pk)` prevents duplicates
  * - If already reserved (ConditionalCheckFailedException), return success with alreadyReserved flag
+ * - Validates activityId exists in Activities table
+ * - Checks userId+activityId uniqueness via GSI
  * - For new reservations, use TransactWriteItems atomic operation:
- *   1. PutCommand to write Reservations table (with ConditionExpression)
+ *   1. PutCommand to write Reservations table (with ConditionExpression), status=pending
  *   2. UpdateCommand to increment ContentItems table's reservationCount
- *   3. UpdateCommand to increment uploader's Users table points
- *   4. PutCommand to write PointsRecords table, source="content_hub_reservation"
  */
 export async function createReservation(
   input: CreateReservationInput,
@@ -40,15 +46,13 @@ export async function createReservation(
   tables: {
     reservationsTable: string;
     contentItemsTable: string;
-    usersTable: string;
-    pointsRecordsTable: string;
+    activitiesTable: string;
   },
-  rewardPoints: number,
 ): Promise<CreateReservationResult> {
   const pk = `${input.userId}#${input.contentId}`;
   const now = new Date().toISOString();
 
-  // 1. Get the content item to find the uploaderId
+  // 1. Get the content item to verify it exists
   const contentResult = await dynamoClient.send(
     new GetCommand({
       TableName: tables.contentItemsTable,
@@ -64,20 +68,43 @@ export async function createReservation(
     };
   }
 
-  // 2. Get uploader's current points for balanceAfter calculation
-  const uploaderResult = await dynamoClient.send(
+  // 2. Validate activityId exists in Activities table
+  const activityResult = await dynamoClient.send(
     new GetCommand({
-      TableName: tables.usersTable,
-      Key: { userId: contentItem.uploaderId },
-      ProjectionExpression: 'points',
+      TableName: tables.activitiesTable,
+      Key: { activityId: input.activityId },
     }),
   );
-  const currentPoints = uploaderResult.Item?.points ?? 0;
-  const newBalance = currentPoints + rewardPoints;
 
-  const recordId = ulid();
+  if (!activityResult.Item) {
+    return {
+      success: false,
+      error: { code: ErrorCodes.ACTIVITY_NOT_FOUND, message: ErrorMessages[ErrorCodes.ACTIVITY_NOT_FOUND] },
+    };
+  }
 
-  // 3. Atomic transaction: create reservation + increment reservationCount + award points + create points record
+  // 3. Check userId+activityId uniqueness via GSI
+  const duplicateCheck = await dynamoClient.send(
+    new QueryCommand({
+      TableName: tables.reservationsTable,
+      IndexName: 'userId-activityId-index',
+      KeyConditionExpression: 'userId = :userId AND activityId = :activityId',
+      ExpressionAttributeValues: {
+        ':userId': input.userId,
+        ':activityId': input.activityId,
+      },
+      Limit: 1,
+    }),
+  );
+
+  if (duplicateCheck.Items && duplicateCheck.Items.length > 0) {
+    return {
+      success: false,
+      error: { code: ErrorCodes.DUPLICATE_ACTIVITY_RESERVATION, message: ErrorMessages[ErrorCodes.DUPLICATE_ACTIVITY_RESERVATION] },
+    };
+  }
+
+  // 4. Atomic transaction: create reservation (status=pending) + increment reservationCount
   try {
     await dynamoClient.send(
       new TransactWriteCommand({
@@ -90,6 +117,12 @@ export async function createReservation(
                 pk,
                 userId: input.userId,
                 contentId: input.contentId,
+                activityId: input.activityId,
+                activityType: input.activityType,
+                activityUG: input.activityUG,
+                activityTopic: input.activityTopic,
+                activityDate: input.activityDate,
+                status: 'pending',
                 createdAt: now,
               },
               ConditionExpression: 'attribute_not_exists(pk)',
@@ -105,33 +138,6 @@ export async function createReservation(
                 ':inc': 1,
                 ':now': now,
                 ':zero': 0,
-              },
-            },
-          },
-          // c. Increment uploader's points
-          {
-            Update: {
-              TableName: tables.usersTable,
-              Key: { userId: contentItem.uploaderId },
-              UpdateExpression: 'SET points = points + :pv, updatedAt = :now',
-              ExpressionAttributeValues: {
-                ':pv': rewardPoints,
-                ':now': now,
-              },
-            },
-          },
-          // d. Create points record
-          {
-            Put: {
-              TableName: tables.pointsRecordsTable,
-              Item: {
-                recordId,
-                userId: contentItem.uploaderId,
-                type: 'earn',
-                amount: rewardPoints,
-                source: 'content_hub_reservation',
-                balanceAfter: newBalance,
-                createdAt: now,
               },
             },
           },

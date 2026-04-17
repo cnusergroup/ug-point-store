@@ -6,6 +6,7 @@ import { request } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
 import type { MyContentItemSummary, ContentStatus } from '@points-mall/shared';
+import PageToolbar from '../../components/PageToolbar';
 import './mine.scss';
 
 interface MyContentListResponse {
@@ -108,13 +109,7 @@ export default function MyContentPage() {
   return (
     <View className='mine-page'>
       {/* Header */}
-      <View className='mine-header'>
-        <View className='mine-header__left'>
-          <Text className='mine-header__back' onClick={handleBack}>{t('contentHub.mine.backButton')}</Text>
-        </View>
-        <Text className='mine-header__title'>{t('contentHub.mine.title')}</Text>
-        <View className='mine-header__right' />
-      </View>
+      <PageToolbar title={t('contentHub.mine.title')} onBack={handleBack} />
 
       {/* Status Filter Tabs */}
       <View className='mine-tabs'>

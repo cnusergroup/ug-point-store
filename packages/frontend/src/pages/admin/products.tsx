@@ -126,6 +126,8 @@ export default function AdminProductsPage() {
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [statusTab, setStatusTab] = useState<'all' | 'active' | 'inactive'>('all');
+  const [codeRedemptionEnabled, setCodeRedemptionEnabled] = useState(true);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -148,11 +150,12 @@ export default function AdminProductsPage() {
     }
     // SuperAdmin always has access; only check toggle for Admin
     if (!isSuperAdmin) {
-      request<{ adminProductsEnabled: boolean }>({
+      request<{ adminProductsEnabled: boolean; codeRedemptionEnabled?: boolean }>({
         url: '/api/settings/feature-toggles',
         skipAuth: true,
       })
         .then((res) => {
+          if (res.codeRedemptionEnabled === false) setCodeRedemptionEnabled(false);
           if (!res.adminProductsEnabled) {
             Taro.redirectTo({ url: '/pages/admin/index' });
           } else {
@@ -163,6 +166,14 @@ export default function AdminProductsPage() {
           fetchProducts();
         });
     } else {
+      request<{ codeRedemptionEnabled?: boolean }>({
+        url: '/api/settings/feature-toggles',
+        skipAuth: true,
+      })
+        .then((res) => {
+          if (res.codeRedemptionEnabled === false) setCodeRedemptionEnabled(false);
+        })
+        .catch(() => {});
       fetchProducts();
     }
   }, [isAuthenticated, isSuperAdmin, fetchProducts]);
@@ -220,10 +231,16 @@ export default function AdminProductsPage() {
       setError(t('admin.products.saveBeforeUpload'));
       return;
     }
-    if (form.images.length >= MAX_IMAGES) return;
+    // Use a ref-like approach: read current form state at call time via callback
+    // to avoid stale closure over form.images after a delete
+    const currentImageCount = form.images.length;
+    if (currentImageCount >= MAX_IMAGES) {
+      Taro.showToast({ title: t('admin.products.maxImagesReached'), icon: 'none' });
+      return;
+    }
 
     try {
-      const remaining = MAX_IMAGES - form.images.length;
+      const remaining = MAX_IMAGES - currentImageCount;
       const chooseRes = await Taro.chooseImage({ count: remaining, sizeType: ['compressed'] });
       if (!chooseRes.tempFilePaths || chooseRes.tempFilePaths.length === 0) return;
 
@@ -513,6 +530,12 @@ export default function AdminProductsPage() {
 
   const handleBack = () => goBack('/pages/admin/index');
 
+  const activeCount = products.filter((p) => p.status === 'active').length;
+  const inactiveCount = products.filter((p) => p.status === 'inactive').length;
+  const filteredProducts = statusTab === 'all'
+    ? products
+    : products.filter((p) => p.status === statusTab);
+
   return (
     <View className='admin-products'>
       <View className='admin-products__toolbar'>
@@ -522,6 +545,31 @@ export default function AdminProductsPage() {
         <Text className='admin-products__title'>{t('admin.products.title')}</Text>
         <View className='admin-products__add-btn' onClick={openCreate}>
           <Text>{t('admin.products.createProduct')}</Text>
+        </View>
+      </View>
+
+      {/* Status Tab Filter */}
+      <View className='product-tabs'>
+        <View
+          className={`product-tabs__tab ${statusTab === 'all' ? 'product-tabs__tab--active' : ''}`}
+          onClick={() => setStatusTab('all')}
+        >
+          <Text className='product-tabs__label'>{t('admin.products.tabAll')}</Text>
+          <Text className='product-tabs__count'>{products.length}</Text>
+        </View>
+        <View
+          className={`product-tabs__tab ${statusTab === 'active' ? 'product-tabs__tab--active product-tabs__tab--active-status' : ''}`}
+          onClick={() => setStatusTab('active')}
+        >
+          <Text className='product-tabs__label'>{t('admin.products.tabActive')}</Text>
+          <Text className='product-tabs__count'>{activeCount}</Text>
+        </View>
+        <View
+          className={`product-tabs__tab ${statusTab === 'inactive' ? 'product-tabs__tab--active product-tabs__tab--inactive-status' : ''}`}
+          onClick={() => setStatusTab('inactive')}
+        >
+          <Text className='product-tabs__label'>{t('admin.products.tabInactive')}</Text>
+          <Text className='product-tabs__count'>{inactiveCount}</Text>
         </View>
       </View>
 
@@ -554,12 +602,14 @@ export default function AdminProductsPage() {
                   >
                     <Text>{t('admin.products.typePoints')}</Text>
                   </View>
-                  <View
-                    className={`form-field__type-opt ${form.type === 'code_exclusive' ? 'form-field__type-opt--active' : ''}`}
-                    onClick={() => setForm((p) => ({ ...p, type: 'code_exclusive' }))}
-                  >
-                    <Text>{t('admin.products.typeCodeExclusive')}</Text>
-                  </View>
+                  {codeRedemptionEnabled && (
+                    <View
+                      className={`form-field__type-opt ${form.type === 'code_exclusive' ? 'form-field__type-opt--active' : ''}`}
+                      onClick={() => setForm((p) => ({ ...p, type: 'code_exclusive' }))}
+                    >
+                      <Text>{t('admin.products.typeCodeExclusive')}</Text>
+                    </View>
+                  )}
                 </View>
               </View>
 
@@ -820,8 +870,8 @@ export default function AdminProductsPage() {
         </View>
       ) : (
         <View className='product-list'>
-          {products.map((product) => (
-            <View key={product.productId} className='product-row'>
+          {filteredProducts.map((product) => (
+            <View key={product.productId} className={`product-row ${product.status === 'inactive' ? 'product-row--inactive' : ''}`}>
               <View className='product-row__main'>
                 <View className='product-row__info'>
                   <View className='product-row__name-line'>
@@ -855,6 +905,14 @@ export default function AdminProductsPage() {
               </View>
             </View>
           ))}
+          {filteredProducts.length === 0 && (
+            <View className='admin-empty'>
+              <Text className='admin-empty__icon'><PackageIcon size={48} color='var(--text-tertiary)' /></Text>
+              <Text className='admin-empty__text'>
+                {statusTab === 'active' ? t('admin.products.noActiveProducts') : t('admin.products.noInactiveProducts')}
+              </Text>
+            </View>
+          )}
         </View>
       )}
     </View>

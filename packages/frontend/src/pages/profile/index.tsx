@@ -181,14 +181,18 @@ function ProfilePage() {
     }
     fetchProfile();
     fetchPointsRecords(1, true);
-    fetchRedemptionRecords(1, true);
 
     // Fetch feature toggles (public endpoint, no auth needed)
     request<FeatureToggles>({
       url: '/api/settings/feature-toggles',
       skipAuth: true,
     })
-      .then((res) => setFeatureToggles(res))
+      .then((res) => {
+        setFeatureToggles(res);
+        if (res.codeRedemptionEnabled) {
+          fetchRedemptionRecords(1, true);
+        }
+      })
       .catch(() => {
         // On failure, keep defaults (both false — safe degradation)
       });
@@ -214,11 +218,47 @@ function ProfilePage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
 
+  /** Map targetRole to user-friendly label */
+  const roleLabel = (role: string): string => {
+    const map: Record<string, string> = {
+      Speaker: 'Speaker',
+      UserGroupLeader: 'UG Leader',
+      Volunteer: 'Volunteer',
+    };
+    return map[role] || role;
+  };
+
   /** Format points record source to user-friendly text */
-  const formatSource = (source: string, type: 'earn' | 'spend'): string => {
+  const formatSource = (record: PointsRecord): string => {
+    const { source, type } = record;
     if (!source) return type === 'earn' ? t('profile.sourceEarn') : t('profile.sourceSpend');
     if (source.startsWith('积分申请审批:')) {
       return t('profile.sourceClaimApproval');
+    }
+    // New format — Reservation approval: 预约审批:预约人|UG名|活动主题|活动日期|内容标题
+    if (source.startsWith('预约审批:')) {
+      const parts = source.substring('预约审批:'.length).split('|');
+      if (parts.length >= 5) {
+        const [reserver, ugName, topic, actDate, contentTitle] = parts;
+        return `${reserver} 为 ${ugName}（${actDate}）的活动「${topic}」预约了您的「${contentTitle}」，获得 Speaker 内容分享积分`;
+      }
+      return '预约审批通过，获得内容分享积分';
+    }
+    // New format — Batch distribution: 批量发放:角色|UG名|活动主题|活动日期
+    if (source.startsWith('批量发放:')) {
+      const parts = source.substring('批量发放:'.length).split('|');
+      if (parts.length >= 4) {
+        const [role, ugName, topic, actDate] = parts;
+        return `您因为 ${ugName}（${actDate}）的活动「${topic}」作为 ${roleLabel(role)} 的贡献获得了积分`;
+      }
+      return '管理员批量发放积分';
+    }
+    // Legacy format — old records without structured source
+    if (source.startsWith('预约审批通过:')) {
+      return '预约审批通过，获得内容分享积分';
+    }
+    if (source.startsWith('管理员批量发放:')) {
+      return '管理员批量发放积分';
     }
     if (type === 'earn' && /^[A-Z0-9_-]+$/i.test(source)) {
       return t('profile.sourceRedeemCode', { code: source });
@@ -327,12 +367,14 @@ function ProfilePage() {
         >
           <Text>{t('profile.tabPoints')}</Text>
         </View>
-        <View
-          className={`profile-tabs__item ${activeTab === 'redemptions' ? 'profile-tabs__item--active' : ''}`}
-          onClick={() => handleTabSwitch('redemptions')}
-        >
-          <Text>{t('profile.tabRedemptions')}</Text>
-        </View>
+        {featureToggles.codeRedemptionEnabled && (
+          <View
+            className={`profile-tabs__item ${activeTab === 'redemptions' ? 'profile-tabs__item--active' : ''}`}
+            onClick={() => handleTabSwitch('redemptions')}
+          >
+            <Text>{t('profile.tabRedemptions')}</Text>
+          </View>
+        )}
       </View>
 
       {/* Points Records Tab */}
@@ -354,7 +396,7 @@ function ProfilePage() {
                       {record.type === 'earn' ? '↑' : '↓'}
                     </Text>
                     <View className='record-item__info'>
-                      <Text className='record-item__source'>{formatSource(record.source, record.type)}</Text>
+                      <Text className='record-item__source'>{formatSource(record)}</Text>
                       <Text className='record-item__time'>{formatTime(record.createdAt)}</Text>
                     </View>
                   </View>
@@ -379,7 +421,7 @@ function ProfilePage() {
       )}
 
       {/* Redemption Records Tab */}
-      {activeTab === 'redemptions' && (
+      {featureToggles.codeRedemptionEnabled && activeTab === 'redemptions' && (
         <View className='record-list'>
           {redemptionRecords.length === 0 && !redemptionsLoading ? (
             <View className='record-list__empty'>

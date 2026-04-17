@@ -6,6 +6,7 @@ import { request, RequestError } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
 import { LocationIcon, GlobeIcon } from '../../components/icons';
+import PageToolbar from '../../components/PageToolbar';
 import type { TravelApplication } from '@points-mall/shared';
 import './index.scss';
 
@@ -250,11 +251,7 @@ export default function TravelApplyPage() {
   if (travelFeatureDisabled) {
     return (
       <View className='ta-page'>
-        <View className='ta-toolbar'>
-          <View className='ta-toolbar__back' onClick={handleBack}><Text>{t('travel.apply.backButton')}</Text></View>
-          <Text className='ta-toolbar__title'>{isEditMode ? t('travel.apply.editTitle') : t('travel.apply.title')}</Text>
-          <View className='ta-toolbar__spacer' />
-        </View>
+        <PageToolbar title={isEditMode ? t('travel.apply.editTitle') : t('travel.apply.title')} onBack={handleBack} />
         <View style={{
           display: 'flex',
           flexDirection: 'column',
@@ -293,11 +290,7 @@ export default function TravelApplyPage() {
   if (loading) {
     return (
       <View className='ta-page'>
-        <View className='ta-toolbar'>
-          <View className='ta-toolbar__back' onClick={handleBack}><Text>{t('travel.apply.backButton')}</Text></View>
-          <Text className='ta-toolbar__title'>{isEditMode ? t('travel.apply.editTitle') : t('travel.apply.title')}</Text>
-          <View className='ta-toolbar__spacer' />
-        </View>
+        <PageToolbar title={isEditMode ? t('travel.apply.editTitle') : t('travel.apply.title')} onBack={handleBack} />
         <View className='admin-loading'><Text>{t('common.loading')}</Text></View>
       </View>
     );
@@ -306,15 +299,7 @@ export default function TravelApplyPage() {
   return (
     <View className='ta-page'>
       {/* Toolbar */}
-      <View className='ta-toolbar'>
-        <View className='ta-toolbar__back' onClick={handleBack}>
-          <Text>{t('travel.apply.backButton')}</Text>
-        </View>
-        <Text className='ta-toolbar__title'>
-          {isEditMode ? t('travel.apply.editTitle') : t('travel.apply.title')}
-        </Text>
-        <View className='ta-toolbar__spacer' />
-      </View>
+      <PageToolbar title={isEditMode ? t('travel.apply.editTitle') : t('travel.apply.title')} onBack={handleBack} />
 
       {/* Form */}
       <View className='ta-form'>
@@ -329,6 +314,11 @@ export default function TravelApplyPage() {
             <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
           </svg>
         </View>
+        {/* Notice banner */}
+        <View className='ta-notice-banner'>
+          <Text className='ta-notice-banner__text'>{t('travel.apply.notice')}</Text>
+        </View>
+
         {/* Global error */}
         {formError && (
           <View className='ta-error-banner'>

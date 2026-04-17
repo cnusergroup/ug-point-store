@@ -97,6 +97,22 @@
   }
 }
 
+/* ---- Notice Banner ---- */
+.ta-notice-banner {
+  padding: var(--space-3) var(--space-4);
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-md);
+
+  &__text {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: #d97706;
+    line-height: 1.6;
+    white-space: pre-line;
+  }
+}
+
 /* ---- Section ---- */
 .ta-section {
   background: var(--bg-surface);

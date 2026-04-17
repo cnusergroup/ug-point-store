@@ -6,6 +6,7 @@ import { request, RequestError } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
 import { ClaimIcon } from '../../components/icons';
+import PageToolbar from '../../components/PageToolbar';
 import './index.scss';
 
 /** Claim record returned by the API */
@@ -298,12 +299,10 @@ export default function ClaimsPage() {
   return (
     <View className='claims-page'>
       {/* Toolbar */}
-      <View className='claims-page__toolbar'>
-        <View className='claims-page__back' onClick={handleBack}>
-          <Text>{t('claims.backButton')}</Text>
-        </View>
-        <Text className='claims-page__title'>{t('claims.title')}</Text>
-        {!featureDisabled ? (
+      <PageToolbar
+        title={t('claims.title')}
+        onBack={handleBack}
+        rightSlot={!featureDisabled ? (
           <View className='claims-page__new-btn' onClick={openForm}>
             <Text>{t('claims.newClaim')}</Text>
           </View>
@@ -312,7 +311,7 @@ export default function ClaimsPage() {
             <Text>{t('claims.newClaim')}</Text>
           </View>
         )}
-      </View>
+      />
 
       {/* Feature disabled — full page block, no list rendered */}
       {featureDisabled && (

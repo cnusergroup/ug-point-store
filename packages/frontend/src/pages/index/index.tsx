@@ -261,11 +261,13 @@ export default function IndexPage() {
     const available = isDomestic
       ? (travelQuota?.domesticAvailable ?? 0)
       : (travelQuota?.internationalAvailable ?? 0);
+    const speakerEarnTotal = travelQuota?.speakerEarnTotal ?? 0;
+    const speakerMetThreshold = speakerEarnTotal >= threshold;
 
     const isLocked = !isSpeaker || available <= 0;
     const lockHint = !isSpeaker
       ? t('mall.travelSpeakerOnly')
-      : t('mall.travelInsufficientPoints');
+      : t('mall.travelSpeakerInsufficientPoints');
 
     const handleApply = () => {
       if (isLocked) return;
@@ -286,15 +288,25 @@ export default function IndexPage() {
         <View className='travel-card__body'>
           <Text className='travel-card__title'>{title}</Text>
           <Text className='travel-card__threshold'>
-            {t('mall.travelThreshold', { threshold: threshold.toLocaleString() })}
+            {t('mall.travelSpeakerThreshold', { threshold: threshold.toLocaleString() })}
           </Text>
           {isSpeaker && (
-            <View className='travel-card__quota'>
-              <Text className='travel-card__quota-label'>{t('mall.travelAvailable')}</Text>
-              <Text className={`travel-card__quota-value ${available > 0 ? 'travel-card__quota-value--available' : ''}`}>
-                {available} {t('mall.travelAvailableUnit')}
-              </Text>
-            </View>
+            <>
+              <View className='travel-card__speaker-progress'>
+                <Text className='travel-card__speaker-progress-label'>
+                  {t('mall.travelSpeakerPoints')}
+                </Text>
+                <Text className={`travel-card__speaker-progress-value ${speakerMetThreshold ? 'travel-card__speaker-progress-value--met' : ''}`}>
+                  {speakerEarnTotal.toLocaleString()} / {threshold.toLocaleString()}
+                </Text>
+              </View>
+              <View className='travel-card__quota'>
+                <Text className='travel-card__quota-label'>{t('mall.travelAvailable')}</Text>
+                <Text className={`travel-card__quota-value ${available > 0 ? 'travel-card__quota-value--available' : ''}`}>
+                  {available} {t('mall.travelAvailableUnit')}
+                </Text>
+              </View>
+            </>
           )}
         </View>
         <View className='travel-card__action'>

@@ -157,19 +157,19 @@ describe('listUsers', () => {
     await listUsers({ role: 'Speaker' }, client, tableName);
 
     const command = client.send.mock.calls[0][0];
+    expect(command.input.FilterExpression).toContain('attribute_exists(#email)');
     expect(command.input.FilterExpression).toContain('contains(#roles, :role)');
-    expect(command.input.FilterExpression).toContain('#userId <> :sysId0');
     expect(command.input.ExpressionAttributeValues[':role']).toBe('Speaker');
   });
 
-  it('should not add FilterExpression when role is not provided', async () => {
+  it('should filter by attribute_exists(email) to exclude system records when no role filter', async () => {
     const client = createMockDynamoClient();
     await listUsers({}, client, tableName);
 
     const command = client.send.mock.calls[0][0];
-    // Should still have system record filter even without role filter
-    expect(command.input.FilterExpression).toContain('#userId <> :sysId0');
-    expect(command.input.ExpressionAttributeValues[':role']).toBeUndefined();
+    expect(command.input.FilterExpression).toContain('attribute_exists(#email)');
+    // No ExpressionAttributeValues needed when only attribute_exists filter
+    expect(command.input.ExpressionAttributeValues).toBeUndefined();
   });
 
   it('should default points to 0 when not present', async () => {

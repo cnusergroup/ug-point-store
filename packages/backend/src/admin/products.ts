@@ -1,7 +1,9 @@
 import { DynamoDBDocumentClient, PutCommand, UpdateCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { S3Client } from '@aws-sdk/client-s3';
 import { ulid } from 'ulid';
 import type { UserRole, Product, PointsProduct, CodeExclusiveProduct, ProductStatus, ProductImage, SizeOption } from '@points-mall/shared';
 import { ErrorCodes, ErrorMessages } from '@points-mall/shared';
+import { moveTempImages, isTempImage } from './images';
 
 export interface CreatePointsProductInput {
   name: string;
@@ -88,6 +90,8 @@ export async function createPointsProduct(
   input: CreatePointsProductInput,
   dynamoClient: DynamoDBDocumentClient,
   tableName: string,
+  s3Client?: S3Client,
+  bucketName?: string,
 ): Promise<ProductOperationResult<PointsProduct>> {
   // Validate size options if provided
   if (input.sizeOptions) {
@@ -108,11 +112,22 @@ export async function createPointsProduct(
   const imageUrl = input.images ? syncImageUrl(input.images) : input.imageUrl;
 
   const now = new Date().toISOString();
+  const productId = ulid();
+
+  // Move temp images to permanent location
+  let finalImages = input.images;
+  if (finalImages && s3Client && bucketName && finalImages.some(img => isTempImage(img.key))) {
+    finalImages = await moveTempImages(finalImages, productId, s3Client, bucketName);
+  }
+
+  // Re-sync imageUrl after potential move
+  const finalImageUrl = finalImages ? syncImageUrl(finalImages) : imageUrl;
+
   const product: PointsProduct = {
-    productId: ulid(),
+    productId,
     name: input.name,
     description: input.description,
-    imageUrl,
+    imageUrl: finalImageUrl,
     type: 'points',
     status: 'active',
     stock,
@@ -121,7 +136,7 @@ export async function createPointsProduct(
     allowedRoles: input.allowedRoles,
     createdAt: now,
     updatedAt: now,
-    ...(input.images !== undefined && { images: input.images }),
+    ...(finalImages !== undefined && { images: finalImages }),
     ...(input.sizeOptions !== undefined && { sizeOptions: input.sizeOptions }),
     ...(input.purchaseLimitEnabled !== undefined && { purchaseLimitEnabled: input.purchaseLimitEnabled }),
     ...(input.purchaseLimitCount !== undefined && { purchaseLimitCount: input.purchaseLimitCount }),
@@ -145,6 +160,8 @@ export async function createCodeExclusiveProduct(
   input: CreateCodeExclusiveProductInput,
   dynamoClient: DynamoDBDocumentClient,
   tableName: string,
+  s3Client?: S3Client,
+  bucketName?: string,
 ): Promise<ProductOperationResult<CodeExclusiveProduct>> {
   // Validate size options if provided
   if (input.sizeOptions) {
@@ -165,11 +182,22 @@ export async function createCodeExclusiveProduct(
   const imageUrl = input.images ? syncImageUrl(input.images) : input.imageUrl;
 
   const now = new Date().toISOString();
+  const productId = ulid();
+
+  // Move temp images to permanent location
+  let finalImages = input.images;
+  if (finalImages && s3Client && bucketName && finalImages.some(img => isTempImage(img.key))) {
+    finalImages = await moveTempImages(finalImages, productId, s3Client, bucketName);
+  }
+
+  // Re-sync imageUrl after potential move
+  const finalImageUrl = finalImages ? syncImageUrl(finalImages) : imageUrl;
+
   const product: CodeExclusiveProduct = {
-    productId: ulid(),
+    productId,
     name: input.name,
     description: input.description,
-    imageUrl,
+    imageUrl: finalImageUrl,
     type: 'code_exclusive',
     status: 'active',
     stock,
@@ -177,7 +205,7 @@ export async function createCodeExclusiveProduct(
     eventInfo: input.eventInfo,
     createdAt: now,
     updatedAt: now,
-    ...(input.images !== undefined && { images: input.images }),
+    ...(finalImages !== undefined && { images: finalImages }),
     ...(input.sizeOptions !== undefined && { sizeOptions: input.sizeOptions }),
     ...(input.purchaseLimitEnabled !== undefined && { purchaseLimitEnabled: input.purchaseLimitEnabled }),
     ...(input.purchaseLimitCount !== undefined && { purchaseLimitCount: input.purchaseLimitCount }),

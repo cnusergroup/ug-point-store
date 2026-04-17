@@ -91,7 +91,7 @@ describe('Product Lambda Handler - Routing', () => {
       expect(result.statusCode).toBe(200);
       expect(JSON.parse(result.body)).toEqual(mockResult);
       expect(listProducts).toHaveBeenCalledWith(
-        { type: undefined, roleFilter: undefined, userRoles: ['Speaker'] },
+        { type: undefined, roleFilter: undefined, userRoles: ['Speaker'], includeInactive: false },
         expect.anything(),
         '',
       );
@@ -107,7 +107,7 @@ describe('Product Lambda Handler - Routing', () => {
       const result = await handler(event);
       expect(result.statusCode).toBe(200);
       expect(listProducts).toHaveBeenCalledWith(
-        { type: 'points', roleFilter: undefined, userRoles: ['Speaker'] },
+        { type: 'points', roleFilter: undefined, userRoles: ['Speaker'], includeInactive: false },
         expect.anything(),
         '',
       );
@@ -123,7 +123,7 @@ describe('Product Lambda Handler - Routing', () => {
       const result = await handler(event);
       expect(result.statusCode).toBe(200);
       expect(listProducts).toHaveBeenCalledWith(
-        { type: undefined, roleFilter: 'Volunteer', userRoles: ['Speaker'] },
+        { type: undefined, roleFilter: 'Volunteer', userRoles: ['Speaker'], includeInactive: false },
         expect.anything(),
         '',
       );
@@ -139,7 +139,7 @@ describe('Product Lambda Handler - Routing', () => {
       const result = await handler(event);
       expect(result.statusCode).toBe(200);
       expect(listProducts).toHaveBeenCalledWith(
-        { type: 'code_exclusive', roleFilter: 'Speaker', userRoles: ['Speaker'] },
+        { type: 'code_exclusive', roleFilter: 'Speaker', userRoles: ['Speaker'], includeInactive: false },
         expect.anything(),
         '',
       );

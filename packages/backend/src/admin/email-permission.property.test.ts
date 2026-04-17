@@ -198,6 +198,7 @@ function buildToggles(overrides: Partial<Record<string, boolean>> = {}) {
     emailNewContentEnabled: true,   // must be true so the global email toggle doesn't block first
     adminEmailProductsEnabled: false,
     adminEmailContentEnabled: false,
+    reservationApprovalPoints: 10,
     ...overrides,
   };
 }

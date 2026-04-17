@@ -465,11 +465,40 @@ export interface ContentComment {
   createdAt: string;
 }
 
+/** 预约审批状态 */
+export type ReservationStatus = 'pending' | 'approved' | 'rejected';
+
 /** 内容预约记录 */
 export interface ContentReservation {
   pk: string;
   userId: string;
   contentId: string;
+  activityId: string;
+  activityType: string;
+  activityUG: string;
+  activityTopic: string;
+  activityDate: string;
+  status: ReservationStatus;
+  reviewerId?: string;
+  reviewedAt?: string;
+  createdAt: string;
+}
+
+/** 预约审批列表项 */
+export interface ReservationApprovalItem {
+  pk: string;
+  userId: string;
+  contentId: string;
+  contentTitle: string;
+  reserverNickname: string;
+  activityId: string;
+  activityType: string;
+  activityUG: string;
+  activityTopic: string;
+  activityDate: string;
+  status: ReservationStatus;
+  reviewerId?: string;
+  reviewedAt?: string;
   createdAt: string;
 }
 
@@ -556,6 +585,7 @@ export interface DistributionRecord {
   distributorId: string;
   distributorNickname: string;
   targetRole: 'UserGroupLeader' | 'Speaker' | 'Volunteer';
+  speakerType?: 'typeA' | 'typeB' | 'roundtable';
   recipientIds: string[];
   recipientDetails?: { userId: string; nickname: string; email: string }[];
   points: number;
@@ -563,6 +593,11 @@ export interface DistributionRecord {
   successCount: number;
   totalPoints: number;
   createdAt: string;
+  activityId?: string;
+  activityType?: string;
+  activityUG?: string;
+  activityTopic?: string;
+  activityDate?: string;
 }
 
 // ============================================================
@@ -591,7 +626,7 @@ export interface TravelApplication {
   hotelCost: number;
   totalCost: number;
   status: TravelApplicationStatus;
-  earnDeducted: number;
+  earnDeducted?: number;
   rejectReason?: string;
   reviewerId?: string;
   reviewerNickname?: string;
@@ -609,10 +644,64 @@ export interface TravelSponsorshipSettings {
 
 /** 差旅配额信息 */
 export interface TravelQuota {
-  earnTotal: number;
-  travelEarnUsed: number;
+  speakerEarnTotal: number;
   domesticAvailable: number;
   internationalAvailable: number;
   domesticThreshold: number;
   internationalThreshold: number;
+  domesticUsedCount: number;
+  internationalUsedCount: number;
+}
+
+// ============================================================
+// 活动积分追踪（Activity Points Tracking）相关类型定义
+// ============================================================
+
+/** UG 记录 */
+export interface UGRecord {
+  ugId: string;
+  name: string;
+  status: 'active' | 'inactive';
+  leaderId?: string;
+  leaderNickname?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 活动记录 */
+export interface ActivityRecord {
+  activityId: string;
+  activityType: '线上活动' | '线下活动';
+  ugName: string;
+  topic: string;
+  activityDate: string;
+  syncedAt: string;
+  sourceUrl: string;
+}
+
+// ============================================================
+// 积分榜单（Points Leaderboard）相关类型定义
+// ============================================================
+
+/** 排行榜项 */
+export interface LeaderboardRankingItem {
+  rank: number;
+  nickname: string;
+  roles: string[];
+  earnTotal: number;
+}
+
+/** 公告栏项 */
+export interface LeaderboardAnnouncementItem {
+  recordId: string;
+  recipientNickname: string;
+  amount: number;
+  source: string;
+  createdAt: string;
+  targetRole: string;
+  activityUG?: string;
+  activityDate?: string;
+  activityTopic?: string;
+  activityType?: string;
+  distributorNickname?: string;
 }

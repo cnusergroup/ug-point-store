@@ -5,6 +5,7 @@ import { useAppStore } from '../../store';
 import { request } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { PackageIcon } from '../../components/icons';
+import { useTranslation } from '../../i18n';
 import './email-products.scss';
 
 interface Product {
@@ -33,6 +34,7 @@ interface SendResult {
 }
 
 export default function EmailProductsPage() {
+  const { t } = useTranslation();
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
   const user = useAppStore((s) => s.user);
 
@@ -131,7 +133,7 @@ export default function EmailProductsPage() {
       .map((p) => {
         const cost =
           p.type === 'points' && p.pointsCost
-            ? ` — ${p.pointsCost} 积分`
+            ? ` — ${p.pointsCost} ${t('emailNotification.pointsUnit')}`
             : '';
         return `<p style="margin:4px 0;">• ${p.name}${cost}</p>`;
       })
@@ -148,9 +150,9 @@ export default function EmailProductsPage() {
       });
 
       // Use zh locale template as default preview
-      const zhTemplate = res.templates.find((t) => t.locale === 'zh');
+      const zhTemplate = res.templates.find((tpl) => tpl.locale === 'zh');
       if (!zhTemplate) {
-        Taro.showToast({ title: '未找到模板', icon: 'none' });
+        Taro.showToast({ title: t('emailNotification.noTemplate'), icon: 'none' });
         return;
       }
 
@@ -165,7 +167,7 @@ export default function EmailProductsPage() {
       setPreviewBody(body);
       setShowPreview(true);
     } catch {
-      Taro.showToast({ title: '加载模板失败', icon: 'none' });
+      Taro.showToast({ title: t('emailNotification.templateLoadFailed'), icon: 'none' });
     }
   };
 
@@ -184,7 +186,7 @@ export default function EmailProductsPage() {
       });
       setSendResult(res);
     } catch {
-      Taro.showToast({ title: '发送失败', icon: 'none' });
+      Taro.showToast({ title: t('emailNotification.sendFailed'), icon: 'none' });
     } finally {
       setSending(false);
     }
@@ -206,16 +208,16 @@ export default function EmailProductsPage() {
       {/* Toolbar */}
       <View className='email-products__toolbar'>
         <View className='email-products__back' onClick={handleBack}>
-          <Text>← 返回</Text>
+          <Text>{t('emailNotification.backButton')}</Text>
         </View>
-        <Text className='email-products__title'>新商品邮件通知</Text>
+        <Text className='email-products__title'>{t('emailNotification.productPageTitle')}</Text>
         <View style={{ width: '60px' }} />
       </View>
 
       {/* Loading */}
       {loading && (
         <View className='admin-loading'>
-          <Text>加载中...</Text>
+          <Text>{t('emailNotification.loading')}</Text>
         </View>
       )}
 
@@ -226,7 +228,7 @@ export default function EmailProductsPage() {
             <PackageIcon size={48} color='var(--text-tertiary)' />
           </Text>
           <Text className='email-products__disabled-text'>
-            新商品邮件通知功能已关闭，请在设置中开启「新商品通知」开关后再使用此功能。
+            {t('emailNotification.disabledProductMessage')}
           </Text>
         </View>
       )}
@@ -234,31 +236,31 @@ export default function EmailProductsPage() {
       {/* Send result summary */}
       {!loading && sendResult && (
         <View className='ep-result'>
-          <Text className='ep-result__title'>发送结果</Text>
+          <Text className='ep-result__title'>{t('emailNotification.sendResult')}</Text>
           <View className='ep-result__grid'>
             <View className='ep-result__item'>
-              <Text className='ep-result__label'>订阅用户数</Text>
+              <Text className='ep-result__label'>{t('emailNotification.resultSubscribers')}</Text>
               <Text className='ep-result__value'>{sendResult.subscriberCount}</Text>
             </View>
             <View className='ep-result__item'>
-              <Text className='ep-result__label'>总批次</Text>
+              <Text className='ep-result__label'>{t('emailNotification.resultTotalBatches')}</Text>
               <Text className='ep-result__value'>{sendResult.totalBatches}</Text>
             </View>
             <View className='ep-result__item'>
-              <Text className='ep-result__label'>成功批次</Text>
+              <Text className='ep-result__label'>{t('emailNotification.resultSuccess')}</Text>
               <Text className='ep-result__value ep-result__value--success'>
                 {sendResult.successCount}
               </Text>
             </View>
             <View className='ep-result__item'>
-              <Text className='ep-result__label'>失败批次</Text>
+              <Text className='ep-result__label'>{t('emailNotification.resultFailure')}</Text>
               <Text className='ep-result__value ep-result__value--error'>
                 {sendResult.failureCount}
               </Text>
             </View>
           </View>
           <View className='ep-result__close' onClick={() => setSendResult(null)}>
-            <Text>关闭</Text>
+            <Text>{t('emailNotification.resultClose')}</Text>
           </View>
         </View>
       )}
@@ -275,7 +277,7 @@ export default function EmailProductsPage() {
                 {allSelected && <Text className='ep-row__check-mark'>✓</Text>}
               </View>
               <Text>
-                {allSelected ? '取消全选' : '全选'} ({selectedIds.size}/{products.length})
+                {allSelected ? t('emailNotification.deselectAll') : t('emailNotification.selectAll')} ({selectedIds.size}/{products.length})
               </Text>
             </View>
             <View className='email-products__buttons'>
@@ -283,13 +285,13 @@ export default function EmailProductsPage() {
                 className={`email-products__btn email-products__btn--preview ${!hasSelection ? 'email-products__btn--disabled' : ''}`}
                 onClick={hasSelection ? handlePreview : undefined}
               >
-                <Text>预览</Text>
+                <Text>{t('emailNotification.preview')}</Text>
               </View>
               <View
                 className={`email-products__btn email-products__btn--send ${!hasSelection ? 'email-products__btn--disabled' : ''} ${sending ? 'email-products__btn--loading' : ''}`}
                 onClick={hasSelection && !sending ? handleSend : undefined}
               >
-                <Text>{sending ? '发送中...' : '发送通知'}</Text>
+                <Text>{sending ? t('emailNotification.sending') : t('emailNotification.send')}</Text>
               </View>
             </View>
           </View>
@@ -298,7 +300,7 @@ export default function EmailProductsPage() {
           {products.length > 0 && (
             <View className='email-products__list'>
               <Text className='email-products__count'>
-                最近 7 天新增商品（{products.length} 件）
+                {t('emailNotification.productCount', { count: products.length })}
               </Text>
 
               {products.map((product) => {
@@ -328,7 +330,7 @@ export default function EmailProductsPage() {
                       <View className='ep-row__meta'>
                         {product.type === 'points' && product.pointsCost && (
                           <Text className='ep-row__price'>
-                            {product.pointsCost} 积分
+                            {product.pointsCost} {t('emailNotification.pointsUnit')}
                           </Text>
                         )}
                         <Text className='ep-row__date'>
@@ -337,7 +339,7 @@ export default function EmailProductsPage() {
                         <Text
                           className={`ep-row__status ep-row__status--${product.status}`}
                         >
-                          {product.status === 'active' ? '上架' : '下架'}
+                          {product.status === 'active' ? t('emailNotification.statusActive') : t('emailNotification.statusInactive')}
                         </Text>
                       </View>
                     </View>
@@ -354,7 +356,7 @@ export default function EmailProductsPage() {
                 <PackageIcon size={48} color='var(--text-tertiary)' />
               </Text>
               <Text className='admin-empty__text'>
-                最近 7 天没有新增商品
+                {t('emailNotification.noRecentProducts')}
               </Text>
             </View>
           )}
@@ -366,7 +368,7 @@ export default function EmailProductsPage() {
         <View className='ep-preview'>
           <View className='ep-preview__modal'>
             <View className='ep-preview__header'>
-              <Text className='ep-preview__title'>邮件预览</Text>
+              <Text className='ep-preview__title'>{t('emailNotification.previewTitle')}</Text>
               <View
                 className='ep-preview__close'
                 onClick={() => setShowPreview(false)}
@@ -375,7 +377,7 @@ export default function EmailProductsPage() {
               </View>
             </View>
             <View className='ep-preview__subject'>
-              <Text className='ep-preview__subject-label'>主题</Text>
+              <Text className='ep-preview__subject-label'>{t('emailNotification.previewSubject')}</Text>
               <Text className='ep-preview__subject-text'>{previewSubject}</Text>
             </View>
             <View className='ep-preview__body'>

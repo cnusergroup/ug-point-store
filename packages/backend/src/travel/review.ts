@@ -2,7 +2,6 @@ import {
   DynamoDBDocumentClient,
   GetCommand,
   UpdateCommand,
-  TransactWriteCommand,
   QueryCommand,
   ScanCommand,
 } from '@aws-sdk/lib-dynamodb';
@@ -44,9 +43,10 @@ export interface ListAllTravelApplicationsResult {
 /**
  * Review a travel application: approve or reject.
  *
- * - approve: UpdateCommand to set status=approved, record reviewer info. travelEarnUsed stays unchanged.
- * - reject: TransactWriteCommand to atomically update status=rejected + record rejectReason +
- *           decrease user's travelEarnUsed by earnDeducted (ConditionExpression ensures non-negative).
+ * - approve: UpdateCommand to set status=approved, record reviewer info.
+ * - reject: UpdateCommand to set status=rejected, record rejectReason, reviewer info, and timestamp.
+ *
+ * Neither action modifies `travelEarnUsed` — quota is derived from application records.
  */
 export async function reviewTravelApplication(
   input: ReviewTravelApplicationInput,
@@ -113,43 +113,23 @@ export async function reviewTravelApplication(
     return { success: true, application: updatedApplication };
   }
 
-  // 5. Handle reject — atomic transaction: update status + return quota
+  // 5. Handle reject — simple UpdateCommand (no cross-table transaction needed)
   await dynamoClient.send(
-    new TransactWriteCommand({
-      TransactItems: [
-        // a. Update TravelApplication status to rejected
-        {
-          Update: {
-            TableName: tables.travelApplicationsTable,
-            Key: { applicationId: input.applicationId },
-            UpdateExpression: 'SET #s = :rejected, rejectReason = :reason, reviewerId = :rid, reviewerNickname = :rnick, reviewedAt = :rat, updatedAt = :now',
-            ConditionExpression: '#s = :pending',
-            ExpressionAttributeNames: { '#s': 'status' },
-            ExpressionAttributeValues: {
-              ':rejected': 'rejected',
-              ':pending': 'pending',
-              ':reason': input.rejectReason ?? '',
-              ':rid': input.reviewerId,
-              ':rnick': input.reviewerNickname,
-              ':rat': now,
-              ':now': now,
-            },
-          },
-        },
-        // b. Decrease user's travelEarnUsed by earnDeducted (with non-negative guard)
-        {
-          Update: {
-            TableName: tables.usersTable,
-            Key: { userId: application.userId },
-            UpdateExpression: 'SET travelEarnUsed = travelEarnUsed - :deducted, updatedAt = :now',
-            ConditionExpression: 'travelEarnUsed >= :deducted',
-            ExpressionAttributeValues: {
-              ':deducted': application.earnDeducted,
-              ':now': now,
-            },
-          },
-        },
-      ],
+    new UpdateCommand({
+      TableName: tables.travelApplicationsTable,
+      Key: { applicationId: input.applicationId },
+      UpdateExpression: 'SET #s = :rejected, rejectReason = :reason, reviewerId = :rid, reviewerNickname = :rnick, reviewedAt = :rat, updatedAt = :now',
+      ConditionExpression: '#s = :pending',
+      ExpressionAttributeNames: { '#s': 'status' },
+      ExpressionAttributeValues: {
+        ':rejected': 'rejected',
+        ':pending': 'pending',
+        ':reason': input.rejectReason ?? '',
+        ':rid': input.reviewerId,
+        ':rnick': input.reviewerNickname,
+        ':rat': now,
+        ':now': now,
+      },
     }),
   );
 

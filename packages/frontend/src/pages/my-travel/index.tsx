@@ -6,6 +6,7 @@ import { request } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
 import { GlobeIcon } from '../../components/icons';
+import PageToolbar from '../../components/PageToolbar';
 import type { TravelApplication, TravelQuota } from '@points-mall/shared';
 import './index.scss';
 
@@ -34,11 +35,24 @@ export default function MyTravelPage() {
   const [loading, setLoading] = useState(true);
   const [lastKey, setLastKey] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [thresholds, setThresholds] = useState<{ domesticThreshold: number; internationalThreshold: number } | null>(null);
 
   const fetchQuota = useCallback(async () => {
     try {
       const res = await request<TravelQuota>({ url: '/api/travel/quota' });
       setQuota(res);
+    } catch {
+      // silently fail
+    }
+  }, []);
+
+  const fetchThresholds = useCallback(async () => {
+    try {
+      const res = await request<{ travelSponsorshipEnabled: boolean; domesticThreshold: number; internationalThreshold: number }>({
+        url: '/api/settings/travel-sponsorship',
+        skipAuth: true,
+      });
+      setThresholds({ domesticThreshold: res.domesticThreshold, internationalThreshold: res.internationalThreshold });
     } catch {
       // silently fail
     }
@@ -76,8 +90,9 @@ export default function MyTravelPage() {
       return;
     }
     fetchQuota();
+    fetchThresholds();
     fetchApplications(statusFilter);
-  }, [isAuthenticated, fetchQuota, fetchApplications, statusFilter]);
+  }, [isAuthenticated, fetchQuota, fetchThresholds, fetchApplications, statusFilter]);
 
   const handleTabChange = (tab: StatusFilter) => {
     setStatusFilter(tab);
@@ -111,30 +126,64 @@ export default function MyTravelPage() {
   return (
     <View className='my-travel-page'>
       {/* Toolbar */}
-      <View className='my-travel-page__toolbar'>
-        <View className='my-travel-page__back' onClick={handleBack}>
-          <Text>{t('travel.myTravel.backButton')}</Text>
+      <PageToolbar title={t('travel.myTravel.title')} onBack={handleBack} />
+
+      {/* Speaker Points Detail Cards */}
+      <View className='travel-points-detail'>
+        <View className='travel-points-detail__row'>
+          <View className='travel-points-detail__card travel-points-detail__card--full'>
+            <Text className='travel-points-detail__label'>{t('travel.myTravel.speakerEarnTotal')}</Text>
+            <Text className='travel-points-detail__value travel-points-detail__value--earn'>
+              {quota ? quota.speakerEarnTotal : '-'}
+              <Text className='travel-points-detail__unit'> 分</Text>
+            </Text>
+          </View>
         </View>
-        <Text className='my-travel-page__title'>{t('travel.myTravel.title')}</Text>
-        <View className='my-travel-page__spacer' />
+        {/* Threshold info */}
+        {thresholds && (
+          <View className='travel-points-detail__threshold-info'>
+            <Text className='travel-points-detail__threshold-text'>
+              兑换标准：国内 {thresholds.domesticThreshold.toLocaleString()} 分 / 国际 {thresholds.internationalThreshold.toLocaleString()} 分
+            </Text>
+          </View>
+        )}
+        <View className='travel-points-detail__row'>
+          <View className='travel-points-detail__card'>
+            <Text className='travel-points-detail__label'>{t('travel.myTravel.domesticAvailableLabel')}</Text>
+            <Text className='travel-points-detail__value travel-points-detail__value--threshold'>
+              {quota ? quota.domesticAvailable : '-'}
+              <Text className='travel-points-detail__unit'>{t('travel.myTravel.quotaUnit')}</Text>
+            </Text>
+          </View>
+          <View className='travel-points-detail__card'>
+            <Text className='travel-points-detail__label'>{t('travel.myTravel.internationalAvailableLabel')}</Text>
+            <Text className='travel-points-detail__value travel-points-detail__value--threshold'>
+              {quota ? quota.internationalAvailable : '-'}
+              <Text className='travel-points-detail__unit'>{t('travel.myTravel.quotaUnit')}</Text>
+            </Text>
+          </View>
+        </View>
+        <View className='travel-points-detail__row'>
+          <View className='travel-points-detail__card'>
+            <Text className='travel-points-detail__label'>{t('travel.myTravel.domesticUsedLabel')}</Text>
+            <Text className='travel-points-detail__value travel-points-detail__value--used'>
+              {quota ? quota.domesticUsedCount : '-'}
+              <Text className='travel-points-detail__unit'>{t('travel.myTravel.quotaUnit')}</Text>
+            </Text>
+          </View>
+          <View className='travel-points-detail__card'>
+            <Text className='travel-points-detail__label'>{t('travel.myTravel.internationalUsedLabel')}</Text>
+            <Text className='travel-points-detail__value travel-points-detail__value--used'>
+              {quota ? quota.internationalUsedCount : '-'}
+              <Text className='travel-points-detail__unit'>{t('travel.myTravel.quotaUnit')}</Text>
+            </Text>
+          </View>
+        </View>
       </View>
 
-      {/* Quota Overview */}
-      <View className='travel-quota'>
-        <View className='travel-quota__card'>
-          <Text className='travel-quota__label'>{t('travel.myTravel.quotaDomestic')}</Text>
-          <Text className='travel-quota__value'>
-            {quota ? quota.domesticAvailable : '-'}
-          </Text>
-          <Text className='travel-quota__unit'>{t('travel.myTravel.quotaUnit')}</Text>
-        </View>
-        <View className='travel-quota__card'>
-          <Text className='travel-quota__label'>{t('travel.myTravel.quotaInternational')}</Text>
-          <Text className='travel-quota__value'>
-            {quota ? quota.internationalAvailable : '-'}
-          </Text>
-          <Text className='travel-quota__unit'>{t('travel.myTravel.quotaUnit')}</Text>
-        </View>
+      {/* Notice Banner */}
+      <View className='travel-notice-banner'>
+        <Text className='travel-notice-banner__text'>{t('travel.myTravel.notice')}</Text>
       </View>
 
       {/* Status Filter Tabs */}

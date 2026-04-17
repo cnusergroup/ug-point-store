@@ -5,6 +5,7 @@ import { request } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
 import { GiftIcon } from '../../components/icons';
+import PageToolbar from '../../components/PageToolbar';
 import './index.scss';
 
 /** Address from API */
@@ -272,11 +273,7 @@ export default function OrderConfirmPage() {
   if (error) {
     return (
       <View className='confirm-page'>
-        <View className='confirm-header'>
-          <Text className='confirm-header__back' onClick={handleBack}>{t('orderConfirm.backButton')}</Text>
-          <Text className='confirm-header__title'>{t('orderConfirm.title')}</Text>
-          <View className='confirm-header__placeholder' />
-        </View>
+        <PageToolbar title={t('orderConfirm.title')} onBack={handleBack} />
         <View className='confirm-error'>
           <Text className='confirm-error__text'>{error}</Text>
         </View>
@@ -287,11 +284,7 @@ export default function OrderConfirmPage() {
   return (
     <View className='confirm-page'>
       {/* Header */}
-      <View className='confirm-header'>
-        <Text className='confirm-header__back' onClick={handleBack}>{t('orderConfirm.backButton')}</Text>
-        <Text className='confirm-header__title'>{t('orderConfirm.title')}</Text>
-        <View className='confirm-header__placeholder' />
-      </View>
+      <PageToolbar title={t('orderConfirm.title')} onBack={handleBack} />
 
       <View className='confirm-content'>
         {/* Address Section */}

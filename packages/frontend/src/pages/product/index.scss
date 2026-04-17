@@ -253,6 +253,17 @@
     color: var(--text-tertiary);
   }
 
+  &__delisted-badge {
+    display: inline-block;
+    background: rgba(245, 166, 35, 0.12);
+    border: 1px solid rgba(245, 166, 35, 0.25);
+    color: var(--warning);
+    border-radius: var(--radius-sm);
+    padding: var(--space-1) var(--space-3);
+    font-size: 12px;
+    margin-left: var(--space-2);
+  }
+
   /* Task 10.3: Purchase limit hint */
   &__limit-hint {
     display: inline-block;

@@ -90,8 +90,12 @@ describe('Order Lambda Handler', () => {
       emailOrderShippedEnabled: false,
       emailNewProductEnabled: false,
       emailNewContentEnabled: false,
-    adminEmailProductsEnabled: false,
-    adminEmailContentEnabled: false,
+      adminEmailProductsEnabled: false,
+      adminEmailContentEnabled: false,
+      reservationApprovalPoints: 10,
+      leaderboardRankingEnabled: false,
+      leaderboardAnnouncementEnabled: false,
+      leaderboardUpdateFrequency: 'weekly',
     });
   });
 
@@ -594,8 +598,12 @@ describe('Order Lambda Handler', () => {
         emailOrderShippedEnabled: false,
         emailNewProductEnabled: false,
         emailNewContentEnabled: false,
-      adminEmailProductsEnabled: false,
-      adminEmailContentEnabled: false,
+        adminEmailProductsEnabled: false,
+        adminEmailContentEnabled: false,
+        reservationApprovalPoints: 10,
+        leaderboardRankingEnabled: false,
+        leaderboardAnnouncementEnabled: false,
+        leaderboardUpdateFrequency: 'weekly',
       });
       vi.mocked(getAdminOrders).mockResolvedValue({
         success: true,
@@ -630,8 +638,12 @@ describe('Order Lambda Handler', () => {
         emailOrderShippedEnabled: false,
         emailNewProductEnabled: false,
         emailNewContentEnabled: false,
-      adminEmailProductsEnabled: false,
-      adminEmailContentEnabled: false,
+        adminEmailProductsEnabled: false,
+        adminEmailContentEnabled: false,
+        reservationApprovalPoints: 10,
+        leaderboardRankingEnabled: false,
+        leaderboardAnnouncementEnabled: false,
+        leaderboardUpdateFrequency: 'weekly',
       });
       const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/orders' });
       const result = await handler(event);

@@ -238,3 +238,112 @@
     text-align: center;
   }
 }
+
+
+/* Search Bar */
+.bh-search {
+  padding: var(--space-3) var(--space-5);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--card-border);
+
+  &__input {
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-body-sm);
+    font-family: var(--font-body);
+    color: var(--text-primary);
+    background: var(--bg-base);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    outline: none;
+    transition: border-color var(--transition-fast);
+
+    &:focus {
+      border-color: var(--accent-primary);
+    }
+  }
+}
+
+/* Activity Type Badge (reusable in history) */
+.bh-activity-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--text-badge);
+  font-weight: 600;
+  white-space: nowrap;
+
+  &--online {
+    background: rgba(91, 141, 239, 0.15);
+    color: var(--info);
+    border: 1px solid rgba(91, 141, 239, 0.25);
+  }
+
+  &--offline {
+    background: rgba(45, 212, 168, 0.15);
+    color: var(--success);
+    border: 1px solid rgba(45, 212, 168, 0.25);
+  }
+}
+
+/* Activity Summary in Record Card */
+.bh-activity-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  flex-wrap: wrap;
+
+  &__ug {
+    font-size: var(--text-body-sm);
+    font-weight: 600;
+    color: var(--accent-primary);
+  }
+
+  &__topic {
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+    word-break: break-word;
+  }
+}
+
+/* Activity Detail in Expanded View */
+.bh-activity-detail {
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--card-border);
+
+  &__title {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-2);
+  }
+
+  &__grid {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  &__label {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    flex-shrink: 0;
+    min-width: 60px;
+  }
+
+  &__value {
+    font-size: var(--text-body-sm);
+    color: var(--text-primary);
+    word-break: break-word;
+  }
+}

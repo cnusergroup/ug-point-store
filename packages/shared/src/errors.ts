@@ -191,6 +191,12 @@ export const ErrorCodes = {
   ORDER_ADMIN_REQUIRES_SUPERADMIN: 'ORDER_ADMIN_REQUIRES_SUPERADMIN',
   /** 仅 SuperAdmin 可管理 OrderAdmin 用户 (403) - 需求 9.2 */
   ONLY_SUPERADMIN_CAN_MANAGE_ORDER_ADMIN: 'ONLY_SUPERADMIN_CAN_MANAGE_ORDER_ADMIN',
+  /** 同一 Speaker 已预约过该活动 (409) - 需求 4.2 */
+  DUPLICATE_ACTIVITY_RESERVATION: 'DUPLICATE_ACTIVITY_RESERVATION',
+  /** 该预约已被审批 (409) - 需求 7.6 */
+  RESERVATION_ALREADY_REVIEWED: 'RESERVATION_ALREADY_REVIEWED',
+  /** 关联活动不存在 (404) - 需求 12.5 */
+  ACTIVITY_NOT_FOUND: 'ACTIVITY_NOT_FOUND',
 } as const;
 
 /** 错误码类型 */
@@ -292,6 +298,9 @@ export const ErrorHttpStatus: Record<ErrorCode, number> = {
   [ErrorCodes.EXCLUSIVE_ROLE_CONFLICT]: 400,
   [ErrorCodes.ORDER_ADMIN_REQUIRES_SUPERADMIN]: 403,
   [ErrorCodes.ONLY_SUPERADMIN_CAN_MANAGE_ORDER_ADMIN]: 403,
+  [ErrorCodes.DUPLICATE_ACTIVITY_RESERVATION]: 409,
+  [ErrorCodes.RESERVATION_ALREADY_REVIEWED]: 409,
+  [ErrorCodes.ACTIVITY_NOT_FOUND]: 404,
 };
 
 /** 错误码对应的默认错误消息 */
@@ -390,4 +399,7 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.EXCLUSIVE_ROLE_CONFLICT]: '独占角色不能与其他角色共存',
   [ErrorCodes.ORDER_ADMIN_REQUIRES_SUPERADMIN]: '仅 SuperAdmin 可分配 OrderAdmin 角色',
   [ErrorCodes.ONLY_SUPERADMIN_CAN_MANAGE_ORDER_ADMIN]: '仅 SuperAdmin 可管理 OrderAdmin 用户',
+  [ErrorCodes.DUPLICATE_ACTIVITY_RESERVATION]: '您已预约过该活动',
+  [ErrorCodes.RESERVATION_ALREADY_REVIEWED]: '该预约已被审批',
+  [ErrorCodes.ACTIVITY_NOT_FOUND]: '关联活动不存在',
 };

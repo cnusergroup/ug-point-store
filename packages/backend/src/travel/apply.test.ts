@@ -68,10 +68,13 @@ describe('clampPageSize', () => {
 // ============================================================
 
 describe('calculateAvailableCount', () => {
-  it('should return floor((earnTotal - travelEarnUsed) / threshold) for normal case', () => {
-    expect(calculateAvailableCount(1000, 0, 500)).toBe(2);
-    expect(calculateAvailableCount(1000, 500, 500)).toBe(1);
-    expect(calculateAvailableCount(1000, 200, 300)).toBe(2); // floor(800/300) = 2
+  it('should return floor(earnTotal / threshold) - categoryUsedCount for normal case', () => {
+    // floor(1000/500) - 0 = 2
+    expect(calculateAvailableCount(1000, 500, 0)).toBe(2);
+    // floor(1000/500) - 1 = 1
+    expect(calculateAvailableCount(1000, 500, 1)).toBe(1);
+    // floor(1000/300) - 1 = 3 - 1 = 2
+    expect(calculateAvailableCount(1000, 300, 1)).toBe(2);
   });
 
   it('should return 0 when threshold is 0', () => {
@@ -79,21 +82,26 @@ describe('calculateAvailableCount', () => {
     expect(calculateAvailableCount(0, 0, 0)).toBe(0);
   });
 
-  it('should return 0 when travelEarnUsed > earnTotal', () => {
-    expect(calculateAvailableCount(100, 200, 50)).toBe(0);
+  it('should return 0 when categoryUsedCount exceeds total quota', () => {
+    // floor(100/50) = 2, 2 - 5 = -3 → clamped to 0
+    expect(calculateAvailableCount(100, 50, 5)).toBe(0);
+    // floor(0/1) = 0, 0 - 1 = -1 → clamped to 0
     expect(calculateAvailableCount(0, 1, 1)).toBe(0);
   });
 
-  it('should return 0 when earnTotal equals travelEarnUsed and threshold > 0', () => {
-    expect(calculateAvailableCount(500, 500, 500)).toBe(0);
+  it('should return 0 when categoryUsedCount equals total quota', () => {
+    // floor(500/500) = 1, 1 - 1 = 0
+    expect(calculateAvailableCount(500, 500, 1)).toBe(0);
   });
 
   it('should handle large values', () => {
-    expect(calculateAvailableCount(100000, 0, 1000)).toBe(100);
+    // floor(100000/1000) - 0 = 100
+    expect(calculateAvailableCount(100000, 1000, 0)).toBe(100);
   });
 
-  it('should return 0 when remaining is less than threshold', () => {
-    expect(calculateAvailableCount(1000, 800, 500)).toBe(0);
+  it('should return 0 when earnTotal is less than threshold', () => {
+    // floor(200/500) = 0, 0 - 0 = 0
+    expect(calculateAvailableCount(200, 500, 0)).toBe(0);
   });
 });
 
@@ -245,11 +253,7 @@ describe('getTravelQuota', () => {
       Items: [{ amount: 300 }, { amount: 200 }, { amount: 500 }],
       LastEvaluatedKey: undefined,
     });
-    // Call 2: GetCommand for user record (travelEarnUsed)
-    client.send.mockResolvedValueOnce({
-      Item: { userId: 'user-001', travelEarnUsed: 200 },
-    });
-    // Call 3: GetCommand for travel settings
+    // Call 2: GetCommand for travel settings
     client.send.mockResolvedValueOnce({
       Item: {
         userId: 'travel-sponsorship',
@@ -258,29 +262,31 @@ describe('getTravelQuota', () => {
         internationalThreshold: 1000,
       },
     });
-
-    const quota = await getTravelQuota('user-001', client, {
-      usersTable: USERS_TABLE,
-      pointsRecordsTable: POINTS_RECORDS_TABLE,
+    // Call 3: QueryCommand for pending+approved applications
+    client.send.mockResolvedValueOnce({
+      Items: [
+        { category: 'domestic' },
+      ],
+      LastEvaluatedKey: undefined,
     });
 
-    expect(quota.earnTotal).toBe(1000);
-    expect(quota.travelEarnUsed).toBe(200);
+    const quota = await getTravelQuota('user-001', client, tables);
+
+    expect(quota.speakerEarnTotal).toBe(1000);
     expect(quota.domesticThreshold).toBe(500);
     expect(quota.internationalThreshold).toBe(1000);
-    // floor((1000 - 200) / 500) = 1
+    // floor(1000/500) - 1 = 1
     expect(quota.domesticAvailable).toBe(1);
-    // floor((1000 - 200) / 1000) = 0
-    expect(quota.internationalAvailable).toBe(0);
+    // floor(1000/1000) - 0 = 1
+    expect(quota.internationalAvailable).toBe(1);
+    expect(quota.domesticUsedCount).toBe(1);
+    expect(quota.internationalUsedCount).toBe(0);
   });
 
-  it('should default travelEarnUsed to 0 when user record has no field', async () => {
+  it('should return zero used counts when no pending or approved applications exist', async () => {
     client.send.mockResolvedValueOnce({
       Items: [{ amount: 500 }],
       LastEvaluatedKey: undefined,
-    });
-    client.send.mockResolvedValueOnce({
-      Item: { userId: 'user-001' },
     });
     client.send.mockResolvedValueOnce({
       Item: {
@@ -290,15 +296,18 @@ describe('getTravelQuota', () => {
         internationalThreshold: 200,
       },
     });
-
-    const quota = await getTravelQuota('user-001', client, {
-      usersTable: USERS_TABLE,
-      pointsRecordsTable: POINTS_RECORDS_TABLE,
+    // No pending/approved applications
+    client.send.mockResolvedValueOnce({
+      Items: [],
+      LastEvaluatedKey: undefined,
     });
 
-    expect(quota.travelEarnUsed).toBe(0);
-    expect(quota.domesticAvailable).toBe(5); // floor(500/100)
-    expect(quota.internationalAvailable).toBe(2); // floor(500/200)
+    const quota = await getTravelQuota('user-001', client, tables);
+
+    expect(quota.domesticUsedCount).toBe(0);
+    expect(quota.internationalUsedCount).toBe(0);
+    expect(quota.domesticAvailable).toBe(5); // floor(500/100) - 0
+    expect(quota.internationalAvailable).toBe(2); // floor(500/200) - 0
   });
 
   it('should handle paginated PointsRecords query', async () => {
@@ -312,10 +321,6 @@ describe('getTravelQuota', () => {
       Items: [{ amount: 200 }],
       LastEvaluatedKey: undefined,
     });
-    // User record
-    client.send.mockResolvedValueOnce({
-      Item: { userId: 'user-001', travelEarnUsed: 0 },
-    });
     // Settings
     client.send.mockResolvedValueOnce({
       Item: {
@@ -325,13 +330,15 @@ describe('getTravelQuota', () => {
         internationalThreshold: 200,
       },
     });
-
-    const quota = await getTravelQuota('user-001', client, {
-      usersTable: USERS_TABLE,
-      pointsRecordsTable: POINTS_RECORDS_TABLE,
+    // Applications query
+    client.send.mockResolvedValueOnce({
+      Items: [],
+      LastEvaluatedKey: undefined,
     });
 
-    expect(quota.earnTotal).toBe(300);
+    const quota = await getTravelQuota('user-001', client, tables);
+
+    expect(quota.speakerEarnTotal).toBe(300);
   });
 });
 
@@ -389,13 +396,15 @@ describe('submitTravelApplication', () => {
     });
   }
 
-  function mockUserRecord(travelEarnUsed = 0) {
+  function mockCategoryUsedCount(count: number, category: string = 'domestic') {
+    // QueryCommand for pending+approved applications per category
     client.send.mockResolvedValueOnce({
-      Item: { userId: 'user-001', travelEarnUsed },
+      Items: Array.from({ length: count }, () => ({ category })),
+      LastEvaluatedKey: undefined,
     });
   }
 
-  function mockTransactSuccess() {
+  function mockPutSuccess() {
     client.send.mockResolvedValueOnce({});
   }
 
@@ -410,8 +419,8 @@ describe('submitTravelApplication', () => {
 
   it('should return INSUFFICIENT_EARN_QUOTA when available count < 1', async () => {
     mockSettingsEnabled(500, 1000);
-    mockEarnTotal([100]); // earnTotal = 100
-    mockUserRecord(0);
+    mockEarnTotal([100]); // earnTotal = 100, floor(100/500) = 0
+    mockCategoryUsedCount(0); // 0 used, but 0 total quota
 
     const result = await submitTravelApplication(validSubmitInput, client, tables);
 
@@ -421,9 +430,9 @@ describe('submitTravelApplication', () => {
 
   it('should successfully submit a domestic application', async () => {
     mockSettingsEnabled(500, 1000);
-    mockEarnTotal([1000]); // earnTotal = 1000
-    mockUserRecord(0);
-    mockTransactSuccess();
+    mockEarnTotal([1000]); // earnTotal = 1000, floor(1000/500) = 2
+    mockCategoryUsedCount(0); // 0 used
+    mockPutSuccess();
 
     const result = await submitTravelApplication(validSubmitInput, client, tables);
 
@@ -432,7 +441,7 @@ describe('submitTravelApplication', () => {
     expect(result.application!.status).toBe('pending');
     expect(result.application!.category).toBe('domestic');
     expect(result.application!.totalCost).toBe(2300); // 1500 + 800
-    expect(result.application!.earnDeducted).toBe(500); // domestic threshold
+    expect(result.application!.earnDeducted).toBeUndefined();
     expect(result.application!.applicationId).toBeDefined();
     expect(result.application!.userId).toBe('user-001');
     expect(result.application!.applicantNickname).toBe('Alice');
@@ -440,9 +449,9 @@ describe('submitTravelApplication', () => {
 
   it('should successfully submit an international application', async () => {
     mockSettingsEnabled(500, 1000);
-    mockEarnTotal([2000]);
-    mockUserRecord(0);
-    mockTransactSuccess();
+    mockEarnTotal([2000]); // earnTotal = 2000, floor(2000/1000) = 2
+    mockCategoryUsedCount(0, 'international');
+    mockPutSuccess();
 
     const result = await submitTravelApplication(
       { ...validSubmitInput, category: 'international' },
@@ -452,21 +461,21 @@ describe('submitTravelApplication', () => {
 
     expect(result.success).toBe(true);
     expect(result.application!.category).toBe('international');
-    expect(result.application!.earnDeducted).toBe(1000); // international threshold
+    expect(result.application!.earnDeducted).toBeUndefined();
   });
 
-  it('should use TransactWriteCommand for atomic operation', async () => {
+  it('should use PutCommand for application creation', async () => {
     mockSettingsEnabled(500, 1000);
     mockEarnTotal([1000]);
-    mockUserRecord(0);
-    mockTransactSuccess();
+    mockCategoryUsedCount(0);
+    mockPutSuccess();
 
     await submitTravelApplication(validSubmitInput, client, tables);
 
-    // Settings call + earnTotal query + user record get + transact write = 4 calls
+    // Settings call + earnTotal query + category count query + put = 4 calls
     expect(client.send).toHaveBeenCalledTimes(4);
     const lastCmd = client.send.mock.calls[3][0];
-    expect(lastCmd.constructor.name).toBe('TransactWriteCommand');
+    expect(lastCmd.constructor.name).toBe('PutCommand');
   });
 });
 
@@ -676,12 +685,6 @@ describe('resubmitTravelApplication', () => {
     });
   }
 
-  function mockUserRecord(travelEarnUsed = 0) {
-    client.send.mockResolvedValueOnce({
-      Item: { userId: 'user-001', travelEarnUsed },
-    });
-  }
-
   function mockSettings(domesticThreshold = 500, internationalThreshold = 1000) {
     client.send.mockResolvedValueOnce({
       Item: {
@@ -693,7 +696,15 @@ describe('resubmitTravelApplication', () => {
     });
   }
 
-  function mockTransactSuccess() {
+  function mockCategoryUsedCount(count: number, category: string = 'domestic') {
+    // QueryCommand for pending+approved applications per category
+    client.send.mockResolvedValueOnce({
+      Items: Array.from({ length: count }, () => ({ category })),
+      LastEvaluatedKey: undefined,
+    });
+  }
+
+  function mockPutSuccess() {
     client.send.mockResolvedValueOnce({});
   }
 
@@ -735,9 +746,9 @@ describe('resubmitTravelApplication', () => {
 
   it('should return INSUFFICIENT_EARN_QUOTA when quota is insufficient', async () => {
     mockGetApplication(rejectedApp);
-    mockEarnTotal([100]); // earnTotal = 100, not enough for threshold 500
-    mockUserRecord(0);
+    mockEarnTotal([100]); // earnTotal = 100, floor(100/500) = 0
     mockSettings(500, 1000);
+    mockCategoryUsedCount(0); // 0 used, but 0 total quota
 
     const result = await resubmitTravelApplication(baseResubmitInput, client, tables);
 
@@ -747,10 +758,10 @@ describe('resubmitTravelApplication', () => {
 
   it('should successfully resubmit with same category', async () => {
     mockGetApplication(rejectedApp);
-    mockEarnTotal([2000]);
-    mockUserRecord(0); // quota was returned on rejection
+    mockEarnTotal([2000]); // earnTotal = 2000, floor(2000/500) = 4
     mockSettings(500, 1000);
-    mockTransactSuccess();
+    mockCategoryUsedCount(0); // 0 used
+    mockPutSuccess();
 
     const result = await resubmitTravelApplication(baseResubmitInput, client, tables);
 
@@ -758,7 +769,7 @@ describe('resubmitTravelApplication', () => {
     expect(result.application).toBeDefined();
     expect(result.application!.status).toBe('pending');
     expect(result.application!.category).toBe('domestic');
-    expect(result.application!.earnDeducted).toBe(500);
+    expect(result.application!.earnDeducted).toBeUndefined();
     expect(result.application!.totalCost).toBe(1800); // 1200 + 600
     expect(result.application!.applicationId).toBe('app-001');
     // rejectReason and review info should be cleared
@@ -772,10 +783,10 @@ describe('resubmitTravelApplication', () => {
 
   it('should successfully resubmit with different category', async () => {
     mockGetApplication(rejectedApp); // original was domestic
-    mockEarnTotal([3000]);
-    mockUserRecord(0);
+    mockEarnTotal([3000]); // earnTotal = 3000, floor(3000/1000) = 3
     mockSettings(500, 1000);
-    mockTransactSuccess();
+    mockCategoryUsedCount(0, 'international'); // 0 used for international
+    mockPutSuccess();
 
     const result = await resubmitTravelApplication(
       { ...baseResubmitInput, category: 'international' },
@@ -785,22 +796,22 @@ describe('resubmitTravelApplication', () => {
 
     expect(result.success).toBe(true);
     expect(result.application!.category).toBe('international');
-    expect(result.application!.earnDeducted).toBe(1000); // international threshold
+    expect(result.application!.earnDeducted).toBeUndefined();
   });
 
-  it('should use TransactWriteCommand for atomic operation', async () => {
+  it('should use PutCommand for application update', async () => {
     mockGetApplication(rejectedApp);
     mockEarnTotal([2000]);
-    mockUserRecord(0);
     mockSettings(500, 1000);
-    mockTransactSuccess();
+    mockCategoryUsedCount(0);
+    mockPutSuccess();
 
     await resubmitTravelApplication(baseResubmitInput, client, tables);
 
-    // getApp + earnTotal query + user record + settings + transact = 5 calls
+    // getApp + earnTotal query + settings + category count query + put = 5 calls
     expect(client.send).toHaveBeenCalledTimes(5);
     const lastCmd = client.send.mock.calls[4][0];
-    expect(lastCmd.constructor.name).toBe('TransactWriteCommand');
+    expect(lastCmd.constructor.name).toBe('PutCommand');
   });
 
   it('should reject resubmit with invalid input fields', async () => {

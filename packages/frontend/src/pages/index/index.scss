@@ -589,6 +589,29 @@
     margin-bottom: var(--space-2);
   }
 
+  &__speaker-progress {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+  }
+
+  &__speaker-progress-label {
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+  }
+
+  &__speaker-progress-value {
+    font-family: var(--font-display);
+    font-size: var(--text-body-sm);
+    font-weight: 700;
+    color: var(--text-secondary);
+
+    &--met {
+      color: var(--success);
+    }
+  }
+
   &__quota {
     display: flex;
     align-items: center;

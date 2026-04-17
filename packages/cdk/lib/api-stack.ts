@@ -4,6 +4,8 @@ import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as targets from 'aws-cdk-lib/aws-events-targets';
 import { NodejsFunction, NodejsFunctionProps } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Runtime } from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
@@ -28,6 +30,8 @@ export interface ApiStackProps extends cdk.StackProps {
   travelApplicationsTable: dynamodb.Table;
   contentTagsTable: dynamodb.Table;
   emailTemplatesTable: dynamodb.Table;
+  ugsTable: dynamodb.Table;
+  activitiesTable: dynamodb.Table;
   jwtSecret: string;
   wechatAppId: string;
   wechatAppSecret: string;
@@ -47,7 +51,7 @@ export class ApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
-    const { usersTable, productsTable, codesTable, redemptionsTable, pointsRecordsTable, cartTable, addressesTable, ordersTable, invitesTable, claimsTable, contentItemsTable, contentCategoriesTable, contentCommentsTable, contentLikesTable, contentReservationsTable, batchDistributionsTable, travelApplicationsTable, contentTagsTable, emailTemplatesTable } = props;
+    const { usersTable, productsTable, codesTable, redemptionsTable, pointsRecordsTable, cartTable, addressesTable, ordersTable, invitesTable, claimsTable, contentItemsTable, contentCategoriesTable, contentCommentsTable, contentLikesTable, contentReservationsTable, batchDistributionsTable, travelApplicationsTable, contentTagsTable, emailTemplatesTable, ugsTable, activitiesTable } = props;
 
     // --- SSM Parameter for JWT Secret ---
     const jwtSecretParam = new ssm.StringParameter(this, 'JwtSecretParam', {
@@ -141,6 +145,8 @@ export class ApiStack extends cdk.Stack {
     adminFn.addEnvironment('BATCH_DISTRIBUTIONS_TABLE', batchDistributionsTable.tableName);
     adminFn.addEnvironment('TRAVEL_APPLICATIONS_TABLE', travelApplicationsTable.tableName);
     adminFn.addEnvironment('CONTENT_TAGS_TABLE', contentTagsTable.tableName);
+    adminFn.addEnvironment('UGS_TABLE', ugsTable.tableName);
+    adminFn.addEnvironment('ACTIVITIES_TABLE', activitiesTable.tableName);
 
     // Add travel table env var to Points Lambda
     pointsFn.addEnvironment('TRAVEL_APPLICATIONS_TABLE', travelApplicationsTable.tableName);
@@ -175,9 +181,58 @@ export class ApiStack extends cdk.Stack {
         CONTENT_RESERVATIONS_TABLE: contentReservationsTable.tableName,
         CONTENT_REWARD_POINTS: '10',
         CONTENT_TAGS_TABLE: contentTagsTable.tableName,
+        ACTIVITIES_TABLE: activitiesTable.tableName,
+        UGS_TABLE: ugsTable.tableName,
       },
     } as NodejsFunctionProps);
     this.contentFn = contentFn;
+
+    // --- Leaderboard Lambda (read-only, decoupled from Admin/Points) ---
+    const leaderboardFn = new NodejsFunction(this, 'LeaderboardFunction', {
+      ...commonFnProps,
+      functionName: 'PointsMall-Leaderboard',
+      entry: path.join(backendSrcPath, 'leaderboard/handler.ts'),
+      handler: 'handler',
+      environment: {
+        USERS_TABLE: usersTable.tableName,
+        POINTS_RECORDS_TABLE: pointsRecordsTable.tableName,
+        BATCH_DISTRIBUTIONS_TABLE: batchDistributionsTable.tableName,
+        JWT_SECRET_PARAM: jwtSecretParam.parameterName,
+      },
+    } as NodejsFunctionProps);
+
+    // Leaderboard Lambda: read-only access to Users, PointsRecords, BatchDistributions tables
+    usersTable.grantReadData(leaderboardFn);
+    pointsRecordsTable.grantReadData(leaderboardFn);
+    batchDistributionsTable.grantReadData(leaderboardFn);
+
+    // --- Sync Lambda (Feishu activity data sync) ---
+    const syncFn = new NodejsFunction(this, 'SyncFunction', {
+      ...commonFnProps,
+      functionName: 'PointsMall-Sync',
+      entry: path.join(backendSrcPath, 'sync/handler.ts'),
+      handler: 'handler',
+      environment: {
+        ACTIVITIES_TABLE: activitiesTable.tableName,
+        USERS_TABLE: usersTable.tableName,
+      },
+    } as NodejsFunctionProps);
+
+    // Sync Lambda: read/write Activities table, read Users table (for sync config)
+    activitiesTable.grantReadWriteData(syncFn);
+    usersTable.grantReadData(syncFn);
+
+    // Admin Lambda: env var and permission to invoke Sync Lambda for manual sync
+    adminFn.addEnvironment('SYNC_FUNCTION_NAME', syncFn.functionName);
+    syncFn.grantInvoke(adminFn);
+
+    // EventBridge rule: trigger Sync Lambda once per day by default
+    new events.Rule(this, 'SyncScheduleRule', {
+      ruleName: 'PointsMall-SyncSchedule',
+      description: 'Triggers Sync Lambda to sync Feishu activity data',
+      schedule: events.Schedule.rate(cdk.Duration.days(1)),
+      targets: [new targets.LambdaFunction(syncFn)],
+    });
 
     // --- IAM Permissions ---
 
@@ -246,6 +301,8 @@ export class ApiStack extends cdk.Stack {
     contentTagsTable.grantReadWriteData(contentFn);
     usersTable.grantReadWriteData(contentFn);
     pointsRecordsTable.grantReadWriteData(contentFn);
+    activitiesTable.grantReadData(contentFn);
+    ugsTable.grantReadData(contentFn);
 
     // SES permissions for email notifications (Admin, Points, Order, Content Lambdas)
     const sesEmailPolicy = new iam.PolicyStatement({
@@ -271,7 +328,7 @@ export class ApiStack extends cdk.Stack {
       actions: ['ssm:GetParameter'],
       resources: [jwtSecretParam.parameterArn],
     });
-    [authFn, productFn, pointsFn, redemptionFn, adminFn, cartFn, orderFn, contentFn].forEach(fn =>
+    [authFn, productFn, pointsFn, redemptionFn, adminFn, cartFn, orderFn, contentFn, leaderboardFn].forEach(fn =>
       fn.addToRolePolicy(ssmReadPolicy)
     );
 
@@ -426,6 +483,12 @@ export class ApiStack extends cdk.Stack {
     contentById.addResource('reserve').addMethod('POST', contentInt);
     contentById.addResource('download').addMethod('GET', contentInt);
 
+    // Leaderboard routes
+    const leaderboardInt = new apigateway.LambdaIntegration(leaderboardFn);
+    const leaderboard = api.addResource('leaderboard');
+    leaderboard.addResource('ranking').addMethod('GET', leaderboardInt);
+    leaderboard.addResource('announcements').addMethod('GET', leaderboardInt);
+
     new cdk.CfnOutput(this, 'ApiUrl', {
       value: this.api.url,
       exportName: 'PointsMall-ApiUrl',
@@ -455,6 +518,11 @@ export class ApiStack extends cdk.Stack {
     this.adminFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['s3:DeleteObject'],
       resources: [`${imagesBucketArn}/content/*`],
+    }));
+    // Admin Lambda: S3 permissions for report exports (upload + presigned download)
+    this.adminFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['s3:PutObject', 's3:GetObject'],
+      resources: [`${imagesBucketArn}/exports/*`],
     }));
     // Points Lambda needs S3 access for claim image uploads
     this.pointsFn.addEnvironment('IMAGES_BUCKET', imagesBucketName);

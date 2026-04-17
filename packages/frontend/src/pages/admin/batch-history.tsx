@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { View, Text } from '@tarojs/components';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, Text, Input } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useAppStore } from '../../store';
 import { request, RequestError } from '../../utils/request';
@@ -19,11 +19,15 @@ export default function BatchHistoryPage() {
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
   const userRoles = useAppStore((s) => s.user?.roles || []);
   const isSuperAdmin = userRoles.includes('SuperAdmin');
+  const isAdmin = userRoles.includes('Admin') || isSuperAdmin;
   const { t } = useTranslation();
 
   const [records, setRecords] = useState<DistributionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastKey, setLastKey] = useState<string | null>(null);
+
+  // Search filter for activity topic / UG name
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Expanded record detail
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -56,12 +60,23 @@ export default function BatchHistoryPage() {
       Taro.redirectTo({ url: '/pages/login/index' });
       return;
     }
-    if (!isSuperAdmin) {
+    if (!isAdmin) {
       Taro.redirectTo({ url: '/pages/admin/index' });
       return;
     }
     fetchHistory();
-  }, [isAuthenticated, isSuperAdmin, fetchHistory]);
+  }, [isAuthenticated, isAdmin, fetchHistory]);
+
+  // Client-side filter by activity topic or UG name
+  const filteredRecords = useMemo(() => {
+    if (!searchQuery.trim()) return records;
+    const q = searchQuery.trim().toLowerCase();
+    return records.filter((r) => {
+      const topicMatch = r.activityTopic?.toLowerCase().includes(q);
+      const ugMatch = r.activityUG?.toLowerCase().includes(q);
+      return topicMatch || ugMatch;
+    });
+  }, [records, searchQuery]);
 
   const handleLoadMore = () => {
     if (lastKey) {
@@ -115,7 +130,7 @@ export default function BatchHistoryPage() {
       </View>
 
       {/* Permission check */}
-      {!isSuperAdmin ? (
+      {!isAdmin ? (
         <View className='bh-denied'>
           <Text className='bh-denied__icon'>{t('batchPoints.history.permissionDeniedIcon')}</Text>
           <Text className='bh-denied__text'>{t('batchPoints.history.permissionDenied')}</Text>
@@ -128,88 +143,149 @@ export default function BatchHistoryPage() {
           <Text className='bh-empty__text'>{t('batchPoints.history.empty')}</Text>
         </View>
       ) : (
-        <View className='bh-list'>
-          {records.map((record) => {
-            const roleConfig = ROLE_CONFIG[record.targetRole];
-            const isExpanded = expandedId === record.distributionId;
-            const detail = detailCache[record.distributionId];
+        <>
+          {/* Search bar for activity topic / UG name */}
+          <View className='bh-search'>
+            <Input
+              className='bh-search__input'
+              value={searchQuery}
+              onInput={(e) => setSearchQuery(e.detail.value)}
+              placeholder={t('batchPoints.history.searchPlaceholder' as any)}
+            />
+          </View>
 
-            return (
-              <View
-                key={record.distributionId}
-                className={`bh-record ${isExpanded ? 'bh-record--expanded' : ''}`}
-                onClick={() => handleToggleDetail(record.distributionId)}
-              >
-                <View className='bh-record__summary'>
-                  {/* Top: distributor + role badge */}
-                  <View className='bh-record__top'>
-                    <Text className='bh-record__distributor'>{record.distributorNickname}</Text>
-                    <Text className={`role-badge ${roleConfig?.className || ''}`}>
-                      {roleConfig ? t(roleConfig.labelKey) : record.targetRole}
-                    </Text>
-                  </View>
+          {filteredRecords.length === 0 ? (
+            <View className='bh-empty'>
+              <Text className='bh-empty__icon'>🔍</Text>
+              <Text className='bh-empty__text'>{t('batchPoints.history.noSearchResults' as any)}</Text>
+            </View>
+          ) : (
+            <View className='bh-list'>
+              {filteredRecords.map((record) => {
+                const roleConfig = ROLE_CONFIG[record.targetRole];
+                const isExpanded = expandedId === record.distributionId;
+                const detail = detailCache[record.distributionId];
 
-                  {/* Meta: recipient count + points per person */}
-                  <View className='bh-record__meta'>
-                    <Text className='bh-record__meta-item'>
-                      {t('batchPoints.history.recipientCount')}: <Text className='bh-record__meta-value'>{record.recipientIds.length}</Text>
-                    </Text>
-                    <Text className='bh-record__meta-item'>
-                      {t('batchPoints.history.pointsPerPerson')}: <Text className='bh-record__meta-highlight'>{record.points}</Text>
-                    </Text>
-                  </View>
-
-                  {/* Reason */}
-                  <View className='bh-record__reason-row'>
-                    <Text className='bh-record__reason-label'>{t('batchPoints.history.reason')}:</Text>
-                    <Text className='bh-record__reason-text'>{record.reason}</Text>
-                  </View>
-
-                  {/* Time */}
-                  <Text className='bh-record__time'>{formatTime(record.createdAt)}</Text>
-
-                  {/* Expand hint */}
-                  <Text className='bh-record__expand-hint'>
-                    {isExpanded ? t('batchPoints.history.collapseDetail') : t('batchPoints.history.expandDetail')}
-                  </Text>
-                </View>
-
-                {/* Expanded Detail */}
-                {isExpanded && (
-                  <View className='bh-detail' onClick={(e) => e.stopPropagation()}>
-                    <Text className='bh-detail__header'>
-                      {t('batchPoints.history.detailHeader')} ({detail?.recipientDetails?.length || record.recipientIds.length})
-                    </Text>
-
-                    {detailLoading && !detail && (
-                      <Text className='bh-detail__loading'>{t('batchPoints.history.detailLoading')}</Text>
-                    )}
-
-                    {detailError && !detail && (
-                      <Text className='bh-detail__error'>{detailError}</Text>
-                    )}
-
-                    {detail?.recipientDetails?.map((recipient) => (
-                      <View key={recipient.userId} className='bh-recipient'>
-                        <View>
-                          <Text className='bh-recipient__nickname'>{recipient.nickname}</Text>
-                          <Text className='bh-recipient__email'>{recipient.email}</Text>
-                        </View>
+                return (
+                  <View
+                    key={record.distributionId}
+                    className={`bh-record ${isExpanded ? 'bh-record--expanded' : ''}`}
+                    onClick={() => handleToggleDetail(record.distributionId)}
+                  >
+                    <View className='bh-record__summary'>
+                      {/* Top: distributor + role badge */}
+                      <View className='bh-record__top'>
+                        <Text className='bh-record__distributor'>{record.distributorNickname}</Text>
+                        <Text className={`role-badge ${roleConfig?.className || ''}`}>
+                          {roleConfig ? t(roleConfig.labelKey) : record.targetRole}
+                        </Text>
                       </View>
-                    ))}
-                  </View>
-                )}
-              </View>
-            );
-          })}
 
-          {/* Load More */}
-          {lastKey && (
-            <View className='bh-list__load-more' onClick={handleLoadMore}>
-              <Text>{t('batchPoints.history.loadMore')}</Text>
+                      {/* Activity summary: type badge + UG + topic */}
+                      {record.activityTopic && (
+                        <View className='bh-activity-summary'>
+                          {record.activityType && (
+                            <Text className={`bh-activity-badge bh-activity-badge--${record.activityType === '线上活动' ? 'online' : 'offline'}`}>
+                              {record.activityType}
+                            </Text>
+                          )}
+                          {record.activityUG && (
+                            <Text className='bh-activity-summary__ug'>{record.activityUG}</Text>
+                          )}
+                          <Text className='bh-activity-summary__topic'>{record.activityTopic}</Text>
+                        </View>
+                      )}
+
+                      {/* Meta: recipient count + points per person */}
+                      <View className='bh-record__meta'>
+                        <Text className='bh-record__meta-item'>
+                          {t('batchPoints.history.recipientCount')}: <Text className='bh-record__meta-value'>{record.recipientIds.length}</Text>
+                        </Text>
+                        <Text className='bh-record__meta-item'>
+                          {t('batchPoints.history.pointsPerPerson')}: <Text className='bh-record__meta-highlight'>{record.points}</Text>
+                        </Text>
+                      </View>
+
+                      {/* Reason */}
+                      <View className='bh-record__reason-row'>
+                        <Text className='bh-record__reason-label'>{t('batchPoints.history.reason')}:</Text>
+                        <Text className='bh-record__reason-text'>{record.reason}</Text>
+                      </View>
+
+                      {/* Time */}
+                      <Text className='bh-record__time'>{formatTime(record.createdAt)}</Text>
+
+                      {/* Expand hint */}
+                      <Text className='bh-record__expand-hint'>
+                        {isExpanded ? t('batchPoints.history.collapseDetail') : t('batchPoints.history.expandDetail')}
+                      </Text>
+                    </View>
+
+                    {/* Expanded Detail */}
+                    {isExpanded && (
+                      <View className='bh-detail' onClick={(e) => e.stopPropagation()}>
+                        {/* Full activity info in detail view */}
+                        {record.activityTopic && (
+                          <View className='bh-activity-detail'>
+                            <Text className='bh-activity-detail__title'>{t('batchPoints.history.activityLabel' as any)}</Text>
+                            <View className='bh-activity-detail__grid'>
+                              <View className='bh-activity-detail__row'>
+                                <Text className='bh-activity-detail__label'>{t('batchPoints.history.activityTypeLabel' as any)}</Text>
+                                <Text className={`bh-activity-badge bh-activity-badge--${record.activityType === '线上活动' ? 'online' : 'offline'}`}>
+                                  {record.activityType || '-'}
+                                </Text>
+                              </View>
+                              <View className='bh-activity-detail__row'>
+                                <Text className='bh-activity-detail__label'>{t('batchPoints.history.activityUGLabel' as any)}</Text>
+                                <Text className='bh-activity-detail__value'>{record.activityUG || '-'}</Text>
+                              </View>
+                              <View className='bh-activity-detail__row'>
+                                <Text className='bh-activity-detail__label'>{t('batchPoints.history.activityTopicLabel' as any)}</Text>
+                                <Text className='bh-activity-detail__value'>{record.activityTopic}</Text>
+                              </View>
+                              <View className='bh-activity-detail__row'>
+                                <Text className='bh-activity-detail__label'>{t('batchPoints.history.activityDateLabel' as any)}</Text>
+                                <Text className='bh-activity-detail__value'>{record.activityDate || '-'}</Text>
+                              </View>
+                            </View>
+                          </View>
+                        )}
+
+                        <Text className='bh-detail__header'>
+                          {t('batchPoints.history.detailHeader')} ({detail?.recipientDetails?.length || record.recipientIds.length})
+                        </Text>
+
+                        {detailLoading && !detail && (
+                          <Text className='bh-detail__loading'>{t('batchPoints.history.detailLoading')}</Text>
+                        )}
+
+                        {detailError && !detail && (
+                          <Text className='bh-detail__error'>{detailError}</Text>
+                        )}
+
+                        {detail?.recipientDetails?.map((recipient) => (
+                          <View key={recipient.userId} className='bh-recipient'>
+                            <View>
+                              <Text className='bh-recipient__nickname'>{recipient.nickname}</Text>
+                              <Text className='bh-recipient__email'>{recipient.email}</Text>
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+
+              {/* Load More */}
+              {lastKey && (
+                <View className='bh-list__load-more' onClick={handleLoadMore}>
+                  <Text>{t('batchPoints.history.loadMore')}</Text>
+                </View>
+              )}
             </View>
           )}
-        </View>
+        </>
       )}
     </View>
   );

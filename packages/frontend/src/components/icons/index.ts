@@ -29,4 +29,7 @@ export { ClockIcon } from './ClockIcon';
 export { GlobeIcon } from './GlobeIcon';
 export { ContentIcon } from './ContentIcon';
 export { TagIcon } from './TagIcon';
+export { PlaneIcon } from './PlaneIcon';
+export { HelpIcon } from './HelpIcon';
 export { MailIcon } from './MailIcon';
+export { UsersIcon } from './UsersIcon';

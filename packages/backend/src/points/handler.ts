@@ -387,7 +387,7 @@ async function handleGetTravelQuota(event: AuthenticatedEvent): Promise<APIGatew
   const quota = await getTravelQuota(
     event.user.userId,
     dynamoClient,
-    { usersTable: USERS_TABLE, pointsRecordsTable: POINTS_RECORDS_TABLE },
+    { usersTable: USERS_TABLE, pointsRecordsTable: POINTS_RECORDS_TABLE, travelApplicationsTable: TRAVEL_APPLICATIONS_TABLE },
   );
 
   return jsonResponse(200, quota);

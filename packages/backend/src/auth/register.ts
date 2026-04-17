@@ -76,6 +76,23 @@ export async function registerUser(
 
   // 6. Create user record in DynamoDB with role from invite
   // Invite-based registration: email is pre-verified, no need for email verification flow
+  // Initialize leaderboard fields based on assigned roles so user appears in role-specific GSIs
+  const roleFieldMap: Record<string, string> = {
+    Speaker: 'earnTotalSpeaker',
+    UserGroupLeader: 'earnTotalLeader',
+    Volunteer: 'earnTotalVolunteer',
+  };
+  const leaderboardFields: Record<string, any> = {
+    pk: 'ALL',
+    earnTotal: 0,
+  };
+  for (const role of roles) {
+    const field = roleFieldMap[role];
+    if (field) {
+      leaderboardFields[field] = 0;
+    }
+  }
+
   const user = {
     userId,
     email: request.email,
@@ -88,6 +105,7 @@ export async function registerUser(
     status: 'active',
     createdAt: now,
     updatedAt: now,
+    ...leaderboardFields,
   };
 
   await dynamoClient.send(

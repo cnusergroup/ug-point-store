@@ -22,6 +22,8 @@ export class DatabaseStack extends cdk.Stack {
   public readonly travelApplicationsTable: dynamodb.Table;
   public readonly contentTagsTable: dynamodb.Table;
   public readonly emailTemplatesTable: dynamodb.Table;
+  public readonly ugsTable: dynamodb.Table;
+  public readonly activitiesTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -42,6 +44,33 @@ export class DatabaseStack extends cdk.Stack {
     this.usersTable.addGlobalSecondaryIndex({
       indexName: 'wechatOpenId-index',
       partitionKey: { name: 'wechatOpenId', type: dynamodb.AttributeType.STRING },
+    });
+
+    this.usersTable.addGlobalSecondaryIndex({
+      indexName: 'earnTotal-index',
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'earnTotal', type: dynamodb.AttributeType.NUMBER },
+    });
+
+    // Per-role earnTotal GSIs for role-specific leaderboards
+    // NOTE: DynamoDB only allows one GSI creation per CloudFormation update.
+    // Deploy these one at a time: Speaker first, then Leader, then Volunteer.
+    this.usersTable.addGlobalSecondaryIndex({
+      indexName: 'earnTotalSpeaker-index',
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'earnTotalSpeaker', type: dynamodb.AttributeType.NUMBER },
+    });
+
+    this.usersTable.addGlobalSecondaryIndex({
+      indexName: 'earnTotalLeader-index',
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'earnTotalLeader', type: dynamodb.AttributeType.NUMBER },
+    });
+
+    this.usersTable.addGlobalSecondaryIndex({
+      indexName: 'earnTotalVolunteer-index',
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'earnTotalVolunteer', type: dynamodb.AttributeType.NUMBER },
     });
 
     // Products table: PK=productId, GSI: type-status-index (PK=type, SK=status)
@@ -96,6 +125,12 @@ export class DatabaseStack extends cdk.Stack {
     this.pointsRecordsTable.addGlobalSecondaryIndex({
       indexName: 'userId-createdAt-index',
       partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+    });
+
+    this.pointsRecordsTable.addGlobalSecondaryIndex({
+      indexName: 'type-createdAt-index',
+      partitionKey: { name: 'type', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
     });
 
@@ -291,6 +326,18 @@ export class DatabaseStack extends cdk.Stack {
       partitionKey: { name: 'contentId', type: dynamodb.AttributeType.STRING },
     });
 
+    this.contentReservationsTable.addGlobalSecondaryIndex({
+      indexName: 'status-createdAt-index',
+      partitionKey: { name: 'status', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+    });
+
+    this.contentReservationsTable.addGlobalSecondaryIndex({
+      indexName: 'userId-activityId-index',
+      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'activityId', type: dynamodb.AttributeType.STRING },
+    });
+
     new cdk.CfnOutput(this, 'ContentReservationsTableName', { value: this.contentReservationsTable.tableName, exportName: 'PointsMall-ContentReservationsTableName' });
     new cdk.CfnOutput(this, 'ContentReservationsTableArn', { value: this.contentReservationsTable.tableArn, exportName: 'PointsMall-ContentReservationsTableArn' });
 
@@ -361,5 +408,49 @@ export class DatabaseStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'EmailTemplatesTableName', { value: this.emailTemplatesTable.tableName, exportName: 'PointsMall-EmailTemplatesTableName' });
     new cdk.CfnOutput(this, 'EmailTemplatesTableArn', { value: this.emailTemplatesTable.tableArn, exportName: 'PointsMall-EmailTemplatesTableArn' });
+
+    // UGs table: PK=ugId, GSI: name-index (PK=name), status-index (PK=status, SK=createdAt)
+    this.ugsTable = new dynamodb.Table(this, 'UGsTable', {
+      tableName: 'PointsMall-UGs',
+      partitionKey: { name: 'ugId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.ugsTable.addGlobalSecondaryIndex({
+      indexName: 'name-index',
+      partitionKey: { name: 'name', type: dynamodb.AttributeType.STRING },
+    });
+
+    this.ugsTable.addGlobalSecondaryIndex({
+      indexName: 'status-index',
+      partitionKey: { name: 'status', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+    });
+
+    new cdk.CfnOutput(this, 'UGsTableName', { value: this.ugsTable.tableName, exportName: 'PointsMall-UGsTableName' });
+    new cdk.CfnOutput(this, 'UGsTableArn', { value: this.ugsTable.tableArn, exportName: 'PointsMall-UGsTableArn' });
+
+    // Activities table: PK=activityId, GSI: activityDate-index (PK=pk, SK=activityDate), dedupeKey-index (PK=dedupeKey)
+    this.activitiesTable = new dynamodb.Table(this, 'ActivitiesTable', {
+      tableName: 'PointsMall-Activities',
+      partitionKey: { name: 'activityId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.activitiesTable.addGlobalSecondaryIndex({
+      indexName: 'activityDate-index',
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'activityDate', type: dynamodb.AttributeType.STRING },
+    });
+
+    this.activitiesTable.addGlobalSecondaryIndex({
+      indexName: 'dedupeKey-index',
+      partitionKey: { name: 'dedupeKey', type: dynamodb.AttributeType.STRING },
+    });
+
+    new cdk.CfnOutput(this, 'ActivitiesTableName', { value: this.activitiesTable.tableName, exportName: 'PointsMall-ActivitiesTableName' });
+    new cdk.CfnOutput(this, 'ActivitiesTableArn', { value: this.activitiesTable.tableArn, exportName: 'PointsMall-ActivitiesTableArn' });
   }
 }

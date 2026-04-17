@@ -1,8 +1,8 @@
 import {
   DynamoDBDocumentClient,
   GetCommand,
+  PutCommand,
   QueryCommand,
-  TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { ulid } from 'ulid';
 import type {
@@ -99,21 +99,16 @@ export function clampPageSize(pageSize?: number): number {
 /**
  * Calculate the number of available travel sponsorship applications.
  *
- * - threshold > 0 AND earnTotal >= travelEarnUsed → floor((earnTotal - travelEarnUsed) / threshold)
  * - threshold === 0 → 0
- * - travelEarnUsed > earnTotal → 0
+ * - threshold > 0 → max(0, floor(earnTotal / threshold) - categoryUsedCount)
  */
 export function calculateAvailableCount(
   earnTotal: number,
-  travelEarnUsed: number,
   threshold: number,
+  categoryUsedCount: number,
 ): number {
   if (threshold === 0) return 0;
-  if (travelEarnUsed > earnTotal) return 0;
-  if (threshold > 0 && earnTotal >= travelEarnUsed) {
-    return Math.floor((earnTotal - travelEarnUsed) / threshold);
-  }
-  return 0;
+  return Math.max(0, Math.floor(earnTotal / threshold) - categoryUsedCount);
 }
 
 /**
@@ -195,43 +190,66 @@ export function validateTravelApplicationInput(
 /**
  * Query the user's travel quota.
  *
- * 1. Sum all type="earn" PointsRecords for the user → earnTotal
- * 2. Read user record → travelEarnUsed (default 0)
- * 3. Read travel settings → thresholds
- * 4. Calculate and return TravelQuota
+ * 1. Sum all type="earn" AND targetRole="Speaker" PointsRecords for the user → earnTotal (Speaker-only)
+ * 2. Read travel settings → thresholds
+ * 3. Count pending+approved applications per category → domesticUsedCount, internationalUsedCount
+ * 4. Calculate available counts using independent formula
+ * 5. Return TravelQuota
+ *
+ * Note: earnTotal only includes points earned with the Speaker role.
+ * Points earned via other roles (UserGroupLeader, Volunteer, etc.) are excluded.
  */
 export async function getTravelQuota(
   userId: string,
   dynamoClient: DynamoDBDocumentClient,
-  tables: { usersTable: string; pointsRecordsTable: string },
+  tables: { usersTable: string; pointsRecordsTable: string; travelApplicationsTable: string },
 ): Promise<TravelQuota> {
   // 1. Calculate earnTotal by querying PointsRecords GSI
   const earnTotal = await queryEarnTotal(userId, dynamoClient, tables.pointsRecordsTable);
 
-  // 2. Read user record for travelEarnUsed
-  const userResult = await dynamoClient.send(
-    new GetCommand({
-      TableName: tables.usersTable,
-      Key: { userId },
-      ProjectionExpression: 'travelEarnUsed',
-    }),
-  );
-  const travelEarnUsed: number = userResult.Item?.travelEarnUsed ?? 0;
-
-  // 3. Read travel settings
+  // 2. Read travel settings
   const settings: TravelSponsorshipSettings = await getTravelSettings(dynamoClient, tables.usersTable);
 
-  // 4. Calculate available counts
-  const domesticAvailable = calculateAvailableCount(earnTotal, travelEarnUsed, settings.domesticThreshold);
-  const internationalAvailable = calculateAvailableCount(earnTotal, travelEarnUsed, settings.internationalThreshold);
+  // 3. Count used (pending + approved) applications per category
+  let domesticUsedCount = 0;
+  let internationalUsedCount = 0;
+  let appStartKey: Record<string, any> | undefined;
+  do {
+    const appResult = await dynamoClient.send(
+      new QueryCommand({
+        TableName: tables.travelApplicationsTable,
+        IndexName: 'userId-createdAt-index',
+        KeyConditionExpression: 'userId = :uid',
+        FilterExpression: '#s IN (:pending, :approved)',
+        ExpressionAttributeNames: { '#s': 'status' },
+        ExpressionAttributeValues: {
+          ':uid': userId,
+          ':pending': 'pending',
+          ':approved': 'approved',
+        },
+        ProjectionExpression: 'category',
+        ...(appStartKey && { ExclusiveStartKey: appStartKey }),
+      }),
+    );
+    for (const item of appResult.Items ?? []) {
+      if (item.category === 'domestic') domesticUsedCount++;
+      else if (item.category === 'international') internationalUsedCount++;
+    }
+    appStartKey = appResult.LastEvaluatedKey;
+  } while (appStartKey);
+
+  // 4. Calculate available counts using independent formula
+  const domesticAvailable = calculateAvailableCount(earnTotal, settings.domesticThreshold, domesticUsedCount);
+  const internationalAvailable = calculateAvailableCount(earnTotal, settings.internationalThreshold, internationalUsedCount);
 
   return {
-    earnTotal,
-    travelEarnUsed,
+    speakerEarnTotal: earnTotal,
     domesticAvailable,
     internationalAvailable,
     domesticThreshold: settings.domesticThreshold,
     internationalThreshold: settings.internationalThreshold,
+    domesticUsedCount,
+    internationalUsedCount,
   };
 }
 
@@ -239,13 +257,11 @@ export async function getTravelQuota(
  * Submit a travel sponsorship application.
  *
  * 1. Verify travelSponsorshipEnabled is true
- * 2. Calculate earnTotal and read user's travelEarnUsed
- * 3. Read travel settings to get the threshold for the input category
- * 4. Calculate available count; if < 1, return INSUFFICIENT_EARN_QUOTA error
- * 5. Use TransactWriteCommand to atomically:
- *    a. Create TravelApplication record (ULID as applicationId, status=pending)
- *    b. Update user's travelEarnUsed += threshold (with ConditionExpression)
- * 6. Return the created application record
+ * 2. Calculate earnTotal (queryEarnTotal)
+ * 3. Get threshold for the requested category
+ * 4. Count pending+approved applications for the target category
+ * 5. Calculate available count and check sufficiency
+ * 6. Create application record with single PutCommand (no TransactWriteCommand, no user record update)
  */
 export async function submitTravelApplication(
   input: SubmitTravelApplicationInput,
@@ -264,23 +280,38 @@ export async function submitTravelApplication(
   // 2. Calculate earnTotal
   const earnTotal = await queryEarnTotal(input.userId, dynamoClient, tables.pointsRecordsTable);
 
-  // 3. Read user's travelEarnUsed
-  const userResult = await dynamoClient.send(
-    new GetCommand({
-      TableName: tables.usersTable,
-      Key: { userId: input.userId },
-      ProjectionExpression: 'travelEarnUsed',
-    }),
-  );
-  const travelEarnUsed: number = userResult.Item?.travelEarnUsed ?? 0;
-
-  // 4. Get threshold for the requested category
+  // 3. Get threshold for the requested category
   const threshold = input.category === 'domestic'
     ? settings.domesticThreshold
     : settings.internationalThreshold;
 
+  // 4. Count pending+approved applications for the target category
+  let categoryUsedCount = 0;
+  let appStartKey: Record<string, any> | undefined;
+  do {
+    const appResult = await dynamoClient.send(
+      new QueryCommand({
+        TableName: tables.travelApplicationsTable,
+        IndexName: 'userId-createdAt-index',
+        KeyConditionExpression: 'userId = :uid',
+        FilterExpression: '#s IN (:pending, :approved) AND category = :cat',
+        ExpressionAttributeNames: { '#s': 'status' },
+        ExpressionAttributeValues: {
+          ':uid': input.userId,
+          ':pending': 'pending',
+          ':approved': 'approved',
+          ':cat': input.category,
+        },
+        ProjectionExpression: 'category',
+        ...(appStartKey && { ExclusiveStartKey: appStartKey }),
+      }),
+    );
+    categoryUsedCount += (appResult.Items ?? []).length;
+    appStartKey = appResult.LastEvaluatedKey;
+  } while (appStartKey);
+
   // 5. Calculate available count and check sufficiency
-  const availableCount = calculateAvailableCount(earnTotal, travelEarnUsed, threshold);
+  const availableCount = calculateAvailableCount(earnTotal, threshold, categoryUsedCount);
   if (availableCount < 1) {
     return {
       success: false,
@@ -288,7 +319,7 @@ export async function submitTravelApplication(
     };
   }
 
-  // 6. Atomic transaction: create application + deduct quota
+  // 6. Create application record with single PutCommand
   const now = new Date().toISOString();
   const applicationId = ulid();
   const totalCost = input.flightCost + input.hotelCost;
@@ -305,37 +336,14 @@ export async function submitTravelApplication(
     hotelCost: input.hotelCost,
     totalCost,
     status: 'pending',
-    earnDeducted: threshold,
     createdAt: now,
     updatedAt: now,
   };
 
   await dynamoClient.send(
-    new TransactWriteCommand({
-      TransactItems: [
-        // a. Create TravelApplication record
-        {
-          Put: {
-            TableName: tables.travelApplicationsTable,
-            Item: application,
-          },
-        },
-        // b. Update user's travelEarnUsed += threshold
-        {
-          Update: {
-            TableName: tables.usersTable,
-            Key: { userId: input.userId },
-            UpdateExpression: 'SET travelEarnUsed = if_not_exists(travelEarnUsed, :zero) + :threshold, updatedAt = :now',
-            ConditionExpression: 'attribute_not_exists(travelEarnUsed) OR travelEarnUsed <= :maxAllowed',
-            ExpressionAttributeValues: {
-              ':threshold': threshold,
-              ':zero': 0,
-              ':now': now,
-              ':maxAllowed': earnTotal - threshold,
-            },
-          },
-        },
-      ],
+    new PutCommand({
+      TableName: tables.travelApplicationsTable,
+      Item: application,
     }),
   );
 
@@ -404,13 +412,11 @@ export async function listMyTravelApplications(
  * 3. Verify the application belongs to the current user (FORBIDDEN if not)
  * 4. Verify the application status is "rejected" (INVALID_APPLICATION_STATUS if not)
  * 5. Re-validate all input fields
- * 6. Calculate earnTotal and read user's travelEarnUsed
- * 7. Get the new threshold for the new category
- * 8. Check if available count >= 1 (INSUFFICIENT_EARN_QUOTA if not)
- * 9. Use TransactWriteCommand to atomically:
- *    a. Update the TravelApplication record (all fields, status=pending, earnDeducted=new threshold, clear rejectReason/reviewerId/reviewerNickname/reviewedAt)
- *    b. Update user's travelEarnUsed += new threshold (with ConditionExpression)
- * 10. Return the updated application record
+ * 6. Calculate earnTotal (queryEarnTotal)
+ * 7. Get travel settings and new threshold
+ * 8. Count pending+approved applications for the new category
+ * 9. Calculate available count and check sufficiency
+ * 10. Create updated application record with single PutCommand
  */
 export async function resubmitTravelApplication(
   input: ResubmitTravelApplicationInput,
@@ -464,28 +470,43 @@ export async function resubmitTravelApplication(
     return { success: false, error: validation.error };
   }
 
-  // 6. Calculate earnTotal and read user's travelEarnUsed
+  // 6. Calculate earnTotal
   const earnTotal = await queryEarnTotal(input.userId, dynamoClient, tables.pointsRecordsTable);
 
-  const userResult = await dynamoClient.send(
-    new GetCommand({
-      TableName: tables.usersTable,
-      Key: { userId: input.userId },
-      ProjectionExpression: 'travelEarnUsed',
-    }),
-  );
-  const travelEarnUsed: number = userResult.Item?.travelEarnUsed ?? 0;
-
-  // 7. Get the new threshold for the new category
+  // 7. Get travel settings and new threshold
   const settings = await getTravelSettings(dynamoClient, tables.usersTable);
   const newThreshold = input.category === 'domestic'
     ? settings.domesticThreshold
     : settings.internationalThreshold;
 
-  // 8. Check if available count >= 1
-  // Since rejected applications have already had their quota returned,
-  // we need to check if the user can afford the new threshold
-  const availableCount = calculateAvailableCount(earnTotal, travelEarnUsed, newThreshold);
+  // 8. Count pending+approved applications for the new category
+  // The current rejected application won't be counted since its status is 'rejected'
+  let categoryUsedCount = 0;
+  let appStartKey: Record<string, any> | undefined;
+  do {
+    const appResult = await dynamoClient.send(
+      new QueryCommand({
+        TableName: tables.travelApplicationsTable,
+        IndexName: 'userId-createdAt-index',
+        KeyConditionExpression: 'userId = :uid',
+        FilterExpression: '#s IN (:pending, :approved) AND category = :cat',
+        ExpressionAttributeNames: { '#s': 'status' },
+        ExpressionAttributeValues: {
+          ':uid': input.userId,
+          ':pending': 'pending',
+          ':approved': 'approved',
+          ':cat': input.category,
+        },
+        ProjectionExpression: 'category',
+        ...(appStartKey && { ExclusiveStartKey: appStartKey }),
+      }),
+    );
+    categoryUsedCount += (appResult.Items ?? []).length;
+    appStartKey = appResult.LastEvaluatedKey;
+  } while (appStartKey);
+
+  // 9. Calculate available count and check sufficiency
+  const availableCount = calculateAvailableCount(earnTotal, newThreshold, categoryUsedCount);
   if (availableCount < 1) {
     return {
       success: false,
@@ -493,7 +514,7 @@ export async function resubmitTravelApplication(
     };
   }
 
-  // 9. Atomic transaction: update application + deduct new quota
+  // 10. Create updated application record with single PutCommand
   const now = new Date().toISOString();
   const totalCost = input.flightCost + input.hotelCost;
 
@@ -509,40 +530,14 @@ export async function resubmitTravelApplication(
     hotelCost: input.hotelCost,
     totalCost,
     status: 'pending',
-    earnDeducted: newThreshold,
     createdAt: existingApp.createdAt,
     updatedAt: now,
   };
 
   await dynamoClient.send(
-    new TransactWriteCommand({
-      TransactItems: [
-        // a. Update the TravelApplication record
-        {
-          Put: {
-            TableName: tables.travelApplicationsTable,
-            Item: updatedApplication,
-            ConditionExpression: 'attribute_exists(applicationId) AND #s = :rejected',
-            ExpressionAttributeNames: { '#s': 'status' },
-            ExpressionAttributeValues: { ':rejected': 'rejected' },
-          },
-        },
-        // b. Update user's travelEarnUsed += new threshold
-        {
-          Update: {
-            TableName: tables.usersTable,
-            Key: { userId: input.userId },
-            UpdateExpression: 'SET travelEarnUsed = if_not_exists(travelEarnUsed, :zero) + :threshold, updatedAt = :now',
-            ConditionExpression: 'attribute_not_exists(travelEarnUsed) OR travelEarnUsed <= :maxAllowed',
-            ExpressionAttributeValues: {
-              ':threshold': newThreshold,
-              ':zero': 0,
-              ':now': now,
-              ':maxAllowed': earnTotal - newThreshold,
-            },
-          },
-        },
-      ],
+    new PutCommand({
+      TableName: tables.travelApplicationsTable,
+      Item: updatedApplication,
     }),
   );
 
@@ -564,8 +559,10 @@ function isValidUrl(url: string): boolean {
 }
 
 /**
- * Query all type="earn" PointsRecords for a user and sum the amount.
- * Uses the `userId-createdAt-index` GSI with a FilterExpression on type.
+ * Query all type="earn" AND targetRole="Speaker" PointsRecords for a user and sum the amount.
+ * Uses the `userId-createdAt-index` GSI with a FilterExpression on type and targetRole.
+ * Only Speaker role earn records are included; records with other targetRole values
+ * (e.g. UserGroupLeader, Volunteer) or missing targetRole are excluded.
  */
 async function queryEarnTotal(
   userId: string,
@@ -581,9 +578,9 @@ async function queryEarnTotal(
         TableName: pointsRecordsTable,
         IndexName: 'userId-createdAt-index',
         KeyConditionExpression: 'userId = :uid',
-        FilterExpression: '#t = :earn',
-        ExpressionAttributeNames: { '#t': 'type' },
-        ExpressionAttributeValues: { ':uid': userId, ':earn': 'earn' },
+        FilterExpression: '#t = :earn AND #tr = :speaker',
+        ExpressionAttributeNames: { '#t': 'type', '#tr': 'targetRole' },
+        ExpressionAttributeValues: { ':uid': userId, ':earn': 'earn', ':speaker': 'Speaker' },
         ProjectionExpression: 'amount',
         ...(exclusiveStartKey && { ExclusiveStartKey: exclusiveStartKey }),
       }),

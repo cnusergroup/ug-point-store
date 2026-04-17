@@ -5,6 +5,7 @@ import { useAppStore } from '../../store';
 import { request } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { ContentIcon } from '../../components/icons';
+import { useTranslation } from '../../i18n';
 import './email-content.scss';
 
 interface ContentItem {
@@ -30,6 +31,7 @@ interface SendResult {
 }
 
 export default function EmailContentPage() {
+  const { t } = useTranslation();
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
   const user = useAppStore((s) => s.user);
 
@@ -142,9 +144,9 @@ export default function EmailContentPage() {
       });
 
       // Use zh locale template as default preview
-      const zhTemplate = res.templates.find((t) => t.locale === 'zh');
+      const zhTemplate = res.templates.find((tpl) => tpl.locale === 'zh');
       if (!zhTemplate) {
-        Taro.showToast({ title: '未找到模板', icon: 'none' });
+        Taro.showToast({ title: t('emailNotification.noTemplate'), icon: 'none' });
         return;
       }
 
@@ -159,7 +161,7 @@ export default function EmailContentPage() {
       setPreviewBody(body);
       setShowPreview(true);
     } catch {
-      Taro.showToast({ title: '加载模板失败', icon: 'none' });
+      Taro.showToast({ title: t('emailNotification.templateLoadFailed'), icon: 'none' });
     }
   };
 
@@ -178,7 +180,7 @@ export default function EmailContentPage() {
       });
       setSendResult(res);
     } catch {
-      Taro.showToast({ title: '发送失败', icon: 'none' });
+      Taro.showToast({ title: t('emailNotification.sendFailed'), icon: 'none' });
     } finally {
       setSending(false);
     }
@@ -200,16 +202,16 @@ export default function EmailContentPage() {
       {/* Toolbar */}
       <View className='email-content__toolbar'>
         <View className='email-content__back' onClick={handleBack}>
-          <Text>← 返回</Text>
+          <Text>{t('emailNotification.backButton')}</Text>
         </View>
-        <Text className='email-content__title'>新内容邮件通知</Text>
+        <Text className='email-content__title'>{t('emailNotification.contentPageTitle')}</Text>
         <View style={{ width: '60px' }} />
       </View>
 
       {/* Loading */}
       {loading && (
         <View className='admin-loading'>
-          <Text>加载中...</Text>
+          <Text>{t('emailNotification.loading')}</Text>
         </View>
       )}
 
@@ -220,7 +222,7 @@ export default function EmailContentPage() {
             <ContentIcon size={48} color='var(--text-tertiary)' />
           </Text>
           <Text className='email-content__disabled-text'>
-            新内容邮件通知功能已关闭，请在设置中开启「新内容通知」开关后再使用此功能。
+            {t('emailNotification.disabledContentMessage')}
           </Text>
         </View>
       )}
@@ -228,31 +230,31 @@ export default function EmailContentPage() {
       {/* Send result summary */}
       {!loading && sendResult && (
         <View className='ec-result'>
-          <Text className='ec-result__title'>发送结果</Text>
+          <Text className='ec-result__title'>{t('emailNotification.sendResult')}</Text>
           <View className='ec-result__grid'>
             <View className='ec-result__item'>
-              <Text className='ec-result__label'>订阅用户数</Text>
+              <Text className='ec-result__label'>{t('emailNotification.resultSubscribers')}</Text>
               <Text className='ec-result__value'>{sendResult.subscriberCount}</Text>
             </View>
             <View className='ec-result__item'>
-              <Text className='ec-result__label'>总批次</Text>
+              <Text className='ec-result__label'>{t('emailNotification.resultTotalBatches')}</Text>
               <Text className='ec-result__value'>{sendResult.totalBatches}</Text>
             </View>
             <View className='ec-result__item'>
-              <Text className='ec-result__label'>成功批次</Text>
+              <Text className='ec-result__label'>{t('emailNotification.resultSuccess')}</Text>
               <Text className='ec-result__value ec-result__value--success'>
                 {sendResult.successCount}
               </Text>
             </View>
             <View className='ec-result__item'>
-              <Text className='ec-result__label'>失败批次</Text>
+              <Text className='ec-result__label'>{t('emailNotification.resultFailure')}</Text>
               <Text className='ec-result__value ec-result__value--error'>
                 {sendResult.failureCount}
               </Text>
             </View>
           </View>
           <View className='ec-result__close' onClick={() => setSendResult(null)}>
-            <Text>关闭</Text>
+            <Text>{t('emailNotification.resultClose')}</Text>
           </View>
         </View>
       )}
@@ -269,7 +271,7 @@ export default function EmailContentPage() {
                 {allSelected && <Text className='ec-row__check-mark'>✓</Text>}
               </View>
               <Text>
-                {allSelected ? '取消全选' : '全选'} ({selectedIds.size}/{contentItems.length})
+                {allSelected ? t('emailNotification.deselectAll') : t('emailNotification.selectAll')} ({selectedIds.size}/{contentItems.length})
               </Text>
             </View>
             <View className='email-content__buttons'>
@@ -277,13 +279,13 @@ export default function EmailContentPage() {
                 className={`email-content__btn email-content__btn--preview ${!hasSelection ? 'email-content__btn--disabled' : ''}`}
                 onClick={hasSelection ? handlePreview : undefined}
               >
-                <Text>预览</Text>
+                <Text>{t('emailNotification.preview')}</Text>
               </View>
               <View
                 className={`email-content__btn email-content__btn--send ${!hasSelection ? 'email-content__btn--disabled' : ''} ${sending ? 'email-content__btn--loading' : ''}`}
                 onClick={hasSelection && !sending ? handleSend : undefined}
               >
-                <Text>{sending ? '发送中...' : '发送通知'}</Text>
+                <Text>{sending ? t('emailNotification.sending') : t('emailNotification.send')}</Text>
               </View>
             </View>
           </View>
@@ -292,7 +294,7 @@ export default function EmailContentPage() {
           {contentItems.length > 0 && (
             <View className='email-content__list'>
               <Text className='email-content__count'>
-                最近 7 天已审核内容（{contentItems.length} 篇）
+                {t('emailNotification.contentCount', { count: contentItems.length })}
               </Text>
 
               {contentItems.map((item) => {
@@ -320,7 +322,7 @@ export default function EmailContentPage() {
                           {formatDate(item.createdAt)}
                         </Text>
                         <Text className='ec-row__status ec-row__status--approved'>
-                          已审核
+                          {t('emailNotification.statusApproved')}
                         </Text>
                       </View>
                     </View>
@@ -337,7 +339,7 @@ export default function EmailContentPage() {
                 <ContentIcon size={48} color='var(--text-tertiary)' />
               </Text>
               <Text className='admin-empty__text'>
-                最近 7 天没有已审核的新内容
+                {t('emailNotification.noRecentContent')}
               </Text>
             </View>
           )}
@@ -349,7 +351,7 @@ export default function EmailContentPage() {
         <View className='ec-preview'>
           <View className='ec-preview__modal'>
             <View className='ec-preview__header'>
-              <Text className='ec-preview__title'>邮件预览</Text>
+              <Text className='ec-preview__title'>{t('emailNotification.previewTitle')}</Text>
               <View
                 className='ec-preview__close'
                 onClick={() => setShowPreview(false)}
@@ -358,7 +360,7 @@ export default function EmailContentPage() {
               </View>
             </View>
             <View className='ec-preview__subject'>
-              <Text className='ec-preview__subject-label'>主题</Text>
+              <Text className='ec-preview__subject-label'>{t('emailNotification.previewSubject')}</Text>
               <Text className='ec-preview__subject-text'>{previewSubject}</Text>
             </View>
             <View className='ec-preview__body'>

@@ -72,10 +72,11 @@ async function handleListProducts(event: AuthenticatedEvent): Promise<APIGateway
   const params = event.queryStringParameters ?? {};
   const type = params.type as 'points' | 'code_exclusive' | undefined;
   const roleFilter = params.roleFilter as UserRole | undefined;
+  const includeInactive = params.includeInactive === 'true';
   const userRoles = event.user.roles as UserRole[];
 
   const result = await listProducts(
-    { type, roleFilter, userRoles },
+    { type, roleFilter, userRoles, includeInactive },
     dynamoClient,
     PRODUCTS_TABLE,
   );

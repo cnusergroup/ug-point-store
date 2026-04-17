@@ -67,7 +67,7 @@ describe('getProductDetail', () => {
     expect(result.error!.code).toBe('PRODUCT_NOT_FOUND');
   });
 
-  it('should return 404 error when product is inactive', async () => {
+  it('should return product detail when product is inactive', async () => {
     const product = {
       productId: 'p3',
       name: '下架商品',
@@ -85,8 +85,40 @@ describe('getProductDetail', () => {
     const client = createMockDynamoClient(product);
     const result = await getProductDetail('p3', client, tableName);
 
-    expect(result.success).toBe(false);
-    expect(result.error!.code).toBe('PRODUCT_NOT_FOUND');
+    expect(result.success).toBe(true);
+    expect(result.data).toBeDefined();
+    expect(result.data!.productId).toBe('p3');
+    expect(result.data!.status).toBe('inactive');
+    expect(result.data!.type).toBe('points');
+    expect((result.data as any).pointsCost).toBe(200);
+    expect((result.data as any).allowedRoles).toBe('all');
+    expect(result.error).toBeUndefined();
+  });
+
+  it('should return product detail for inactive code_exclusive product', async () => {
+    const product = {
+      productId: 'p10',
+      name: '下架 Code 专属',
+      description: 'desc',
+      imageUrl: 'img',
+      type: 'code_exclusive',
+      status: 'inactive',
+      stock: 0,
+      redemptionCount: 3,
+      eventInfo: '2023 年度大会',
+      createdAt: '2024-01-01T00:00:00.000Z',
+      updatedAt: '2024-01-01T00:00:00.000Z',
+    };
+    const client = createMockDynamoClient(product);
+    const result = await getProductDetail('p10', client, tableName);
+
+    expect(result.success).toBe(true);
+    expect(result.data).toBeDefined();
+    expect(result.data!.productId).toBe('p10');
+    expect(result.data!.status).toBe('inactive');
+    expect(result.data!.type).toBe('code_exclusive');
+    expect((result.data as any).eventInfo).toBe('2023 年度大会');
+    expect(result.error).toBeUndefined();
   });
 
   it('should use GetCommand with correct table and key', async () => {

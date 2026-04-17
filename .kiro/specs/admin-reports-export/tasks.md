@@ -1,0 +1,261 @@
+# Implementation Plan: Admin Reports Export
+
+## Overview
+
+Implement SuperAdmin-only report querying and CSV/Excel export for four report types: points detail, UG activity summary, user points ranking, and activity points summary. Backend modules handle DynamoDB queries, in-memory aggregation, and S3 file export with presigned URLs. Frontend adds a new Taro H5 reports page with 4 tabs, filters, data tables, and export buttons. Includes CDK permission expansion, SheetJS dependency, i18n for 5 languages, and Taro page registration.
+
+## Tasks
+
+- [x] 1. Install SheetJS dependency and set up reports module structure
+  - [x] 1.1 Install `xlsx` npm package in `packages/backend`
+    - Run `npm install xlsx` in the backend package
+    - _Requirements: 10.2_
+  - [x] 1.2 Create `packages/backend/src/reports/` directory with empty files: `query.ts`, `export.ts`, `formatters.ts`
+    - Set up module scaffolding with placeholder exports
+    - _Requirements: 18.1_
+
+- [x] 2. Implement report query module (`packages/backend/src/reports/query.ts`)
+  - [x] 2.1 Define TypeScript interfaces for all report types
+    - `PointsDetailFilter`, `PointsDetailRecord`, `PointsDetailResult`
+    - `UGActivityFilter`, `UGActivitySummaryRecord`, `UGActivitySummaryResult`
+    - `UserRankingFilter`, `UserRankingRecord`, `UserRankingResult`
+    - `ActivitySummaryFilter`, `ActivitySummaryRecord`, `ActivitySummaryResult`
+    - Export `clampPageSize` utility function (default 20, range [1, 100]; default 50 for user ranking)
+    - Export `applyDefaultDateRange` utility that defaults to 30 days when no dates provided
+    - _Requirements: 2.1, 2.2, 2.4, 2.5, 4.1, 4.2, 6.1, 6.2, 6.4, 6.5, 8.1, 8.2, 8.4_
+  - [x] 2.2 Implement `queryPointsDetail` function
+    - Use `type-createdAt-index` GSI: query earn and spend separately when type=all, merge and sort by createdAt desc
+    - Apply FilterExpression for ugName, targetRole, activityId
+    - BatchGetCommand from Users table for nickname lookup
+    - Query BatchDistributions table for distributorNickname
+    - Support lastKey cursor pagination
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
+  - [x] 2.3 Implement `queryUGActivitySummary` function
+    - Query `type-createdAt-index` GSI with type='earn' and date range
+    - Aggregate in-memory by activityUG: activityCount (distinct activityId), totalPoints (sum amount), participantCount (distinct userId)
+    - Sort by totalPoints descending
+    - _Requirements: 4.1, 4.2, 4.3, 4.4_
+  - [x] 2.4 Implement `queryUserPointsRanking` function
+    - Query `type-createdAt-index` GSI with type='earn' and date range
+    - Optional FilterExpression for targetRole
+    - Aggregate in-memory by userId: totalEarnPoints (sum amount)
+    - BatchGetCommand from Users table for nickname
+    - Sort by totalEarnPoints descending, assign sequential rank starting from 1
+    - In-memory pagination with offset-based approach
+    - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
+  - [x] 2.5 Implement `queryActivityPointsSummary` function
+    - Query `type-createdAt-index` GSI with type='earn' and date range
+    - Optional FilterExpression for activityUG
+    - Aggregate in-memory by activityId: totalPoints, participantCount, uglCount/speakerCount/volunteerCount (distinct userId per targetRole)
+    - Extract activityTopic, activityDate, activityUG from records
+    - Sort by activityDate descending
+    - _Requirements: 8.1, 8.2, 8.3, 8.4_
+  - [x] 2.6 Write property test: SuperAdmin permission check (`packages/backend/src/reports/query.property.test.ts`)
+    - **Property 1: SuperAdmin permission check**
+    - Use fast-check to generate arbitrary role arrays; verify access granted iff roles contains 'SuperAdmin'
+    - **Validates: Requirements 1.1**
+  - [x] 2.7 Write property test: Points detail filter correctness
+    - **Property 2: Points detail filter correctness**
+    - Generate arrays of PointsRecord objects and random filter combinations; verify filtered result matches ALL active criteria
+    - **Validates: Requirements 2.2, 4.2, 6.2, 8.2**
+  - [x] 2.8 Write property test: Report output sorting correctness
+    - **Property 3: Report output sorting correctness**
+    - Generate non-empty arrays of report records; verify adjacent elements satisfy sort order invariant
+    - **Validates: Requirements 2.3, 4.3, 6.3, 8.3**
+  - [x] 2.9 Write property test: Pagination pageSize clamping
+    - **Property 4: Pagination pageSize clamping**
+    - Generate arbitrary pageSize values (undefined, negative, zero, >100); verify effective pageSize in [1, 100] with correct defaults
+    - **Validates: Requirements 2.4, 6.4**
+
+- [x] 3. Implement aggregation property tests
+  - [x] 3.1 Write property test: UG aggregation correctness (`packages/backend/src/reports/query.property.test.ts`)
+    - **Property 5: UG aggregation correctness**
+    - Generate arrays of earn-type records; verify one record per unique activityUG with correct activityCount, totalPoints, participantCount
+    - **Validates: Requirements 4.1**
+  - [x] 3.2 Write property test: User ranking aggregation correctness
+    - **Property 6: User ranking aggregation correctness**
+    - Generate arrays of earn-type records; verify one record per unique userId with correct totalEarnPoints and sequential rank
+    - **Validates: Requirements 6.1**
+  - [x] 3.3 Write property test: Activity aggregation correctness
+    - **Property 7: Activity aggregation correctness**
+    - Generate arrays of earn-type records; verify one record per unique activityId with correct totalPoints, participantCount, and role-specific counts
+    - **Validates: Requirements 8.1**
+
+- [x] 4. Checkpoint — Verify query module compiles and tests pass
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 5. Implement formatters module (`packages/backend/src/reports/formatters.ts`)
+  - [x] 5.1 Implement column definitions and format functions
+    - `getColumnDefs(reportType)` returning `ColumnDef[]` with Chinese labels for each report type
+    - `formatPointsDetailForExport`, `formatUGSummaryForExport`, `formatUserRankingForExport`, `formatActivitySummaryForExport`
+    - Format createdAt as `YYYY-MM-DD HH:mm:ss`, type as "获取"/"消费"
+    - _Requirements: 13.1, 14.1, 15.1, 16.1_
+  - [x] 5.2 Implement `generateCSV` function
+    - UTF-8 BOM prefix (`\uFEFF`) + comma-separated values
+    - Chinese column names as header row
+    - Proper escaping for values containing commas or quotes
+    - _Requirements: 10.2, 13.3, 14.3, 15.3, 16.3_
+  - [x] 5.3 Implement `generateExcel` function
+    - Use SheetJS `xlsx` library to create workbook with single sheet
+    - Bold header row styling
+    - Return Buffer for S3 upload
+    - _Requirements: 10.2, 13.2, 14.2, 15.2, 16.2_
+  - [x] 5.4 Write property test: CSV generation round-trip (`packages/backend/src/reports/formatters.property.test.ts`)
+    - **Property 8: CSV generation round-trip**
+    - Generate arrays of record objects and column definitions; verify CSV parse produces same row count and matching values
+    - **Validates: Requirements 10.2, 13.1, 13.3**
+  - [x] 5.5 Write property test: Export field completeness
+    - **Property 9: Export field completeness**
+    - Generate non-empty arrays of records for each report type; verify formatted export rows contain all defined columns with no undefined values
+    - **Validates: Requirements 13.1, 14.1, 15.1, 16.1**
+
+- [x] 6. Implement export module (`packages/backend/src/reports/export.ts`)
+  - [x] 6.1 Implement `validateExportInput` function
+    - Validate reportType is one of the 4 allowed types
+    - Validate format is 'csv' or 'xlsx'
+    - Validate filters object structure
+    - _Requirements: 18.3_
+  - [x] 6.2 Implement `executeExport` function
+    - Query full dataset using query module (paginated DynamoDB reads, max 1000 per page)
+    - Enforce 50,000 record limit (return EXPORT_LIMIT_EXCEEDED error)
+    - Implement timeout detection with `isApproachingTimeout` (1 minute buffer before 15-min Lambda limit)
+    - Format records using formatters module
+    - Generate CSV or Excel buffer
+    - Upload to S3 at `exports/{reportType}/{timestamp}_{randomId}.{csv|xlsx}`
+    - Generate 30-minute presigned download URL using `@aws-sdk/s3-request-presigner`
+    - Return presigned URL
+    - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 11.1, 11.2, 11.3_
+  - [x] 6.3 Write unit tests for export module (`packages/backend/src/reports/export.test.ts`)
+    - Test validateExportInput with valid/invalid inputs
+    - Test EXPORT_LIMIT_EXCEEDED error when records exceed 50,000
+    - Test isApproachingTimeout logic
+    - Test S3 upload and presigned URL generation with mocked clients
+    - _Requirements: 10.3, 10.4, 11.2, 11.3_
+
+- [x] 7. Register report routes in Admin Handler (`packages/backend/src/admin/handler.ts`)
+  - [x] 7.1 Add imports for report query and export modules
+    - Import `queryPointsDetail`, `queryUGActivitySummary`, `queryUserPointsRanking`, `queryActivityPointsSummary` from `../reports/query`
+    - Import `executeExport`, `validateExportInput` from `../reports/export`
+    - _Requirements: 18.1_
+  - [x] 7.2 Register 5 new routes in the handler switch/if-else chain
+    - GET `/api/admin/reports/points-detail` → parse query string filters → `queryPointsDetail`
+    - GET `/api/admin/reports/ug-activity-summary` → parse query string filters → `queryUGActivitySummary`
+    - GET `/api/admin/reports/user-points-ranking` → parse query string filters → `queryUserPointsRanking`
+    - GET `/api/admin/reports/activity-points-summary` → parse query string filters → `queryActivityPointsSummary`
+    - POST `/api/admin/reports/export` → parse body → `validateExportInput` → `executeExport`
+    - All routes: check `isSuperAdmin(user.roles)`, return 403 if not
+    - Pass `Date.now()` as `lambdaStartTime` to `executeExport` for timeout detection
+    - _Requirements: 18.1, 18.2, 18.3_
+  - [x] 7.3 Write unit tests for handler routes (`packages/backend/src/admin/handler.test.ts`)
+    - Test SuperAdmin access granted and non-SuperAdmin 403 for each report route
+    - Test query string parameter parsing for GET routes
+    - Test POST body parsing for export route
+    - _Requirements: 1.1, 18.1, 18.2_
+
+- [x] 8. Checkpoint — Verify backend compiles and all tests pass
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 9. Expand CDK S3 permissions for exports
+  - [x] 9.1 Update CDK stack to grant Admin Lambda `s3:PutObject` and `s3:GetObject` on `exports/*` prefix of IMAGES_BUCKET
+    - Locate the `configureImagesBucket` or equivalent permission setup in the API/Lambda stack
+    - Add IAM policy statement for `arn:aws:s3:::${imagesBucket}/exports/*` with PutObject and GetObject actions
+    - _Requirements: 19.2_
+
+- [x] 10. Register reports page in Taro app config
+  - [x] 10.1 Add `'pages/admin/reports'` to the `pages` array in `packages/frontend/src/app.config.ts`
+    - Place it after the existing admin pages
+    - _Requirements: 17.1_
+
+- [x] 11. Add i18n translations for reports feature (5 languages)
+  - [x] 11.1 Add translation keys to `packages/frontend/src/i18n/zh.ts` (简体中文)
+    - Keys: `admin.dashboard.reportsTitle`, `admin.dashboard.reportsDesc`, `admin.reports.*` (page title, tab labels, filter labels, column names, export buttons, loading/error/empty states)
+    - _Requirements: 20.1, 20.2_
+  - [x] 11.2 Add translation keys to `packages/frontend/src/i18n/en.ts` (English)
+    - _Requirements: 20.2_
+  - [x] 11.3 Add translation keys to `packages/frontend/src/i18n/zh-TW.ts` (繁體中文)
+    - _Requirements: 20.2_
+  - [x] 11.4 Add translation keys to `packages/frontend/src/i18n/ja.ts` (日本語)
+    - _Requirements: 20.2_
+  - [x] 11.5 Add translation keys to `packages/frontend/src/i18n/ko.ts` (한국어)
+    - _Requirements: 20.2_
+
+- [x] 12. Implement frontend reports page (`packages/frontend/src/pages/admin/reports.tsx` + `reports.scss`)
+  - [x] 12.1 Create `reports.scss` with styles for the reports page
+    - Tab bar styles (4 tabs, active state with `--accent-primary`)
+    - Filter panel styles (date pickers, dropdowns, layout)
+    - Data table styles (header, rows, type badges with earn=green/spend=red)
+    - Export button styles (reuse `.btn-primary`, `.btn-secondary`)
+    - Loading spinner and empty state styles
+    - All colors via CSS variables, spacing via `--space-*`, radius via `--radius-*`
+    - _Requirements: 3.1, 3.3, 3.4, 5.1, 5.2, 5.3, 7.1, 7.2, 7.3, 7.4, 9.1, 9.2, 9.3_
+  - [x] 12.2 Create `reports.tsx` with page component structure
+    - SuperAdmin auth guard: redirect to `/pages/admin/index` if not SuperAdmin
+    - Tab state management: `activeTab` with 4 tab options
+    - Independent filter state per tab (`TabFilterState` interface)
+    - Tab switching preserves each tab's filter state
+    - Use `useTranslation` hook for all visible text
+    - _Requirements: 1.2, 1.3, 17.1, 17.2, 17.3, 17.4, 20.3_
+  - [x] 12.3 Implement FilterPanel component within reports page
+    - DateRangePicker (all tabs): start date and end date inputs
+    - UGSelector (points-detail, activity-summary tabs): dropdown loaded from `/api/admin/ug` active UGs
+    - RoleSelector (points-detail, user-ranking tabs): dropdown with UserGroupLeader/Speaker/Volunteer/all options
+    - ActivitySelector (points-detail tab): dropdown loaded from activities list
+    - TypeSelector (points-detail tab): dropdown with earn/spend/all options
+    - Auto-refresh data on filter change
+    - _Requirements: 3.1, 3.2, 5.1, 7.1, 9.1_
+  - [x] 12.4 Implement DataTable component within reports page
+    - Render different columns per active tab
+    - Points detail: time, nickname, amount, type badge, source, UG, topic, role, distributor
+    - UG summary: UG name, activity count, total points, participant count
+    - User ranking: rank, nickname, total earn points, role
+    - Activity summary: topic, date, UG, total points, participants, UGL/Speaker/Volunteer counts
+    - Scroll-to-load-more for paginated reports (points detail, user ranking)
+    - Loading indicator while fetching
+    - _Requirements: 3.3, 3.4, 5.2, 5.3, 7.2, 7.4, 9.2, 9.3_
+  - [x] 12.5 Implement export functionality
+    - Export buttons (CSV / Excel) next to filter panel
+    - Call POST `/api/admin/reports/export` with current reportType, format, and filters
+    - Show loading toast "正在生成报表文件..." during export
+    - On success: trigger browser download via `window.open(presignedUrl)` or `<a>` tag
+    - On failure: show error toast with specific message
+    - Disable export button while export in progress
+    - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5_
+
+- [x] 13. Add reports navigation link to Admin Dashboard
+  - [x] 13.1 Add reports entry to `ADMIN_LINKS` array in `packages/frontend/src/pages/admin/index.tsx`
+    - key: 'reports', category: 'operations', icon: ClockIcon
+    - titleKey: 'admin.dashboard.reportsTitle', descKey: 'admin.dashboard.reportsDesc'
+    - url: '/pages/admin/reports', superAdminOnly: true
+    - _Requirements: 1.2, 1.3_
+
+- [x] 14. Checkpoint — Verify frontend compiles and renders
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 15. Final integration verification
+  - [x] 15.1 Write integration tests for report API routes
+    - Test full request flow: SuperAdmin GET each report type with filters → verify response shape
+    - Test POST export → verify presigned URL in response
+    - Test non-SuperAdmin 403 rejection
+    - _Requirements: 1.1, 18.1, 18.2_
+  - [x] 15.2 Write unit tests for formatters module (`packages/backend/src/reports/formatters.test.ts`)
+    - Test getColumnDefs returns correct columns for each report type
+    - Test generateCSV produces valid UTF-8 BOM CSV with Chinese headers
+    - Test generateExcel produces valid xlsx Buffer
+    - Test format functions map fields correctly
+    - _Requirements: 13.1, 13.2, 13.3, 14.1, 15.1, 16.1_
+
+- [x] 16. Final checkpoint — Ensure all tests pass
+  - Ensure all tests pass, ask the user if questions arise.
+
+## Notes
+
+- Tasks marked with `*` are optional and can be skipped for faster MVP
+- Each task references specific requirements for traceability
+- Checkpoints ensure incremental validation
+- Property tests validate 9 universal correctness properties from the design document
+- Unit tests validate specific examples and edge cases
+- The project uses vitest for testing and fast-check for property-based testing
+- All frontend text uses i18n translation keys via `useTranslation` hook — no hardcoded strings
+- All frontend styles use CSS variables from the design system (colors, spacing, radius, transitions)
+- Backend report routes are registered in the existing Admin Handler, reusing the `{proxy+}` proxy pattern
+- Export files are stored in S3 under `exports/` prefix with 30-minute presigned download URLs

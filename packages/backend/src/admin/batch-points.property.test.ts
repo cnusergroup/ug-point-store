@@ -33,6 +33,7 @@ const validRequestBodyArb = fc.record({
   points: fc.integer({ min: 1, max: 100000 }),
   reason: fc.string({ minLength: 1, maxLength: 200 }).filter(s => s.trim().length > 0),
   targetRole: targetRoleArb,
+  activityId: fc.uuid(),
 });
 
 // ============================================================
@@ -590,6 +591,344 @@ describe('Feature: admin-batch-points, Property 7: Pagination pageSize is clampe
           const result = clampPageSize(pageSize);
           expect(result).toBeGreaterThanOrEqual(1);
           expect(result).toBeLessThanOrEqual(100);
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+});
+
+
+// ============================================================
+// Property 7: Distribution record and points records contain complete activity metadata
+// Feature: activity-points-tracking, Property 7: Distribution record and points records contain complete activity metadata
+// Validates: Requirements 15.1, 15.2
+// ============================================================
+
+/** Arbitrary for activity type */
+const activityTypeArb = fc.constantFrom('线上活动', '线下活动');
+
+/** Arbitrary for activity metadata */
+const activityMetadataArb = fc.record({
+  activityId: fc.uuid(),
+  activityType: activityTypeArb,
+  activityUG: fc.string({ minLength: 1, maxLength: 50 }),
+  activityTopic: fc.string({ minLength: 1, maxLength: 200 }),
+  activityDate: fc.date({
+    min: new Date('2023-01-01'),
+    max: new Date('2025-12-31'),
+  }).map(d => d.toISOString().slice(0, 10)),
+});
+
+describe('Feature: activity-points-tracking, Property 7: Distribution record and points records contain complete activity metadata', () => {
+  it('Distribution_Record contains all activity metadata fields and every PointsRecord contains matching activityId', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(
+          fc.record({
+            userId: fc.uuid(),
+            points: fc.integer({ min: 0, max: 10000 }),
+            nickname: fc.string({ minLength: 1, maxLength: 20 }),
+            email: fc.emailAddress(),
+          }),
+          { minLength: 1, maxLength: 10 },
+        ).map(users => {
+          const seen = new Set<string>();
+          return users.filter(u => {
+            if (seen.has(u.userId)) return false;
+            seen.add(u.userId);
+            return true;
+          });
+        }).filter(users => users.length > 0),
+        fc.integer({ min: 1, max: 10000 }),
+        activityMetadataArb,
+        async (users, pointsToAdd, activityMeta) => {
+          const transactedItems: any[] = [];
+          let savedDistributionRecord: any = null;
+
+          const mockClient = {
+            send: vi.fn().mockImplementation((cmd: any) => {
+              const name = cmd.constructor.name;
+              if (name === 'GetCommand') {
+                // Activity existence check — return the activity as existing
+                return Promise.resolve({
+                  Item: {
+                    activityId: activityMeta.activityId,
+                    activityType: activityMeta.activityType,
+                    ugName: activityMeta.activityUG,
+                    topic: activityMeta.activityTopic,
+                    activityDate: activityMeta.activityDate,
+                  },
+                });
+              }
+              if (name === 'BatchGetCommand') {
+                return Promise.resolve({
+                  Responses: {
+                    Users: users.map(u => ({
+                      userId: u.userId,
+                      points: u.points,
+                      nickname: u.nickname,
+                      email: u.email,
+                    })),
+                  },
+                });
+              }
+              if (name === 'TransactWriteCommand') {
+                transactedItems.push(...cmd.input.TransactItems);
+                return Promise.resolve({});
+              }
+              if (name === 'PutCommand') {
+                savedDistributionRecord = cmd.input.Item;
+                return Promise.resolve({});
+              }
+              return Promise.resolve({});
+            }),
+          } as any;
+
+          const input: BatchDistributionInput = {
+            userIds: users.map(u => u.userId),
+            points: pointsToAdd,
+            reason: 'activity metadata test',
+            targetRole: 'Speaker',
+            distributorId: 'admin-001',
+            distributorNickname: 'Admin',
+            activityId: activityMeta.activityId,
+            activityType: activityMeta.activityType,
+            activityUG: activityMeta.activityUG,
+            activityTopic: activityMeta.activityTopic,
+            activityDate: activityMeta.activityDate,
+          };
+
+          const result = await executeBatchDistribution(input, mockClient, {
+            usersTable: 'Users',
+            pointsRecordsTable: 'PointsRecords',
+            batchDistributionsTable: 'BatchDistributions',
+            activitiesTable: 'Activities',
+          });
+
+          expect(result.success).toBe(true);
+
+          // Verify Distribution_Record contains all activity metadata fields
+          expect(savedDistributionRecord).toBeDefined();
+          expect(savedDistributionRecord.activityId).toBe(activityMeta.activityId);
+          expect(savedDistributionRecord.activityType).toBe(activityMeta.activityType);
+          expect(savedDistributionRecord.activityUG).toBe(activityMeta.activityUG);
+          expect(savedDistributionRecord.activityTopic).toBe(activityMeta.activityTopic);
+          expect(savedDistributionRecord.activityDate).toBe(activityMeta.activityDate);
+
+          // Verify every PointsRecord contains activityId matching the distribution's activityId
+          const pointsRecordPuts = transactedItems.filter(
+            (item: any) => item.Put && item.Put.Item?.type === 'earn',
+          );
+          expect(pointsRecordPuts.length).toBe(users.length);
+
+          for (const putItem of pointsRecordPuts) {
+            expect(putItem.Put.Item.activityId).toBe(activityMeta.activityId);
+          }
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+});
+
+
+// ============================================================
+// Property 8: Batch distribution validates activityId existence
+// Feature: activity-points-tracking, Property 8: Batch distribution validates activityId existence
+// Validates: Requirements 15.3, 16.1, 16.3
+// ============================================================
+
+/** Safe arbitrary for activity metadata that avoids invalid date values */
+const safeActivityMetadataArb = fc.record({
+  activityId: fc.uuid(),
+  activityType: activityTypeArb,
+  activityUG: fc.string({ minLength: 1, maxLength: 50 }),
+  activityTopic: fc.string({ minLength: 1, maxLength: 200 }),
+  activityDate: fc.integer({ min: 2023, max: 2025 }).chain(year =>
+    fc.integer({ min: 1, max: 12 }).chain(month =>
+      fc.integer({ min: 1, max: 28 }).map(day =>
+        `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+      ),
+    ),
+  ),
+});
+
+describe('Feature: activity-points-tracking, Property 8: Batch distribution validates activityId existence', () => {
+  it('existing activityId passes validation and distribution succeeds', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.uuid(),
+        fc.array(
+          fc.record({
+            userId: fc.uuid(),
+            points: fc.integer({ min: 0, max: 10000 }),
+            nickname: fc.string({ minLength: 1, maxLength: 20 }),
+            email: fc.emailAddress(),
+          }),
+          { minLength: 1, maxLength: 5 },
+        ).map(users => {
+          const seen = new Set<string>();
+          return users.filter(u => {
+            if (seen.has(u.userId)) return false;
+            seen.add(u.userId);
+            return true;
+          });
+        }).filter(users => users.length > 0),
+        fc.integer({ min: 1, max: 10000 }),
+        safeActivityMetadataArb,
+        async (existingActivityId, users, pointsToAdd, activityMeta) => {
+          const mockClient = {
+            send: vi.fn().mockImplementation((cmd: any) => {
+              const name = cmd.constructor.name;
+              if (name === 'GetCommand') {
+                // Activity exists in the table
+                return Promise.resolve({
+                  Item: {
+                    activityId: existingActivityId,
+                    activityType: activityMeta.activityType,
+                    ugName: activityMeta.activityUG,
+                    topic: activityMeta.activityTopic,
+                    activityDate: activityMeta.activityDate,
+                  },
+                });
+              }
+              if (name === 'BatchGetCommand') {
+                return Promise.resolve({
+                  Responses: {
+                    Users: users.map(u => ({
+                      userId: u.userId,
+                      points: u.points,
+                      nickname: u.nickname,
+                      email: u.email,
+                    })),
+                  },
+                });
+              }
+              if (name === 'TransactWriteCommand') {
+                return Promise.resolve({});
+              }
+              if (name === 'PutCommand') {
+                return Promise.resolve({});
+              }
+              return Promise.resolve({});
+            }),
+          } as any;
+
+          // Validate input first — activityId is present
+          const validationResult = validateBatchDistributionInput({
+            userIds: users.map(u => u.userId),
+            points: pointsToAdd,
+            reason: 'test reason',
+            targetRole: 'Speaker',
+            activityId: existingActivityId,
+          });
+          expect(validationResult.valid).toBe(true);
+
+          // Execute distribution — activity exists, should succeed
+          const input: BatchDistributionInput = {
+            userIds: users.map(u => u.userId),
+            points: pointsToAdd,
+            reason: 'test reason',
+            targetRole: 'Speaker',
+            distributorId: 'admin-001',
+            distributorNickname: 'Admin',
+            activityId: existingActivityId,
+            activityType: activityMeta.activityType,
+            activityUG: activityMeta.activityUG,
+            activityTopic: activityMeta.activityTopic,
+            activityDate: activityMeta.activityDate,
+          };
+
+          const result = await executeBatchDistribution(input, mockClient, {
+            usersTable: 'Users',
+            pointsRecordsTable: 'PointsRecords',
+            batchDistributionsTable: 'BatchDistributions',
+            activitiesTable: 'Activities',
+          });
+
+          expect(result.success).toBe(true);
+          expect(result.distributionId).toBeDefined();
+          expect(result.successCount).toBe(users.length);
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
+  it('non-existent activityId returns ACTIVITY_NOT_FOUND', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.uuid(),
+        fc.array(fc.uuid(), { minLength: 1, maxLength: 5 }),
+        fc.integer({ min: 1, max: 10000 }),
+        safeActivityMetadataArb,
+        async (nonExistentActivityId, userIds, pointsToAdd, activityMeta) => {
+          const mockClient = {
+            send: vi.fn().mockImplementation((cmd: any) => {
+              const name = cmd.constructor.name;
+              if (name === 'GetCommand') {
+                // Activity does NOT exist
+                return Promise.resolve({ Item: undefined });
+              }
+              return Promise.resolve({});
+            }),
+          } as any;
+
+          const input: BatchDistributionInput = {
+            userIds,
+            points: pointsToAdd,
+            reason: 'test reason',
+            targetRole: 'Speaker',
+            distributorId: 'admin-001',
+            distributorNickname: 'Admin',
+            activityId: nonExistentActivityId,
+            activityType: activityMeta.activityType,
+            activityUG: activityMeta.activityUG,
+            activityTopic: activityMeta.activityTopic,
+            activityDate: activityMeta.activityDate,
+          };
+
+          const result = await executeBatchDistribution(input, mockClient, {
+            usersTable: 'Users',
+            pointsRecordsTable: 'PointsRecords',
+            batchDistributionsTable: 'BatchDistributions',
+            activitiesTable: 'Activities',
+          });
+
+          expect(result.success).toBe(false);
+          expect(result.error).toBeDefined();
+          expect(result.error!.code).toBe('ACTIVITY_NOT_FOUND');
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
+  it('missing or empty activityId returns INVALID_REQUEST from validateBatchDistributionInput', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.uuid(), { minLength: 1, maxLength: 5 }),
+        fc.integer({ min: 1, max: 100000 }),
+        fc.string({ minLength: 1, maxLength: 200 }).filter(s => s.trim().length > 0),
+        targetRoleArb,
+        fc.oneof(
+          // missing activityId (undefined)
+          fc.constant(undefined),
+          // empty string activityId
+          fc.constant(''),
+        ),
+        (userIds, points, reason, targetRole, activityId) => {
+          const body: Record<string, unknown> = { userIds, points, reason, targetRole };
+          if (activityId !== undefined) {
+            body.activityId = activityId;
+          }
+
+          const result = validateBatchDistributionInput(body);
+          expect(result.valid).toBe(false);
+          if (!result.valid) {
+            expect(result.error.code).toBe('INVALID_REQUEST');
+          }
         },
       ),
       { numRuns: 100 },

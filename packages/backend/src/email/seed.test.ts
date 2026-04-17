@@ -30,7 +30,7 @@ describe('getDefaultTemplates', () => {
     const templates = getDefaultTemplates();
     const varMap: Record<string, string[]> = {
       pointsEarned: ['nickname', 'points', 'source', 'balance'],
-      newOrder: ['orderId', 'productNames', 'totalPoints', 'buyerNickname'],
+      newOrder: ['orderId', 'productNames', 'buyerNickname', 'recipientName', 'phone', 'detailAddress'],
       orderShipped: ['nickname', 'orderId', 'trackingNumber'],
       newProduct: ['productList'],
       newContent: ['contentList'],

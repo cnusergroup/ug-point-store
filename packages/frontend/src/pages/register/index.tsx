@@ -45,6 +45,8 @@ export default function RegisterPage() {
   const [passwordError, setPasswordError] = useState('');
   const [confirmPasswordError, setConfirmPasswordError] = useState('');
   const [nicknameError, setNicknameError] = useState('');
+  const [agreedToPrivacy, setAgreedToPrivacy] = useState(false);
+  const [privacyError, setPrivacyError] = useState('');
   const [inviteState, setInviteState] = useState<InviteState>({ status: 'loading' });
   const [inviteToken, setInviteToken] = useState('');
 
@@ -92,6 +94,7 @@ export default function RegisterPage() {
     setConfirmPasswordError('');
     setNicknameError('');
     setError('');
+    setPrivacyError('');
 
     if (!nickname.trim()) {
       setNicknameError(t('register.errorNicknameRequired'));
@@ -122,8 +125,13 @@ export default function RegisterPage() {
       valid = false;
     }
 
+    if (!agreedToPrivacy) {
+      setPrivacyError(t('register.errorPrivacyRequired'));
+      valid = false;
+    }
+
     return valid;
-  }, [email, password, confirmPassword, nickname]);
+  }, [email, password, confirmPassword, nickname, agreedToPrivacy]);
 
   const handleRegister = useCallback(async () => {
     if (!validateForm()) return;
@@ -157,10 +165,14 @@ export default function RegisterPage() {
     } finally {
       setLoading(false);
     }
-  }, [email, password, nickname, inviteToken, register, validateForm]);
+  }, [email, password, nickname, inviteToken, register, validateForm, agreedToPrivacy]);
 
   const goToLogin = useCallback(() => {
     Taro.redirectTo({ url: '/pages/login/index' });
+  }, []);
+
+  const goToPrivacy = useCallback(() => {
+    Taro.navigateTo({ url: '/pages/privacy/index' });
   }, []);
 
   // Password strength hints
@@ -302,6 +314,21 @@ export default function RegisterPage() {
             />
             {confirmPasswordError && <Text className='register-card__field-error'>{confirmPasswordError}</Text>}
           </View>
+
+          {/* Privacy agreement checkbox */}
+          <View className='register-card__agreement'>
+            <View
+              className={`register-card__checkbox ${agreedToPrivacy ? 'register-card__checkbox--checked' : ''}`}
+              onClick={() => { setAgreedToPrivacy(!agreedToPrivacy); setPrivacyError(''); }}
+            >
+              {agreedToPrivacy && <Text className='register-card__checkbox-icon'>✓</Text>}
+            </View>
+            <Text className='register-card__agreement-text'>
+              {t('register.agreePrefix')}
+              <Text className='register-card__agreement-link' onClick={goToPrivacy}>{t('register.privacyLink')}</Text>
+            </Text>
+          </View>
+          {privacyError && <Text className='register-card__field-error'>{privacyError}</Text>}
 
           <View
             className={`register-card__submit ${loading ? 'register-card__submit--loading' : ''}`}

@@ -44,6 +44,98 @@
   }
 }
 
+/* Status Tab Filter */
+.product-tabs {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--card-border);
+
+  &__tab {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-full);
+    border: 1px solid var(--card-border);
+    background: transparent;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+
+    &:hover {
+      border-color: var(--card-border-hover);
+      background: var(--bg-hover);
+    }
+
+    &--active {
+      border-color: var(--accent-primary);
+      background: rgba(124, 109, 240, 0.1);
+
+      .product-tabs__label {
+        color: var(--accent-primary);
+        font-weight: 600;
+      }
+
+      .product-tabs__count {
+        background: var(--accent-primary);
+        color: #fff;
+      }
+    }
+
+    &--active-status {
+      border-color: var(--success);
+      background: rgba(45, 212, 168, 0.08);
+
+      .product-tabs__label {
+        color: var(--success);
+      }
+
+      .product-tabs__count {
+        background: var(--success);
+        color: #fff;
+      }
+    }
+
+    &--inactive-status {
+      border-color: var(--warning);
+      background: rgba(245, 166, 35, 0.08);
+
+      .product-tabs__label {
+        color: var(--warning);
+      }
+
+      .product-tabs__count {
+        background: var(--warning);
+        color: #fff;
+      }
+    }
+  }
+
+  &__label {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+    transition: color var(--transition-fast);
+  }
+
+  &__count {
+    min-width: 20px;
+    height: 20px;
+    padding: 0 var(--space-1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-full);
+    background: var(--bg-hover);
+    font-family: var(--font-display);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-tertiary);
+    transition: all var(--transition-fast);
+  }
+}
+
 /* Product List */
 .product-list {
   padding: var(--space-3) var(--space-5);
@@ -59,6 +151,15 @@
 
   &:hover {
     border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  &--inactive {
+    opacity: 0.65;
+    border-left: 3px solid var(--warning);
+
+    &:hover {
+      opacity: 0.85;
+    }
   }
 
   &__main {

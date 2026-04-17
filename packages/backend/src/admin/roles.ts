@@ -116,16 +116,46 @@ export async function assignRoles(
   const now = new Date().toISOString();
   const rolesVersion = Date.now(); // ms timestamp — used by auth-middleware to detect stale tokens
 
+  // Initialize leaderboard earnTotal fields for newly assigned roles (if_not_exists preserves existing values)
+  const roleFieldMap: Record<string, string> = {
+    Speaker: 'earnTotalSpeaker',
+    UserGroupLeader: 'earnTotalLeader',
+    Volunteer: 'earnTotalVolunteer',
+  };
+  const extraSetExprs: string[] = [];
+  const extraExprNames: Record<string, string> = {};
+  const extraExprValues: Record<string, any> = {};
+
+  for (const role of finalRoles) {
+    const field = roleFieldMap[role];
+    if (field) {
+      const placeholder = `:${field}`;
+      const nameAlias = `#${field}`;
+      extraSetExprs.push(`${nameAlias} = if_not_exists(${nameAlias}, ${placeholder})`);
+      extraExprNames[nameAlias] = field;
+      extraExprValues[placeholder] = 0;
+    }
+  }
+  // Ensure pk="ALL" exists for GSI partition key
+  extraSetExprs.push('pk = if_not_exists(pk, :pkVal)');
+  extraExprValues[':pkVal'] = 'ALL';
+  // Ensure earnTotal exists
+  extraSetExprs.push('earnTotal = if_not_exists(earnTotal, :etZero)');
+  extraExprValues[':etZero'] = 0;
+
+  const updateExpression = `SET #roles = :roles, updatedAt = :now, rolesVersion = :rv${extraSetExprs.length > 0 ? ', ' + extraSetExprs.join(', ') : ''}`;
+
   await dynamoClient.send(
     new UpdateCommand({
       TableName: tableName,
       Key: { userId },
-      UpdateExpression: 'SET #roles = :roles, updatedAt = :now, rolesVersion = :rv',
-      ExpressionAttributeNames: { '#roles': 'roles' },
+      UpdateExpression: updateExpression,
+      ExpressionAttributeNames: { '#roles': 'roles', ...extraExprNames },
       ExpressionAttributeValues: {
         ':roles': finalRoles,
         ':now': now,
         ':rv': rolesVersion,
+        ...extraExprValues,
       },
     }),
   );

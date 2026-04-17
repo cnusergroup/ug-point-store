@@ -5,6 +5,7 @@ import { request } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
 import { LocationIcon } from '../../components/icons';
+import PageToolbar from '../../components/PageToolbar';
 import './index.scss';
 
 /** Address response from API */
@@ -162,11 +163,7 @@ export default function AddressPage() {
   if (loading) {
     return (
       <View className='address-page'>
-        <View className='address-header'>
-          <Text className='address-header__back' onClick={handleBack}>{t('address.backButton')}</Text>
-          <Text className='address-header__title'>{t('address.title')}</Text>
-          <View className='address-header__placeholder' />
-        </View>
+        <PageToolbar title={t('address.title')} onBack={handleBack} />
         <View className='address-loading'>
           <Text className='address-loading__text'>{t('address.loadingText')}</Text>
         </View>
@@ -177,11 +174,7 @@ export default function AddressPage() {
   if (error) {
     return (
       <View className='address-page'>
-        <View className='address-header'>
-          <Text className='address-header__back' onClick={handleBack}>{t('address.backButton')}</Text>
-          <Text className='address-header__title'>{t('address.title')}</Text>
-          <View className='address-header__placeholder' />
-        </View>
+        <PageToolbar title={t('address.title')} onBack={handleBack} />
         <View className='address-error'>
           <Text className='address-error__text'>{error}</Text>
         </View>
@@ -192,11 +185,7 @@ export default function AddressPage() {
   return (
     <View className='address-page'>
       {/* Header */}
-      <View className='address-header'>
-        <Text className='address-header__back' onClick={handleBack}>{t('address.backButton')}</Text>
-        <Text className='address-header__title'>{t('address.title')}</Text>
-        <View className='address-header__placeholder' />
-      </View>
+      <PageToolbar title={t('address.title')} onBack={handleBack} />
 
       {/* Content */}
       <View className='address-content'>

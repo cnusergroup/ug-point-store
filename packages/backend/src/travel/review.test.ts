@@ -108,10 +108,10 @@ describe('reviewTravelApplication', () => {
 
   // --- Reject success ---
 
-  it('should reject application: travelEarnUsed decreases by earnDeducted, status becomes rejected, rejectReason recorded', async () => {
+  it('should reject application: status becomes rejected, rejectReason recorded, no travelEarnUsed change', async () => {
     const app = makePendingApplication({ earnDeducted: 500 });
     client.send.mockResolvedValueOnce({ Item: app });
-    // TransactWriteCommand succeeds
+    // UpdateCommand succeeds
     client.send.mockResolvedValueOnce({});
 
     const result = await reviewTravelApplication(makeRejectInput({ rejectReason: '信息不完整' }), client, tables);
@@ -124,7 +124,7 @@ describe('reviewTravelApplication', () => {
     expect(result.application!.reviewedAt).toBeDefined();
   });
 
-  it('should use TransactWriteCommand on reject to atomically update status and return quota', async () => {
+  it('should use UpdateCommand on reject to update application status', async () => {
     const app = makePendingApplication({ earnDeducted: 500 });
     client.send.mockResolvedValueOnce({ Item: app });
     client.send.mockResolvedValueOnce({});
@@ -132,16 +132,14 @@ describe('reviewTravelApplication', () => {
     await reviewTravelApplication(makeRejectInput(), client, tables);
 
     expect(client.send).toHaveBeenCalledTimes(2);
-    const txCmd = client.send.mock.calls[1][0];
-    expect(txCmd.constructor.name).toBe('TransactWriteCommand');
-    expect(txCmd.input.TransactItems).toHaveLength(2);
+    const updateCmd = client.send.mock.calls[1][0];
+    expect(updateCmd.constructor.name).toBe('UpdateCommand');
 
-    // Verify the 2 transaction items
-    const [appUpdate, userUpdate] = txCmd.input.TransactItems;
-    expect(appUpdate.Update.TableName).toBe(TRAVEL_APPLICATIONS_TABLE);
-    expect(userUpdate.Update.TableName).toBe(USERS_TABLE);
-    // Verify user travelEarnUsed is decreased by earnDeducted
-    expect(userUpdate.Update.ExpressionAttributeValues[':deducted']).toBe(500);
+    // Verify UpdateCommand targets only TravelApplications table
+    expect(updateCmd.input.TableName).toBe(TRAVEL_APPLICATIONS_TABLE);
+
+    // No TransactItems — this is a simple UpdateCommand, not a TransactWriteCommand
+    expect(updateCmd.input.TransactItems).toBeUndefined();
   });
 
   it('should set empty rejectReason when not provided on reject', async () => {

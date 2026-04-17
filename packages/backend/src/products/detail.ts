@@ -12,7 +12,7 @@ export interface ProductDetailResult {
  * - Returns full product info
  * - For points products: includes allowedRoles info
  * - For code_exclusive products: includes eventInfo
- * - Returns 404 if product not found or inactive
+ * - Returns 404 if product not found
  */
 export async function getProductDetail(
   productId: string,
@@ -29,13 +29,6 @@ export async function getProductDetail(
   const item = result.Item;
 
   if (!item) {
-    return {
-      success: false,
-      error: { code: 'PRODUCT_NOT_FOUND', message: '商品不存在' },
-    };
-  }
-
-  if (item.status !== 'active') {
     return {
       success: false,
       error: { code: 'PRODUCT_NOT_FOUND', message: '商品不存在' },

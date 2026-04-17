@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, CopyObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ulid } from 'ulid';
 import { ErrorCodes, ErrorMessages } from '@points-mall/shared';
@@ -166,4 +166,57 @@ export async function deleteImage(
   );
 
   return { success: true };
+}
+
+/**
+ * Check if an image key is in the temp directory.
+ */
+export function isTempImage(key: string): boolean {
+  return key.startsWith('products/temp/');
+}
+
+/**
+ * Move images from temp directory to the permanent product directory.
+ * Returns a new images array with updated keys and urls.
+ * Non-temp images are returned as-is.
+ */
+export async function moveTempImages(
+  images: { key: string; url: string }[],
+  productId: string,
+  s3Client: S3Client,
+  bucketName: string,
+): Promise<{ key: string; url: string }[]> {
+  const result: { key: string; url: string }[] = [];
+
+  for (const img of images) {
+    if (!isTempImage(img.key)) {
+      result.push(img);
+      continue;
+    }
+
+    // Extract extension from temp key
+    const ext = extractExtension(img.key);
+    const newKey = `products/${productId}/${ulid()}.${ext || 'jpg'}`;
+
+    // Copy from temp to permanent location
+    await s3Client.send(
+      new CopyObjectCommand({
+        Bucket: bucketName,
+        CopySource: `${bucketName}/${img.key}`,
+        Key: newKey,
+      }),
+    );
+
+    // Delete the temp file
+    await s3Client.send(
+      new DeleteObjectCommand({
+        Bucket: bucketName,
+        Key: img.key,
+      }),
+    );
+
+    result.push({ key: newKey, url: `/${newKey}` });
+  }
+
+  return result;
 }

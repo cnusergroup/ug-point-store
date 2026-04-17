@@ -5,6 +5,7 @@ export interface ListProductsOptions {
   type?: 'points' | 'code_exclusive';
   roleFilter?: UserRole;
   userRoles?: UserRole[];
+  includeInactive?: boolean;
   page?: number;
   pageSize?: number;
 }
@@ -54,33 +55,57 @@ export async function listProducts(
   dynamoClient: DynamoDBDocumentClient,
   tableName: string,
 ): Promise<ListProductsResult> {
-  const { type, roleFilter, userRoles = [], page = 1, pageSize = 20 } = options;
+  const { type, roleFilter, userRoles = [], includeInactive = false, page = 1, pageSize = 20 } = options;
 
   let items: Record<string, unknown>[];
 
   if (type) {
-    // Use type-status-index GSI: PK=type, SK=status='active'
-    const result = await dynamoClient.send(
-      new QueryCommand({
-        TableName: tableName,
-        IndexName: 'type-status-index',
-        KeyConditionExpression: '#type = :type AND #status = :status',
-        ExpressionAttributeNames: { '#type': 'type', '#status': 'status' },
-        ExpressionAttributeValues: { ':type': type, ':status': 'active' },
-      }),
-    );
-    items = (result.Items ?? []) as Record<string, unknown>[];
+    if (includeInactive) {
+      // Query by type only, no status filter
+      const result = await dynamoClient.send(
+        new QueryCommand({
+          TableName: tableName,
+          IndexName: 'type-status-index',
+          KeyConditionExpression: '#type = :type',
+          ExpressionAttributeNames: { '#type': 'type' },
+          ExpressionAttributeValues: { ':type': type },
+        }),
+      );
+      items = (result.Items ?? []) as Record<string, unknown>[];
+    } else {
+      // Use type-status-index GSI: PK=type, SK=status='active'
+      const result = await dynamoClient.send(
+        new QueryCommand({
+          TableName: tableName,
+          IndexName: 'type-status-index',
+          KeyConditionExpression: '#type = :type AND #status = :status',
+          ExpressionAttributeNames: { '#type': 'type', '#status': 'status' },
+          ExpressionAttributeValues: { ':type': type, ':status': 'active' },
+        }),
+      );
+      items = (result.Items ?? []) as Record<string, unknown>[];
+    }
   } else {
-    // Scan with filter for active status
-    const result = await dynamoClient.send(
-      new ScanCommand({
-        TableName: tableName,
-        FilterExpression: '#status = :status',
-        ExpressionAttributeNames: { '#status': 'status' },
-        ExpressionAttributeValues: { ':status': 'active' },
-      }),
-    );
-    items = (result.Items ?? []) as Record<string, unknown>[];
+    if (includeInactive) {
+      // Scan all products, no status filter
+      const result = await dynamoClient.send(
+        new ScanCommand({
+          TableName: tableName,
+        }),
+      );
+      items = (result.Items ?? []) as Record<string, unknown>[];
+    } else {
+      // Scan with filter for active status
+      const result = await dynamoClient.send(
+        new ScanCommand({
+          TableName: tableName,
+          FilterExpression: '#status = :status',
+          ExpressionAttributeNames: { '#status': 'status' },
+          ExpressionAttributeValues: { ':status': 'active' },
+        }),
+      );
+      items = (result.Items ?? []) as Record<string, unknown>[];
+    }
   }
 
   // Apply role filter: keep products where allowedRoles includes roleFilter or is 'all'

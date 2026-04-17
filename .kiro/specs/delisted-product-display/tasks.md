@@ -1,0 +1,23 @@
+# Tasks
+
+- [x] 1. Backend: Remove active-only filter in getProductDetail
+  - [x] 1.1 In `packages/backend/src/products/detail.ts`, remove the `if (item.status !== 'active')` check (lines 38-42) so that inactive products are returned with their full data including the `status` field
+  - [x] 1.2 Update `packages/backend/src/products/detail.test.ts`: change the test `should return 404 error when product is inactive` to verify that inactive products return `{ success: true }` with complete product data including `status: 'inactive'`
+  - [x] 1.3 Add a new test in `detail.test.ts` for inactive code_exclusive product to verify it also returns successfully
+  - [x] 1.4 Run existing tests to verify active products and missing products behavior is unchanged
+- [x] 2. Frontend: Add delisted product display state
+  - [x] 2.1 In `packages/frontend/src/pages/product/index.tsx`, add a `isDelisted` derived boolean (`product.status === 'inactive'`) and use it to conditionally render a "已下架" badge next to the product name in the `detail-info` section
+  - [x] 2.2 Update `canUserRedeem()` to return `false` when `product.status === 'inactive'`
+  - [x] 2.3 Update `canAddToCart()` to return `false` when `product.status === 'inactive'`
+  - [x] 2.4 Update `getRedeemButtonText()` to return the delisted text (e.g., `t('product.delisted')`) when `product.status === 'inactive'`
+  - [x] 2.5 Hide the quantity selector when the product is delisted (same as sold-out behavior)
+- [x] 3. Frontend: Add delisted badge styles
+  - [x] 3.1 In `packages/frontend/src/pages/product/index.scss`, add `.detail-info__delisted-badge` style using `--warning` color variables (background: `rgba(245, 166, 35, 0.12)`, border: `rgba(245, 166, 35, 0.25)`, text color: `var(--warning)`, border-radius: `var(--radius-sm)`, padding: `var(--space-1) var(--space-3)`)
+- [x] 4. i18n: Add translation keys for delisted state
+  - [x] 4.1 Add `product.delisted` key (Chinese: "商品已下架", English: "Product Delisted", Japanese: "販売終了") to all i18n locale files
+  - [x] 4.2 Add `product.delistedBadge` key (Chinese: "已下架", English: "Delisted", Japanese: "販売終了") to all i18n locale files
+  - [x] 4.3 Add `product.delistedHint` key (Chinese: "该商品已下架，无法兑换", English: "This product has been delisted and cannot be redeemed", Japanese: "この商品は販売終了のため、交換できません") to all i18n locale files
+- [x] 5. Property-based test: Inactive product detail returns data
+  - [x] 5.1 Create `packages/backend/src/products/detail-inactive.property.test.ts` with a property test that generates random product data with `status: 'inactive'` and verifies `getProductDetail` returns `{ success: true }` with the product data intact (PBT - Property 1: Bug Condition)
+- [x] 6. Property-based test: Active/missing product behavior preserved
+  - [x] 6.1 Create `packages/backend/src/products/detail-preservation.property.test.ts` with a property test that generates random product data with `status: 'active'` and verifies `getProductDetail` returns `{ success: true }` with correct data, and generates `undefined` items to verify PRODUCT_NOT_FOUND is returned (PBT - Property 2: Preservation)

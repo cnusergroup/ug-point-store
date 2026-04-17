@@ -96,6 +96,10 @@ export default function HubPage() {
     Taro.redirectTo({ url: '/pages/admin/orders' });
   };
 
+  const handleLeaderboard = () => {
+    Taro.navigateTo({ url: '/pages/leaderboard/index' });
+  };
+
   // OrderAdmin: minimal layout with only Order Management and Settings
   if (isOrderAdmin) {
     return (
@@ -151,9 +155,10 @@ export default function HubPage() {
 
         <View className='hub-footer'>
           <View className='hub-footer__divider' />
-          <Text className='hub-footer__line1'>🎨 Design by <Text className='hub-footer__accent'>Yanglin Liu</Text></Text>
-          <Text className='hub-footer__line1'>Built with ❤️ by <Text className='hub-footer__accent'>Kiro</Text> & <Text className='hub-footer__accent'>Xiaofei Li</Text></Text>
+          <Text className='hub-footer__line1'>🎨 Design by <Text className='hub-footer__accent'>Amazon Web Services User Group China</Text></Text>
+          <Text className='hub-footer__line1'>Built with ❤️ by <Text className='hub-footer__accent'>Kiro</Text></Text>
           <Text className='hub-footer__line2'>Powered by Amazon Web Services</Text>
+          <Text className='hub-footer__privacy' onClick={() => Taro.navigateTo({ url: '/pages/privacy/index' })}>{t('hub.privacyPolicy')}</Text>
         </View>
       </View>
     );
@@ -223,12 +228,12 @@ export default function HubPage() {
           <Text className='hub-card__desc'>{t('hub.mallDesc')}</Text>
         </View>
 
-        {/* Leaderboard Card — Coming Soon */}
+        {/* Leaderboard Card */}
         <View
           className='hub-card hub-card--leaderboard'
           style={{ animationDelay: '0.16s' }}
+          onClick={handleLeaderboard}
         >
-          <Text className='hub-card__badge'>{t('hub.comingSoon')}</Text>
           <View className='hub-card__icon'>
             <TrophyIcon size={40} color='var(--role-leader)' />
           </View>
@@ -258,9 +263,10 @@ export default function HubPage() {
       {/* Footer */}
       <View className='hub-footer'>
         <View className='hub-footer__divider' />
-        <Text className='hub-footer__line1'>🎨 Design by <Text className='hub-footer__accent'>Yanglin Liu</Text></Text>
-        <Text className='hub-footer__line1'>Built with ❤️ by <Text className='hub-footer__accent'>Kiro</Text> & <Text className='hub-footer__accent'>Xiaofei Li</Text></Text>
+        <Text className='hub-footer__line1'>🎨 Design by <Text className='hub-footer__accent'>Amazon Web Services User Group China</Text></Text>
+        <Text className='hub-footer__line1'>Built with ❤️ by <Text className='hub-footer__accent'>Kiro</Text></Text>
         <Text className='hub-footer__line2'>Powered by Amazon Web Services</Text>
+        <Text className='hub-footer__privacy' onClick={() => Taro.navigateTo({ url: '/pages/privacy/index' })}>{t('hub.privacyPolicy')}</Text>
       </View>
     </View>
   );

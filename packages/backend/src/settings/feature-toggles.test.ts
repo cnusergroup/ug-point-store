@@ -54,6 +54,7 @@ describe('getFeatureToggles', () => {
       emailNewContentEnabled: true,
       adminEmailProductsEnabled: true,
       adminEmailContentEnabled: false,
+      reservationApprovalPoints: 25,
     });
 
     const result = await getFeatureToggles(client, 'users-table');
@@ -77,7 +78,59 @@ describe('getFeatureToggles', () => {
       emailNewContentEnabled: true,
       adminEmailProductsEnabled: true,
       adminEmailContentEnabled: false,
+      reservationApprovalPoints: 25,
+      leaderboardRankingEnabled: false,
+      leaderboardAnnouncementEnabled: false,
+      leaderboardUpdateFrequency: 'weekly',
+      pointsRuleConfig: {
+        uglPointsPerEvent: 50,
+        volunteerPointsPerEvent: 30,
+        volunteerMaxPerEvent: 10,
+        speakerTypeAPoints: 100,
+        speakerTypeBPoints: 50,
+        speakerRoundtablePoints: 50,
+      },
     });
+  });
+
+  it('should return stored leaderboard values when they exist in the record', async () => {
+    const client = createMockClient({
+      userId: 'feature-toggles',
+      codeRedemptionEnabled: false,
+      pointsClaimEnabled: false,
+      adminProductsEnabled: true,
+      adminOrdersEnabled: true,
+      adminContentReviewEnabled: false,
+      adminCategoriesEnabled: false,
+      leaderboardRankingEnabled: true,
+      leaderboardAnnouncementEnabled: true,
+      leaderboardUpdateFrequency: 'daily',
+    });
+
+    const result = await getFeatureToggles(client, 'users-table');
+
+    expect(result.leaderboardRankingEnabled).toBe(true);
+    expect(result.leaderboardAnnouncementEnabled).toBe(true);
+    expect(result.leaderboardUpdateFrequency).toBe('daily');
+  });
+
+  it('should default leaderboardUpdateFrequency to weekly when stored value is invalid', async () => {
+    const client = createMockClient({
+      userId: 'feature-toggles',
+      codeRedemptionEnabled: false,
+      pointsClaimEnabled: false,
+      adminProductsEnabled: true,
+      adminOrdersEnabled: true,
+      leaderboardRankingEnabled: true,
+      leaderboardAnnouncementEnabled: false,
+      leaderboardUpdateFrequency: 'yearly',
+    });
+
+    const result = await getFeatureToggles(client, 'users-table');
+
+    expect(result.leaderboardRankingEnabled).toBe(true);
+    expect(result.leaderboardAnnouncementEnabled).toBe(false);
+    expect(result.leaderboardUpdateFrequency).toBe('weekly');
   });
 
   it('should return default values when record does not exist', async () => {
@@ -100,6 +153,18 @@ describe('getFeatureToggles', () => {
       emailNewContentEnabled: false,
       adminEmailProductsEnabled: false,
       adminEmailContentEnabled: false,
+      reservationApprovalPoints: 10,
+      leaderboardRankingEnabled: false,
+      leaderboardAnnouncementEnabled: false,
+      leaderboardUpdateFrequency: 'weekly',
+      pointsRuleConfig: {
+        uglPointsPerEvent: 50,
+        volunteerPointsPerEvent: 30,
+        volunteerMaxPerEvent: 10,
+        speakerTypeAPoints: 100,
+        speakerTypeBPoints: 50,
+        speakerRoundtablePoints: 50,
+      },
     });
   });
 
@@ -123,6 +188,18 @@ describe('getFeatureToggles', () => {
       emailNewContentEnabled: false,
       adminEmailProductsEnabled: false,
       adminEmailContentEnabled: false,
+      reservationApprovalPoints: 10,
+      leaderboardRankingEnabled: false,
+      leaderboardAnnouncementEnabled: false,
+      leaderboardUpdateFrequency: 'weekly',
+      pointsRuleConfig: {
+        uglPointsPerEvent: 50,
+        volunteerPointsPerEvent: 30,
+        volunteerMaxPerEvent: 10,
+        speakerTypeAPoints: 100,
+        speakerTypeBPoints: 50,
+        speakerRoundtablePoints: 50,
+      },
     });
   });
 
@@ -141,6 +218,7 @@ describe('getFeatureToggles', () => {
     // adminProductsEnabled and adminOrdersEnabled default to true unless explicitly false
     // adminContentReviewEnabled and adminCategoriesEnabled default to false
     // email toggles default to false (strict === true check)
+    // reservationApprovalPoints defaults to 10 when missing or invalid
     expect(result).toEqual({
       codeRedemptionEnabled: false,
       pointsClaimEnabled: false,
@@ -156,6 +234,18 @@ describe('getFeatureToggles', () => {
       emailNewContentEnabled: false,
       adminEmailProductsEnabled: false,
       adminEmailContentEnabled: false,
+      reservationApprovalPoints: 10,
+      leaderboardRankingEnabled: false,
+      leaderboardAnnouncementEnabled: false,
+      leaderboardUpdateFrequency: 'weekly',
+      pointsRuleConfig: {
+        uglPointsPerEvent: 50,
+        volunteerPointsPerEvent: 30,
+        volunteerMaxPerEvent: 10,
+        speakerTypeAPoints: 100,
+        speakerTypeBPoints: 50,
+        speakerRoundtablePoints: 50,
+      },
     });
   });
 
@@ -182,6 +272,12 @@ describe('getFeatureToggles', () => {
     expect(result.emailNewContentEnabled).toBe(false);
     expect(result.adminEmailProductsEnabled).toBe(false);
     expect(result.adminEmailContentEnabled).toBe(false);
+    // reservationApprovalPoints should default to 10 when missing
+    expect(result.reservationApprovalPoints).toBe(10);
+    // leaderboard fields should default when missing
+    expect(result.leaderboardRankingEnabled).toBe(false);
+    expect(result.leaderboardAnnouncementEnabled).toBe(false);
+    expect(result.leaderboardUpdateFrequency).toBe('weekly');
   });
 });
 
@@ -206,6 +302,10 @@ describe('updateFeatureToggles', () => {
         emailNewContentEnabled: true,
         adminEmailProductsEnabled: true,
         adminEmailContentEnabled: false,
+        reservationApprovalPoints: 15,
+        leaderboardRankingEnabled: true,
+        leaderboardAnnouncementEnabled: false,
+        leaderboardUpdateFrequency: 'daily',
         updatedBy: 'user-1',
       },
       client,
@@ -227,6 +327,10 @@ describe('updateFeatureToggles', () => {
     expect(result.settings!.emailNewContentEnabled).toBe(true);
     expect(result.settings!.adminEmailProductsEnabled).toBe(true);
     expect(result.settings!.adminEmailContentEnabled).toBe(false);
+    expect(result.settings!.reservationApprovalPoints).toBe(15);
+    expect(result.settings!.leaderboardRankingEnabled).toBe(true);
+    expect(result.settings!.leaderboardAnnouncementEnabled).toBe(false);
+    expect(result.settings!.leaderboardUpdateFrequency).toBe('daily');
     expect(result.settings!.updatedBy).toBe('user-1');
     expect(result.settings!.updatedAt).toBeTruthy();
   });
@@ -249,6 +353,10 @@ describe('updateFeatureToggles', () => {
         emailNewContentEnabled: false,
         adminEmailProductsEnabled: false,
         adminEmailContentEnabled: false,
+        reservationApprovalPoints: 10,
+        leaderboardRankingEnabled: false,
+        leaderboardAnnouncementEnabled: false,
+        leaderboardUpdateFrequency: 'weekly',
         updatedBy: 'user-1',
       },
       client,
@@ -278,6 +386,10 @@ describe('updateFeatureToggles', () => {
         emailNewContentEnabled: false,
         adminEmailProductsEnabled: false,
         adminEmailContentEnabled: false,
+        reservationApprovalPoints: 10,
+        leaderboardRankingEnabled: false,
+        leaderboardAnnouncementEnabled: false,
+        leaderboardUpdateFrequency: 'weekly',
         updatedBy: 'user-1',
       },
       client,
@@ -307,6 +419,10 @@ describe('updateFeatureToggles', () => {
         emailNewContentEnabled: false,
         adminEmailProductsEnabled: false,
         adminEmailContentEnabled: false,
+        reservationApprovalPoints: 10,
+        leaderboardRankingEnabled: false,
+        leaderboardAnnouncementEnabled: false,
+        leaderboardUpdateFrequency: 'weekly',
         updatedBy: 'user-1',
       },
       client,
@@ -335,6 +451,10 @@ describe('updateFeatureToggles', () => {
         emailNewContentEnabled: false,
         adminEmailProductsEnabled: false,
         adminEmailContentEnabled: false,
+        reservationApprovalPoints: 10,
+        leaderboardRankingEnabled: false,
+        leaderboardAnnouncementEnabled: false,
+        leaderboardUpdateFrequency: 'weekly',
         updatedBy: 'user-1',
       },
       client,
@@ -344,6 +464,173 @@ describe('updateFeatureToggles', () => {
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe('INVALID_REQUEST');
     expect(client.send).not.toHaveBeenCalled();
+  });
+
+  it('should reject when leaderboardRankingEnabled is not boolean', async () => {
+    const client = createMockClient();
+
+    const result = await updateFeatureToggles(
+      {
+        codeRedemptionEnabled: true,
+        pointsClaimEnabled: false,
+        adminProductsEnabled: true,
+        adminOrdersEnabled: true,
+        adminContentReviewEnabled: false,
+        adminCategoriesEnabled: false,
+        emailPointsEarnedEnabled: false,
+        emailNewOrderEnabled: false,
+        emailOrderShippedEnabled: false,
+        emailNewProductEnabled: false,
+        emailNewContentEnabled: false,
+        adminEmailProductsEnabled: false,
+        adminEmailContentEnabled: false,
+        reservationApprovalPoints: 10,
+        leaderboardRankingEnabled: 'yes' as any,
+        leaderboardAnnouncementEnabled: false,
+        leaderboardUpdateFrequency: 'weekly',
+        updatedBy: 'user-1',
+      },
+      client,
+      'users-table',
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('INVALID_REQUEST');
+    expect(client.send).not.toHaveBeenCalled();
+  });
+
+  it('should reject when leaderboardAnnouncementEnabled is not boolean', async () => {
+    const client = createMockClient();
+
+    const result = await updateFeatureToggles(
+      {
+        codeRedemptionEnabled: true,
+        pointsClaimEnabled: false,
+        adminProductsEnabled: true,
+        adminOrdersEnabled: true,
+        adminContentReviewEnabled: false,
+        adminCategoriesEnabled: false,
+        emailPointsEarnedEnabled: false,
+        emailNewOrderEnabled: false,
+        emailOrderShippedEnabled: false,
+        emailNewProductEnabled: false,
+        emailNewContentEnabled: false,
+        adminEmailProductsEnabled: false,
+        adminEmailContentEnabled: false,
+        reservationApprovalPoints: 10,
+        leaderboardRankingEnabled: false,
+        leaderboardAnnouncementEnabled: 1 as any,
+        leaderboardUpdateFrequency: 'weekly',
+        updatedBy: 'user-1',
+      },
+      client,
+      'users-table',
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('INVALID_REQUEST');
+    expect(client.send).not.toHaveBeenCalled();
+  });
+
+  it('should reject when leaderboardUpdateFrequency has an invalid value', async () => {
+    const client = createMockClient();
+
+    const result = await updateFeatureToggles(
+      {
+        codeRedemptionEnabled: true,
+        pointsClaimEnabled: false,
+        adminProductsEnabled: true,
+        adminOrdersEnabled: true,
+        adminContentReviewEnabled: false,
+        adminCategoriesEnabled: false,
+        emailPointsEarnedEnabled: false,
+        emailNewOrderEnabled: false,
+        emailOrderShippedEnabled: false,
+        emailNewProductEnabled: false,
+        emailNewContentEnabled: false,
+        adminEmailProductsEnabled: false,
+        adminEmailContentEnabled: false,
+        reservationApprovalPoints: 10,
+        leaderboardRankingEnabled: false,
+        leaderboardAnnouncementEnabled: false,
+        leaderboardUpdateFrequency: 'yearly' as any,
+        updatedBy: 'user-1',
+      },
+      client,
+      'users-table',
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('INVALID_REQUEST');
+    expect(result.error?.message).toContain('更新频率值无效');
+    expect(client.send).not.toHaveBeenCalled();
+  });
+
+  it('should reject when leaderboardUpdateFrequency is an empty string', async () => {
+    const client = createMockClient();
+
+    const result = await updateFeatureToggles(
+      {
+        codeRedemptionEnabled: true,
+        pointsClaimEnabled: false,
+        adminProductsEnabled: true,
+        adminOrdersEnabled: true,
+        adminContentReviewEnabled: false,
+        adminCategoriesEnabled: false,
+        emailPointsEarnedEnabled: false,
+        emailNewOrderEnabled: false,
+        emailOrderShippedEnabled: false,
+        emailNewProductEnabled: false,
+        emailNewContentEnabled: false,
+        adminEmailProductsEnabled: false,
+        adminEmailContentEnabled: false,
+        reservationApprovalPoints: 10,
+        leaderboardRankingEnabled: false,
+        leaderboardAnnouncementEnabled: false,
+        leaderboardUpdateFrequency: '' as any,
+        updatedBy: 'user-1',
+      },
+      client,
+      'users-table',
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('INVALID_REQUEST');
+    expect(client.send).not.toHaveBeenCalled();
+  });
+
+  it('should accept all three valid leaderboardUpdateFrequency values', async () => {
+    for (const freq of ['daily', 'weekly', 'monthly'] as const) {
+      const client = createMockClient();
+
+      const result = await updateFeatureToggles(
+        {
+          codeRedemptionEnabled: true,
+          pointsClaimEnabled: false,
+          adminProductsEnabled: true,
+          adminOrdersEnabled: true,
+          adminContentReviewEnabled: false,
+          adminCategoriesEnabled: false,
+          emailPointsEarnedEnabled: false,
+          emailNewOrderEnabled: false,
+          emailOrderShippedEnabled: false,
+          emailNewProductEnabled: false,
+          emailNewContentEnabled: false,
+          adminEmailProductsEnabled: false,
+          adminEmailContentEnabled: false,
+          reservationApprovalPoints: 10,
+          leaderboardRankingEnabled: false,
+          leaderboardAnnouncementEnabled: false,
+          leaderboardUpdateFrequency: freq,
+          updatedBy: 'user-1',
+        },
+        client,
+        'users-table',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.settings!.leaderboardUpdateFrequency).toBe(freq);
+    }
   });
 
   it('should write correct record structure to DynamoDB', async () => {
@@ -364,6 +651,10 @@ describe('updateFeatureToggles', () => {
         emailNewContentEnabled: true,
         adminEmailProductsEnabled: true,
         adminEmailContentEnabled: false,
+        reservationApprovalPoints: 20,
+        leaderboardRankingEnabled: true,
+        leaderboardAnnouncementEnabled: false,
+        leaderboardUpdateFrequency: 'monthly',
         updatedBy: 'admin-1',
       },
       client,
@@ -389,6 +680,10 @@ describe('updateFeatureToggles', () => {
     expect(vals[':enc']).toBe(true);
     expect(vals[':aepe']).toBe(true);
     expect(vals[':aece']).toBe(false);
+    expect(vals[':rap']).toBe(20);
+    expect(vals[':lre']).toBe(true);
+    expect(vals[':lae']).toBe(false);
+    expect(vals[':luf']).toBe('monthly');
     expect(vals[':ub']).toBe('admin-1');
     expect(vals[':ua']).toBeTruthy();
 

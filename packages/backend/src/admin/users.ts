@@ -45,9 +45,6 @@ export async function listUsers(
 ): Promise<ListUsersResult> {
   const pageSize = Math.min(Math.max(options.pageSize ?? 20, 1), 100);
 
-  // System records stored in Users table that should be excluded from user listings
-  const SYSTEM_USER_IDS = ['feature-toggles', 'travel-sponsorship', 'invite-settings'];
-
   const expressionAttributeNames: Record<string, string> = {
     '#userId': 'userId',
     '#email': 'email',
@@ -58,50 +55,63 @@ export async function listUsers(
     '#createdAt': 'createdAt',
   };
 
-  // Build filter to exclude system records and optionally filter by role
-  const filterParts: string[] = [];
+  // Build filter: only return records that have an email attribute (real users).
+  // System config records (feature-toggles, travel-sponsorship, invite-settings,
+  // activity-sync-config, etc.) stored in the same table don't have email,
+  // so this single condition excludes all of them without maintaining a list.
+  const filterParts: string[] = ['attribute_exists(#email)'];
   const expressionAttributeValues: Record<string, unknown> = {};
-
-  // Exclude system records
-  SYSTEM_USER_IDS.forEach((id, idx) => {
-    const key = `:sysId${idx}`;
-    filterParts.push(`#userId <> ${key}`);
-    expressionAttributeValues[key] = id;
-  });
 
   if (options.role) {
     filterParts.push('contains(#roles, :role)');
     expressionAttributeValues[':role'] = options.role;
   }
 
-  const params: Record<string, unknown> = {
-    TableName: tableName,
-    Limit: pageSize,
-    ProjectionExpression: '#userId, #email, #nickname, #roles, #points, #status, #createdAt',
-    ExpressionAttributeNames: expressionAttributeNames,
-    FilterExpression: filterParts.join(' AND '),
-    ExpressionAttributeValues: expressionAttributeValues,
-  };
+  // DynamoDB Scan Limit is applied BEFORE FilterExpression, so a single scan
+  // may return fewer results than pageSize (or even 0) when system records are
+  // filtered out. We loop until we have enough results or the table is exhausted.
+  const allUsers: UserListItem[] = [];
+  let exclusiveStartKey: Record<string, unknown> | undefined = options.lastKey;
+  let lastEvaluatedKey: Record<string, unknown> | undefined;
 
-  if (options.lastKey) {
-    params.ExclusiveStartKey = options.lastKey;
-  }
+  do {
+    const params: Record<string, unknown> = {
+      TableName: tableName,
+      Limit: pageSize,
+      ProjectionExpression: '#userId, #email, #nickname, #roles, #points, #status, #createdAt',
+      ExpressionAttributeNames: expressionAttributeNames,
+      FilterExpression: filterParts.join(' AND '),
+      ...(Object.keys(expressionAttributeValues).length > 0 && {
+        ExpressionAttributeValues: expressionAttributeValues,
+      }),
+    };
 
-  const result = await dynamoClient.send(new ScanCommand(params as any));
+    if (exclusiveStartKey) {
+      params.ExclusiveStartKey = exclusiveStartKey;
+    }
 
-  const users: UserListItem[] = (result.Items ?? []).map((item: any) => ({
-    userId: item.userId,
-    email: item.email,
-    nickname: item.nickname,
-    roles: item.roles instanceof Set ? Array.from(item.roles) : Array.isArray(item.roles) ? item.roles : [],
-    points: item.points ?? 0,
-    status: (item.status as UserStatus) ?? 'active',
-    createdAt: item.createdAt,
-  }));
+    const result = await dynamoClient.send(new ScanCommand(params as any));
+
+    const batch: UserListItem[] = (result.Items ?? []).map((item: any) => ({
+      userId: item.userId,
+      email: item.email,
+      nickname: item.nickname,
+      roles: item.roles instanceof Set ? Array.from(item.roles) : Array.isArray(item.roles) ? item.roles : [],
+      points: item.points ?? 0,
+      status: (item.status as UserStatus) ?? 'active',
+      createdAt: item.createdAt,
+    }));
+
+    allUsers.push(...batch);
+    lastEvaluatedKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+    exclusiveStartKey = lastEvaluatedKey;
+
+    // Stop when we have enough results or the table is exhausted
+  } while (allUsers.length < pageSize && lastEvaluatedKey);
 
   return {
-    users,
-    lastKey: result.LastEvaluatedKey as Record<string, unknown> | undefined,
+    users: allUsers.slice(0, pageSize),
+    lastKey: allUsers.length >= pageSize ? lastEvaluatedKey : undefined,
   };
 }
 

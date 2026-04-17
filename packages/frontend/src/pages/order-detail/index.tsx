@@ -6,6 +6,7 @@ import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
 import { maskPhone } from '@points-mall/shared';
 import { GiftIcon, ClockIcon, PackageIcon } from '../../components/icons';
+import PageToolbar from '../../components/PageToolbar';
 import type { ShippingStatus, ShippingEvent, OrderItem } from '@points-mall/shared';
 import './index.scss';
 
@@ -96,11 +97,7 @@ export default function OrderDetailPage() {
   if (error || !order) {
     return (
       <View className='detail-page'>
-        <View className='detail-header'>
-          <Text className='detail-header__back' onClick={handleBack}>{t('orderDetail.backButton')}</Text>
-          <Text className='detail-header__title'>{t('orderDetail.title')}</Text>
-          <View className='detail-header__placeholder' />
-        </View>
+        <PageToolbar title={t('orderDetail.title')} onBack={handleBack} />
         <View className='detail-error'>
           <Text className='detail-error__text'>{error || t('orderDetail.notFound')}</Text>
         </View>
@@ -114,11 +111,7 @@ export default function OrderDetailPage() {
   return (
     <View className='detail-page'>
       {/* Header */}
-      <View className='detail-header'>
-        <Text className='detail-header__back' onClick={handleBack}>{t('orderDetail.backButton')}</Text>
-        <Text className='detail-header__title'>{t('orderDetail.title')}</Text>
-        <View className='detail-header__placeholder' />
-      </View>
+      <PageToolbar title={t('orderDetail.title')} onBack={handleBack} />
 
       <View className='detail-content'>
         {/* Status Banner */}

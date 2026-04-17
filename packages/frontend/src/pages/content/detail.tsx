@@ -1,11 +1,12 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, ScrollView } from '@tarojs/components';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { View, Text, ScrollView, Input } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
 import { useAppStore } from '../../store';
 import { request } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
 import type { ContentItem, ContentComment } from '@points-mall/shared';
+import PageToolbar from '../../components/PageToolbar';
 import './detail.scss';
 
 interface RolePermissions {
@@ -76,6 +77,21 @@ interface ReserveResponse {
   alreadyReserved?: boolean;
 }
 
+/** Activity record from reservation-activities API */
+interface ActivityRecord {
+  activityId: string;
+  activityType: string;
+  ugName: string;
+  topic: string;
+  activityDate: string;
+}
+
+interface ActivitiesResponse {
+  success: boolean;
+  activities: ActivityRecord[];
+  lastKey?: string;
+}
+
 interface DownloadResponse {
   success: boolean;
   downloadUrl: string;
@@ -84,6 +100,35 @@ interface DownloadResponse {
 interface CommentCreateResponse {
   success: boolean;
   comment: ContentComment;
+}
+
+/** Inline SVG icons for stats — feather-style, self-contained */
+function HeartIcon({ size = 16, color = 'currentColor' }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    </svg>
+  );
+}
+
+function CommentIcon({ size = 16, color = 'currentColor' }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+
+function ClipboardIcon({ size = 16, color = 'currentColor' }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+      <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+    </svg>
+  );
 }
 
 /** Get file extension from fileName */
@@ -146,6 +191,13 @@ export default function ContentDetailPage() {
   // Action loading states
   const [liking, setLiking] = useState(false);
   const [reserving, setReserving] = useState(false);
+
+  // Activity selector state
+  const [showActivitySelector, setShowActivitySelector] = useState(false);
+  const [activities, setActivities] = useState<ActivityRecord[]>([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(false);
+  const [activitySearch, setActivitySearch] = useState('');
+  const [selectedActivity, setSelectedActivity] = useState<ActivityRecord | null>(null);
 
   const fetchDetail = useCallback(async () => {
     if (!contentId) return;
@@ -214,6 +266,32 @@ export default function ContentDetailPage() {
     }
   }, [user]);
 
+  /** Fetch activities for the activity selector */
+  const fetchActivities = useCallback(async () => {
+    setActivitiesLoading(true);
+    try {
+      const res = await request<ActivitiesResponse>({
+        url: '/api/content/reservation-activities?pageSize=200',
+      });
+      setActivities(res.activities || []);
+    } catch {
+      setActivities([]);
+    } finally {
+      setActivitiesLoading(false);
+    }
+  }, []);
+
+  /** Client-side search filtering on activities */
+  const filteredActivities = useMemo(() => {
+    const query = activitySearch.trim().toLowerCase();
+    if (!query) return activities;
+    return activities.filter((a) =>
+      a.ugName.toLowerCase().includes(query) ||
+      a.topic.toLowerCase().includes(query) ||
+      a.activityDate.toLowerCase().includes(query),
+    );
+  }, [activities, activitySearch]);
+
   useEffect(() => {
     if (!isAuthenticated) {
       Taro.redirectTo({ url: '/pages/login/index' });
@@ -253,20 +331,43 @@ export default function ContentDetailPage() {
   };
 
   const handleReserve = async () => {
-    if (reserving) return;
+    // Open activity selector modal instead of directly reserving
+    setShowActivitySelector(true);
+    setSelectedActivity(null);
+    setActivitySearch('');
+    fetchActivities();
+  };
+
+  /** Called when user confirms activity selection in the modal */
+  const handleConfirmReservation = async () => {
+    if (!selectedActivity || reserving) return;
     setReserving(true);
     try {
       await request<ReserveResponse>({
         url: `/api/content/${contentId}/reserve`,
         method: 'POST',
+        data: {
+          activityId: selectedActivity.activityId,
+          activityType: selectedActivity.activityType,
+          activityUG: selectedActivity.ugName,
+          activityTopic: selectedActivity.topic,
+          activityDate: selectedActivity.activityDate,
+        },
       });
       setHasReserved(true);
       setItem((prev) => prev ? { ...prev, reservationCount: prev.reservationCount + 1 } : prev);
+      setShowActivitySelector(false);
       Taro.showToast({ title: t('contentHub.detail.reserveSuccess'), icon: 'success' });
     } catch (err: any) {
       Taro.showToast({ title: err?.message || t('contentHub.detail.reserveFailed'), icon: 'none' });
     } finally {
       setReserving(false);
+    }
+  };
+
+  const handleCloseActivitySelector = () => {
+    if (!reserving) {
+      setShowActivitySelector(false);
     }
   };
 
@@ -356,11 +457,7 @@ export default function ContentDetailPage() {
   if (loading) {
     return (
       <View className='detail-page'>
-        <View className='detail-header'>
-          <Text className='detail-header__back' onClick={handleBack}>{t('contentHub.detail.backButton')}</Text>
-          <Text className='detail-header__title'>{t('contentHub.detail.title')}</Text>
-          <View className='detail-header__spacer' />
-        </View>
+        <PageToolbar title={t('contentHub.detail.title')} onBack={handleBack} />
         <View className='detail-loading'>
           <Text className='detail-loading__text'>{t('contentHub.detail.loading')}</Text>
         </View>
@@ -371,11 +468,7 @@ export default function ContentDetailPage() {
   if (error || !item) {
     return (
       <View className='detail-page'>
-        <View className='detail-header'>
-          <Text className='detail-header__back' onClick={handleBack}>{t('contentHub.detail.backButton')}</Text>
-          <Text className='detail-header__title'>{t('contentHub.detail.title')}</Text>
-          <View className='detail-header__spacer' />
-        </View>
+        <PageToolbar title={t('contentHub.detail.title')} onBack={handleBack} />
         <View className='detail-error'>
           <Text className='detail-error__text'>{error || t('contentHub.detail.notFound')}</Text>
           <Text className='detail-error__retry' onClick={fetchDetail}>{t('contentHub.detail.retry')}</Text>
@@ -387,11 +480,7 @@ export default function ContentDetailPage() {
   return (
     <View className='detail-page'>
       {/* Header */}
-      <View className='detail-header'>
-        <Text className='detail-header__back' onClick={handleBack}>{t('contentHub.detail.backButton')}</Text>
-        <Text className='detail-header__title'>{t('contentHub.detail.title')}</Text>
-        <View className='detail-header__spacer' />
-      </View>
+      <PageToolbar title={t('contentHub.detail.title')} onBack={handleBack} />
 
       <ScrollView className='detail-body' scrollY>
         {/* Content Info */}
@@ -449,17 +538,23 @@ export default function ContentDetailPage() {
         {/* Stats */}
         <View className='detail-stats'>
           <View className='detail-stats__item'>
-            <Text className='detail-stats__icon detail-stats__icon--heart'>♥</Text>
+            <View className='detail-stats__icon detail-stats__icon--heart'>
+              <HeartIcon size={16} color="var(--error)" />
+            </View>
             <Text className='detail-stats__value'>{likeCount}</Text>
             <Text className='detail-stats__label'>{t('contentHub.detail.statLikes')}</Text>
           </View>
           <View className='detail-stats__item'>
-            <Text className='detail-stats__icon'>💬</Text>
+            <View className='detail-stats__icon'>
+              <CommentIcon size={16} color="currentColor" />
+            </View>
             <Text className='detail-stats__value'>{item.commentCount}</Text>
             <Text className='detail-stats__label'>{t('contentHub.detail.statComments')}</Text>
           </View>
           <View className='detail-stats__item'>
-            <Text className='detail-stats__icon'>📋</Text>
+            <View className='detail-stats__icon'>
+              <ClipboardIcon size={16} color="currentColor" />
+            </View>
             <Text className='detail-stats__value'>{item.reservationCount}</Text>
             <Text className='detail-stats__label'>{t('contentHub.detail.statReservations')}</Text>
           </View>
@@ -589,6 +684,79 @@ export default function ContentDetailPage() {
           )}
         </View>
       </ScrollView>
+
+      {/* Activity Selector Modal */}
+      {showActivitySelector && (
+        <View className='activity-selector-overlay' onClick={handleCloseActivitySelector}>
+          <View className='activity-selector' onClick={(e) => e.stopPropagation()}>
+            <View className='activity-selector__header'>
+              <Text className='activity-selector__title'>{t('activitySelector.title')}</Text>
+              <Text className='activity-selector__close' onClick={handleCloseActivitySelector}>✕</Text>
+            </View>
+
+            <View className='activity-selector__search'>
+              <Input
+                className='activity-selector__search-input'
+                placeholder={t('activitySelector.searchPlaceholder')}
+                value={activitySearch}
+                onInput={(e) => setActivitySearch(e.detail.value)}
+              />
+            </View>
+
+            <ScrollView className='activity-selector__list' scrollY>
+              {activitiesLoading ? (
+                <View className='activity-selector__loading'>
+                  <Text className='activity-selector__loading-text'>{t('common.loading')}</Text>
+                </View>
+              ) : filteredActivities.length === 0 ? (
+                <View className='activity-selector__empty'>
+                  <Text className='activity-selector__empty-text'>{t('activitySelector.empty')}</Text>
+                </View>
+              ) : (
+                filteredActivities.map((activity) => {
+                  const isSelected = selectedActivity?.activityId === activity.activityId;
+                  return (
+                    <View
+                      key={activity.activityId}
+                      className={`activity-selector__item ${isSelected ? 'activity-selector__item--selected' : ''}`}
+                      onClick={() => setSelectedActivity(activity)}
+                    >
+                      <View className='activity-selector__radio'>
+                        <View className={`activity-selector__radio-dot ${isSelected ? 'activity-selector__radio-dot--active' : ''}`} />
+                      </View>
+                      <View className='activity-selector__item-content'>
+                        <View className='activity-selector__item-top'>
+                          <Text className={`activity-selector__type-badge activity-selector__type-badge--${activity.activityType === '线上' ? 'online' : 'offline'}`}>
+                            {activity.activityType}
+                          </Text>
+                          <Text className='activity-selector__ug-name'>{activity.ugName}</Text>
+                        </View>
+                        <Text className='activity-selector__topic'>{activity.topic}</Text>
+                        <Text className='activity-selector__date'>{activity.activityDate}</Text>
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+
+            <View className='activity-selector__footer'>
+              <View
+                className='btn-secondary activity-selector__cancel-btn'
+                onClick={handleCloseActivitySelector}
+              >
+                <Text>{t('common.cancel')}</Text>
+              </View>
+              <View
+                className={`btn-primary activity-selector__confirm-btn ${(!selectedActivity || reserving) ? 'btn-primary--disabled' : ''}`}
+                onClick={handleConfirmReservation}
+              >
+                <Text>{reserving ? t('contentHub.detail.reserving') : t('common.confirm')}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
 }

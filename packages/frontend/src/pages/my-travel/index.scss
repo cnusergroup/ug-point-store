@@ -77,6 +77,106 @@
   }
 }
 
+/* Speaker Points Detail Cards */
+.travel-points-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--card-border);
+
+  &__row {
+    display: flex;
+    gap: var(--space-2);
+  }
+
+  &__card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--space-3) var(--space-2);
+    background: var(--bg-elevated);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    gap: var(--space-1);
+    transition: border-color var(--transition-fast);
+
+    &--full {
+      flex: none;
+      width: 100%;
+    }
+  }
+
+  &__label {
+    font-family: var(--font-body);
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    font-weight: 500;
+    text-align: center;
+  }
+
+  &__value {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+
+    &--earn {
+      color: var(--role-speaker);
+    }
+
+    &--used {
+      color: var(--text-secondary);
+    }
+
+    &--threshold {
+      color: var(--accent-primary);
+    }
+  }
+
+  &__unit {
+    font-family: var(--font-body);
+    font-size: var(--text-caption);
+    font-weight: 500;
+    margin-left: var(--space-1);
+    opacity: 0.7;
+  }
+
+  &__threshold-info {
+    padding: var(--space-2) var(--space-3);
+    background: color-mix(in srgb, var(--accent-primary) 8%, var(--bg-elevated));
+    border: 1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent);
+    border-radius: var(--radius-sm);
+    text-align: center;
+  }
+
+  &__threshold-text {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--accent-primary);
+    font-weight: 500;
+  }
+}
+
+/* Notice Banner */
+.travel-notice-banner {
+  margin: 0 var(--space-4) var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-md);
+
+  &__text {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: #d97706;
+    line-height: 1.6;
+    white-space: pre-line;
+  }
+}
+
 /* Status Filter Tabs */
 .travel-tabs {
   display: flex;
@@ -102,6 +202,34 @@
     &:hover:not(&--active) {
       color: var(--text-secondary);
     }
+  }
+}
+
+/* Loading & Empty States */
+.admin-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 80px var(--space-5);
+  font-size: var(--text-body);
+  color: var(--text-tertiary);
+}
+
+.admin-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px var(--space-5);
+  gap: var(--space-3);
+
+  &__icon {
+    font-size: 48px;
+  }
+
+  &__text {
+    font-size: var(--text-body);
+    color: var(--text-tertiary);
   }
 }
 

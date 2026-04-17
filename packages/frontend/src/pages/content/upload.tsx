@@ -7,6 +7,7 @@ import { uploadWithRetry, UploadError } from '../../utils/upload';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
 import TagInput from '../../components/TagInput';
+import PageToolbar from '../../components/PageToolbar';
 import type { ContentCategory, ContentItem, ContentStatus } from '@points-mall/shared';
 import './upload.scss';
 
@@ -460,11 +461,7 @@ export default function ContentUploadPage() {
   if (isEditMode && loadingDetail) {
     return (
       <View className='upload-page'>
-        <View className='upload-header'>
-          <Text className='upload-header__back' onClick={handleBack}>{t('contentHub.upload.backButton')}</Text>
-          <Text className='upload-header__title'>{pageTitle}</Text>
-          <View className='upload-header__spacer' />
-        </View>
+        <PageToolbar title={pageTitle} onBack={handleBack} />
         <View className='upload-body'>
           <View className='upload-loading'>
             <Text className='upload-loading__text'>{t('common.loading')}</Text>
@@ -477,11 +474,7 @@ export default function ContentUploadPage() {
   return (
     <View className='upload-page'>
       {/* Header */}
-      <View className='upload-header'>
-        <Text className='upload-header__back' onClick={handleBack}>{t('contentHub.upload.backButton')}</Text>
-        <Text className='upload-header__title'>{pageTitle}</Text>
-        <View className='upload-header__spacer' />
-      </View>
+      <PageToolbar title={pageTitle} onBack={handleBack} />
 
       <View className='upload-body'>
         {/* Status notice banner (edit mode only) */}
@@ -591,7 +584,7 @@ export default function ContentUploadPage() {
 
         {/* Tags */}
         <View className='upload-field'>
-          <Text className='upload-field__label'>标签 <Text className='upload-field__optional'>{t('contentHub.upload.videoUrlOptional')}</Text></Text>
+          <Text className='upload-field__label'>{t('contentHub.upload.tagsLabel')} <Text className='upload-field__optional'>{t('contentHub.upload.videoUrlOptional')}</Text></Text>
           <TagInput value={tags} onChange={setTags} />
         </View>
 

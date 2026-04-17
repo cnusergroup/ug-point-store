@@ -7,6 +7,7 @@ import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
 import type { Locale } from '../../i18n/types';
 import { KeyIcon, LogoutIcon, AdminIcon, ChevronRightIcon, ArrowLeftIcon, GlobeIcon, SettingsIcon, MailIcon } from '../../components/icons';
+import PageToolbar from '../../components/PageToolbar';
 import './index.scss';
 
 const LOCALE_OPTIONS: { key: Locale; label: string }[] = [
@@ -159,13 +160,7 @@ export default function SettingsPage() {
 
   return (
     <View className='settings-page'>
-      <View className='settings-header'>
-        <View className='settings-header__back' onClick={() => goBack('/pages/hub/index')}>
-          <ArrowLeftIcon size={20} color='var(--text-primary)' />
-        </View>
-        <Text className='settings-header__title'>{t('settings.title')}</Text>
-        <View className='settings-header__placeholder' />
-      </View>
+      <PageToolbar title={t('settings.title')} onBack={() => goBack('/pages/hub/index')} />
 
       <View className='settings-list'>
         {/* Change Password */}
@@ -292,15 +287,15 @@ export default function SettingsPage() {
                   <View className='settings-item__icon'>
                     <MailIcon size={20} color='var(--accent-primary)' />
                   </View>
-                  <Text className='settings-item__label'>邮件订阅</Text>
+                  <Text className='settings-item__label'>{t('settings.emailSubscriptions.sectionTitle')}</Text>
                 </View>
               </View>
               <View className='settings-email__toggles'>
                 {emailToggles.emailNewProductEnabled && (
                   <View className='settings-email__toggle-row'>
                     <View className='settings-email__toggle-info'>
-                      <Text className='settings-email__toggle-label'>新商品通知</Text>
-                      <Text className='settings-email__toggle-desc'>商城上新时收到邮件提醒</Text>
+                      <Text className='settings-email__toggle-label'>{t('settings.emailSubscriptions.newProductLabel')}</Text>
+                      <Text className='settings-email__toggle-desc'>{t('settings.emailSubscriptions.newProductDesc')}</Text>
                     </View>
                     <Switch
                       checked={emailSubs.newProduct}
@@ -312,8 +307,8 @@ export default function SettingsPage() {
                 {emailToggles.emailNewContentEnabled && (
                   <View className='settings-email__toggle-row'>
                     <View className='settings-email__toggle-info'>
-                      <Text className='settings-email__toggle-label'>新内容通知</Text>
-                      <Text className='settings-email__toggle-desc'>有新内容发布时收到邮件提醒</Text>
+                      <Text className='settings-email__toggle-label'>{t('settings.emailSubscriptions.newContentLabel')}</Text>
+                      <Text className='settings-email__toggle-desc'>{t('settings.emailSubscriptions.newContentDesc')}</Text>
                     </View>
                     <Switch
                       checked={emailSubs.newContent}

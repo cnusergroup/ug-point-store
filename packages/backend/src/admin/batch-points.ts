@@ -8,6 +8,8 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { ulid } from 'ulid';
 import type { DistributionRecord } from '@points-mall/shared';
+import { getFeatureToggles, DEFAULT_POINTS_RULE_CONFIG } from '../settings/feature-toggles';
+import type { PointsRuleConfig } from '../settings/feature-toggles';
 
 // ============================================================
 // Interfaces
@@ -19,8 +21,15 @@ export interface BatchDistributionInput {
   points: number;
   reason: string;
   targetRole: 'UserGroupLeader' | 'Speaker' | 'Volunteer';
+  speakerType?: 'typeA' | 'typeB' | 'roundtable';
   distributorId: string;
   distributorNickname: string;
+  // 活动关联字段
+  activityId: string;
+  activityType: string;
+  activityUG: string;
+  activityTopic: string;
+  activityDate: string;
 }
 
 /** 批量发放结果 */
@@ -76,6 +85,21 @@ export function validateBatchDistributionInput(body: unknown): ValidationResult 
     return { valid: false, error: { code: 'INVALID_REQUEST', message: 'targetRole 必须为 UserGroupLeader、Speaker 或 Volunteer' } };
   }
 
+  // Validate activityId: required non-empty string
+  const { activityId } = body as Record<string, unknown>;
+  if (typeof activityId !== 'string' || activityId.length === 0) {
+    return { valid: false, error: { code: 'INVALID_REQUEST', message: 'activityId 为必填字段' } };
+  }
+
+  // Validate speakerType when targetRole is Speaker
+  const { speakerType } = body as Record<string, unknown>;
+  if (targetRole === 'Speaker') {
+    const validSpeakerTypes = ['typeA', 'typeB', 'roundtable'];
+    if (!speakerType || typeof speakerType !== 'string' || !validSpeakerTypes.includes(speakerType)) {
+      return { valid: false, error: { code: 'INVALID_REQUEST', message: 'Speaker 角色必须指定 speakerType（typeA/typeB/roundtable）' } };
+    }
+  }
+
   return { valid: true };
 }
 
@@ -85,6 +109,68 @@ export function validateBatchDistributionInput(body: unknown): ValidationResult 
 
 /** Max users per DynamoDB transaction batch (100 ops / 2 ops per user = 50, but design says 25) */
 const BATCH_SIZE = 25;
+
+/**
+ * Calculate expected points per person based on role, speakerType, and config.
+ */
+export function calculateExpectedPoints(
+  targetRole: 'UserGroupLeader' | 'Speaker' | 'Volunteer',
+  speakerType: 'typeA' | 'typeB' | 'roundtable' | undefined,
+  config: PointsRuleConfig,
+): number {
+  switch (targetRole) {
+    case 'UserGroupLeader':
+      return config.uglPointsPerEvent;
+    case 'Volunteer':
+      return config.volunteerPointsPerEvent;
+    case 'Speaker':
+      switch (speakerType) {
+        case 'typeA': return config.speakerTypeAPoints;
+        case 'typeB': return config.speakerTypeBPoints;
+        case 'roundtable': return config.speakerRoundtablePoints;
+        default: return config.speakerTypeAPoints;
+      }
+    default:
+      return 0;
+  }
+}
+
+/**
+ * Query awarded user IDs for a given activity + role combination.
+ */
+export async function getAwardedUserIds(
+  activityId: string,
+  targetRole: string,
+  dynamoClient: DynamoDBDocumentClient,
+  batchDistributionsTable: string,
+): Promise<string[]> {
+  // Scan all distributions and filter by activityId + targetRole
+  // Since there's no GSI on activityId, we query all records and filter
+  const result = await dynamoClient.send(
+    new QueryCommand({
+      TableName: batchDistributionsTable,
+      IndexName: 'createdAt-index',
+      KeyConditionExpression: 'pk = :pk',
+      FilterExpression: 'activityId = :aid AND targetRole = :tr',
+      ExpressionAttributeValues: {
+        ':pk': 'ALL',
+        ':aid': activityId,
+        ':tr': targetRole,
+      },
+    }),
+  );
+
+  const userIds = new Set<string>();
+  for (const item of result.Items ?? []) {
+    const recipientIds = item.recipientIds as string[] | undefined;
+    if (recipientIds) {
+      for (const id of recipientIds) {
+        userIds.add(id);
+      }
+    }
+  }
+  return [...userIds];
+}
 
 /**
  * Execute batch points distribution.
@@ -100,10 +186,77 @@ export async function executeBatchDistribution(
     usersTable: string;
     pointsRecordsTable: string;
     batchDistributionsTable: string;
+    activitiesTable?: string;
   },
 ): Promise<BatchDistributionResult> {
+  // 0. Verify activityId exists in Activities table (if activitiesTable provided)
+  if (tables.activitiesTable) {
+    const activityResult = await dynamoClient.send(
+      new GetCommand({
+        TableName: tables.activitiesTable,
+        Key: { activityId: input.activityId },
+      }),
+    );
+    if (!activityResult.Item) {
+      return {
+        success: false,
+        error: { code: 'ACTIVITY_NOT_FOUND', message: '关联活动不存在' },
+      };
+    }
+  }
+
+  // 0b. Read pointsRuleConfig from settings and validate points
+  const toggles = await getFeatureToggles(dynamoClient, tables.usersTable);
+  const config = toggles.pointsRuleConfig ?? { ...DEFAULT_POINTS_RULE_CONFIG };
+  const expectedPoints = calculateExpectedPoints(input.targetRole, input.speakerType, config);
+
+  if (input.points !== expectedPoints) {
+    return {
+      success: false,
+      error: {
+        code: 'POINTS_MISMATCH',
+        message: `积分值不匹配，${input.targetRole}${input.speakerType ? `(${input.speakerType})` : ''} 应为 ${expectedPoints} 分`,
+      },
+    };
+  }
+
+  // 0c. Volunteer count limit check
+  if (input.targetRole === 'Volunteer') {
+    const uniqueCount = new Set(input.userIds).size;
+    if (uniqueCount > config.volunteerMaxPerEvent) {
+      return {
+        success: false,
+        error: {
+          code: 'VOLUNTEER_LIMIT_EXCEEDED',
+          message: `每场活动最多选择 ${config.volunteerMaxPerEvent} 位志愿者，当前选择 ${uniqueCount} 位`,
+        },
+      };
+    }
+  }
+
   // 1. Deduplicate userIds
   const uniqueUserIds = [...new Set(input.userIds)];
+
+  // 1b. Duplicate check: same activity + same role + same user
+  const awardedUserIds = await getAwardedUserIds(
+    input.activityId,
+    input.targetRole,
+    dynamoClient,
+    tables.batchDistributionsTable,
+  );
+  const awardedSet = new Set(awardedUserIds);
+  const duplicateUserIds = uniqueUserIds.filter(id => awardedSet.has(id));
+  if (duplicateUserIds.length > 0) {
+    return {
+      success: false,
+      error: {
+        code: 'DUPLICATE_DISTRIBUTION',
+        message: `以下用户已在此活动中以 ${input.targetRole} 身份获得积分`,
+        duplicateUserIds,
+      } as any,
+    };
+  }
+
   const distributionId = ulid();
   const now = new Date().toISOString();
 
@@ -146,14 +299,24 @@ export async function executeBatchDistribution(
       const newBalance = currentBalance + input.points;
       const recordId = ulid();
 
-      // a. Update user points
+      // a. Update user points — also increment earnTotal (all roles) and the role-specific earnTotal field
+      const roleFieldMap: Record<string, string> = {
+        Speaker: 'earnTotalSpeaker',
+        UserGroupLeader: 'earnTotalLeader',
+        Volunteer: 'earnTotalVolunteer',
+      };
+      const roleField = roleFieldMap[input.targetRole] ?? 'earnTotalSpeaker';
+
       transactItems.push({
         Update: {
           TableName: tables.usersTable,
           Key: { userId },
-          UpdateExpression: 'SET points = points + :pv, updatedAt = :now',
+          UpdateExpression: `SET points = points + :pv, earnTotal = if_not_exists(earnTotal, :zero) + :pv, #rf = if_not_exists(#rf, :zero) + :pv, pk = :pk, updatedAt = :now`,
+          ExpressionAttributeNames: { '#rf': roleField },
           ExpressionAttributeValues: {
             ':pv': input.points,
+            ':zero': 0,
+            ':pk': 'ALL',
             ':now': now,
           },
         },
@@ -168,9 +331,15 @@ export async function executeBatchDistribution(
             userId,
             type: 'earn',
             amount: input.points,
-            source: `管理员批量发放:${distributionId}`,
+            source: `批量发放:${input.targetRole}|${input.activityUG}|${input.activityTopic}|${input.activityDate}`,
             balanceAfter: newBalance,
             createdAt: now,
+            activityId: input.activityId,
+            activityType: input.activityType,
+            activityUG: input.activityUG,
+            activityTopic: input.activityTopic,
+            activityDate: input.activityDate,
+            targetRole: input.targetRole,
           },
         },
       });
@@ -206,6 +375,12 @@ export async function executeBatchDistribution(
     successCount,
     totalPoints,
     createdAt: now,
+    activityId: input.activityId,
+    activityType: input.activityType,
+    activityUG: input.activityUG,
+    activityTopic: input.activityTopic,
+    activityDate: input.activityDate,
+    ...(input.speakerType && { speakerType: input.speakerType }),
   };
 
   await dynamoClient.send(
@@ -230,6 +405,7 @@ export async function executeBatchDistribution(
 export interface ListDistributionHistoryOptions {
   pageSize?: number;
   lastKey?: string;
+  distributorId?: string;
 }
 
 export interface ListDistributionHistoryResult {
@@ -277,7 +453,13 @@ export async function listDistributionHistory(
       TableName: batchDistributionsTable,
       IndexName: 'createdAt-index',
       KeyConditionExpression: 'pk = :pk',
-      ExpressionAttributeValues: { ':pk': 'ALL' },
+      ...(options.distributorId && {
+        FilterExpression: 'distributorId = :did',
+      }),
+      ExpressionAttributeValues: {
+        ':pk': 'ALL',
+        ...(options.distributorId && { ':did': options.distributorId }),
+      },
       ScanIndexForward: false,
       Limit: pageSize,
       ...(exclusiveStartKey && { ExclusiveStartKey: exclusiveStartKey }),

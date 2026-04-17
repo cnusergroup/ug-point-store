@@ -7,9 +7,25 @@ import { useTranslation } from '../../i18n';
 import { PackageIcon, TicketIcon, ProfileIcon, ClaimIcon, ShoppingBagIcon, GlobeIcon, SettingsIcon, GiftIcon, ClockIcon, LocationIcon, TagIcon, MailIcon } from '../../components/icons';
 import './index.scss';
 
+interface DashboardCategory {
+  key: string;
+  labelKey: string;
+  icon: React.ComponentType<{ size: number; color: string }>;
+}
+
+const DASHBOARD_CATEGORIES: DashboardCategory[] = [
+  { key: 'product-management', labelKey: 'admin.dashboard.categoryProducts', icon: PackageIcon },
+  { key: 'order-management', labelKey: 'admin.dashboard.categoryOrders', icon: ShoppingBagIcon },
+  { key: 'user-management', labelKey: 'admin.dashboard.categoryUsers', icon: ProfileIcon },
+  { key: 'content-management', labelKey: 'admin.dashboard.categoryContent', icon: GlobeIcon },
+  { key: 'operations', labelKey: 'admin.dashboard.categoryOperations', icon: GiftIcon },
+  { key: 'system-settings', labelKey: 'admin.dashboard.categorySystem', icon: SettingsIcon },
+];
+
 const ADMIN_LINKS = [
   {
     key: 'products',
+    category: 'product-management',
     icon: PackageIcon,
     titleKey: 'admin.dashboard.productsTitle',
     descKey: 'admin.dashboard.productsDesc',
@@ -18,6 +34,7 @@ const ADMIN_LINKS = [
   },
   {
     key: 'codes',
+    category: 'product-management',
     icon: TicketIcon,
     titleKey: 'admin.dashboard.codesTitle',
     descKey: 'admin.dashboard.codesDesc',
@@ -26,6 +43,7 @@ const ADMIN_LINKS = [
   },
   {
     key: 'users',
+    category: 'user-management',
     icon: ProfileIcon,
     titleKey: 'admin.dashboard.usersTitle',
     descKey: 'admin.dashboard.usersDesc',
@@ -33,6 +51,7 @@ const ADMIN_LINKS = [
   },
   {
     key: 'orders',
+    category: 'order-management',
     icon: PackageIcon,
     titleKey: 'admin.dashboard.ordersTitle',
     descKey: 'admin.dashboard.ordersDesc',
@@ -41,6 +60,7 @@ const ADMIN_LINKS = [
   },
   {
     key: 'invites',
+    category: 'user-management',
     icon: ShoppingBagIcon,
     titleKey: 'admin.dashboard.invitesTitle',
     descKey: 'admin.dashboard.invitesDesc',
@@ -48,6 +68,7 @@ const ADMIN_LINKS = [
   },
   {
     key: 'claims',
+    category: 'order-management',
     icon: ClaimIcon,
     titleKey: 'admin.dashboard.claimsTitle',
     descKey: 'admin.dashboard.claimsDesc',
@@ -56,6 +77,7 @@ const ADMIN_LINKS = [
   },
   {
     key: 'content',
+    category: 'content-management',
     icon: GlobeIcon,
     titleKey: 'admin.dashboard.contentTitle',
     descKey: 'admin.dashboard.contentDesc',
@@ -64,6 +86,7 @@ const ADMIN_LINKS = [
   },
   {
     key: 'categories',
+    category: 'content-management',
     icon: SettingsIcon,
     titleKey: 'admin.dashboard.categoriesTitle',
     descKey: 'admin.dashboard.categoriesDesc',
@@ -72,6 +95,7 @@ const ADMIN_LINKS = [
   },
   {
     key: 'batch-points',
+    category: 'operations',
     icon: GiftIcon,
     titleKey: 'admin.dashboard.batchPointsTitle',
     descKey: 'admin.dashboard.batchPointsDesc',
@@ -79,6 +103,7 @@ const ADMIN_LINKS = [
   },
   {
     key: 'batch-history',
+    category: 'operations',
     icon: ClockIcon,
     titleKey: 'admin.dashboard.batchHistoryTitle',
     descKey: 'admin.dashboard.batchHistoryDesc',
@@ -86,7 +111,17 @@ const ADMIN_LINKS = [
     superAdminOnly: true,
   },
   {
+    key: 'quarterly-award',
+    category: 'operations',
+    icon: GiftIcon,
+    titleKey: 'admin.dashboard.quarterlyAwardTitle',
+    descKey: 'admin.dashboard.quarterlyAwardDesc',
+    url: '/pages/admin/quarterly-award',
+    superAdminOnly: true,
+  },
+  {
     key: 'travel',
+    category: 'operations',
     icon: LocationIcon,
     titleKey: 'admin.dashboard.travelTitle',
     descKey: 'admin.dashboard.travelDesc',
@@ -94,7 +129,34 @@ const ADMIN_LINKS = [
     superAdminOnly: true,
   },
   {
+    key: 'reports',
+    category: 'operations',
+    icon: ClockIcon,
+    titleKey: 'admin.dashboard.reportsTitle',
+    descKey: 'admin.dashboard.reportsDesc',
+    url: '/pages/admin/reports',
+    superAdminOnly: true,
+  },
+  {
+    key: 'reservation-approvals',
+    category: 'content-management',
+    icon: ClaimIcon,
+    titleKey: 'admin.dashboard.reservationApprovalsTitle',
+    descKey: 'admin.dashboard.reservationApprovalsDesc',
+    url: '/pages/admin/reservation-approvals',
+  },
+  {
+    key: 'reservation-points-config',
+    category: 'content-management',
+    icon: SettingsIcon,
+    titleKey: 'admin.dashboard.reservationPointsConfigTitle',
+    descKey: 'admin.dashboard.reservationPointsConfigDesc',
+    url: '/pages/admin/reservation-approvals?mode=config',
+    superAdminOnly: true,
+  },
+  {
     key: 'tags',
+    category: 'content-management',
     icon: TagIcon,
     titleKey: 'admin.dashboard.tagsTitle',
     descKey: 'admin.dashboard.tagsDesc',
@@ -103,6 +165,7 @@ const ADMIN_LINKS = [
   },
   {
     key: 'email-products',
+    category: 'product-management',
     icon: MailIcon,
     titleKey: 'admin.dashboard.emailProductsTitle',
     descKey: 'admin.dashboard.emailProductsDesc',
@@ -111,6 +174,7 @@ const ADMIN_LINKS = [
   },
   {
     key: 'email-content',
+    category: 'content-management',
     icon: MailIcon,
     titleKey: 'admin.dashboard.emailContentTitle',
     descKey: 'admin.dashboard.emailContentDesc',
@@ -119,6 +183,7 @@ const ADMIN_LINKS = [
   },
   {
     key: 'settings',
+    category: 'system-settings',
     icon: SettingsIcon,
     titleKey: 'admin.dashboard.settingsTitle',
     descKey: 'admin.dashboard.settingsDesc',
@@ -127,10 +192,76 @@ const ADMIN_LINKS = [
   },
 ];
 
+interface DashboardCategoryNavProps {
+  categories: DashboardCategory[];
+  activeCategory: string;
+  onCategoryChange: (key: string) => void;
+}
+
+function DashboardCategoryNav({ categories, activeCategory, onCategoryChange }: DashboardCategoryNavProps) {
+  const { t } = useTranslation();
+  return (
+    <View className='dashboard-category-nav'>
+      {categories.map((cat) => {
+        const isActive = cat.key === activeCategory;
+        const IconComp = cat.icon;
+        return (
+          <View
+            key={cat.key}
+            className={`dashboard-category-nav__item${isActive ? ' dashboard-category-nav__item--active' : ''}`}
+            onClick={() => onCategoryChange(cat.key)}
+          >
+            <View className='dashboard-category-nav__icon'>
+              <IconComp size={18} color={isActive ? 'var(--text-inverse)' : 'var(--text-secondary)'} />
+            </View>
+            <Text className='dashboard-category-nav__label'>{t(cat.labelKey)}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+interface CollapsibleSectionProps {
+  title: string;
+  description?: string;
+  defaultExpanded?: boolean;
+  children: React.ReactNode;
+}
+
+function CollapsibleSection({
+  title,
+  description,
+  defaultExpanded = true,
+  children,
+}: CollapsibleSectionProps) {
+  const [expanded, setExpanded] = useState<boolean>(defaultExpanded);
+
+  return (
+    <View className='collapsible-section'>
+      <View className='collapsible-section__header' onClick={() => setExpanded(!expanded)}>
+        <View className='collapsible-section__header-text'>
+          <Text className='collapsible-section__title'>{title}</Text>
+          {description && (
+            <Text className='collapsible-section__description'>{description}</Text>
+          )}
+        </View>
+        <Text className={`collapsible-section__chevron${expanded ? ' collapsible-section__chevron--expanded' : ''}`}>
+          ›
+        </Text>
+      </View>
+      <View className={`collapsible-section__content${expanded ? ' collapsible-section__content--expanded' : ''}`}>
+        {children}
+      </View>
+    </View>
+  );
+}
+
 export default function AdminDashboard() {
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
   const user = useAppStore((s) => s.user);
   const { t } = useTranslation();
+  const [activeCategory, setActiveCategory] = useState<string>('product-management');
   const [featureToggles, setFeatureToggles] = useState<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; adminProductsEnabled: boolean; adminOrdersEnabled: boolean; adminContentReviewEnabled: boolean; adminCategoriesEnabled: boolean; adminEmailProductsEnabled: boolean; adminEmailContentEnabled: boolean } | null>(null);
 
   useEffect(() => {
@@ -177,6 +308,42 @@ export default function AdminDashboard() {
     Taro.redirectTo({ url: '/pages/hub/index' });
   };
 
+  // --- Visibility filtering logic (Task 6.1) ---
+  // Filter visible links by role and feature toggles (preserving existing logic exactly)
+  const visibleLinks = featureToggles
+    ? ADMIN_LINKS
+        .filter((link) => !link.superAdminOnly || user?.roles?.includes('SuperAdmin'))
+        .filter((link) => {
+          if (link.featureToggleKey && featureToggles[link.featureToggleKey] === false) return false;
+          // Hide admin-permission-gated links for non-SuperAdmin when toggle is off
+          if (link.adminPermissionKey && !user?.roles?.includes('SuperAdmin')) {
+            if (featureToggles[link.adminPermissionKey] === false) return false;
+          }
+          return true;
+        })
+    : [];
+
+  // Group visible links by category
+  const linksByCategory = DASHBOARD_CATEGORIES.reduce((acc, cat) => {
+    acc[cat.key] = visibleLinks.filter((link) => link.category === cat.key);
+    return acc;
+  }, {} as Record<string, typeof visibleLinks>);
+
+  // Filter categories to only those with visible links
+  const visibleCategories = DASHBOARD_CATEGORIES.filter(
+    (cat) => (linksByCategory[cat.key]?.length ?? 0) > 0
+  );
+
+  // --- Fallback for activeCategory (Task 6.2) ---
+  const effectiveActiveCategory =
+    visibleCategories.some((cat) => cat.key === activeCategory)
+      ? activeCategory
+      : visibleCategories[0]?.key ?? 'product-management';
+
+  // Derive active category object and its links
+  const activeCategoryObj = visibleCategories.find((cat) => cat.key === effectiveActiveCategory);
+  const activeLinks = linksByCategory[effectiveActiveCategory] ?? [];
+
   return (
     <View className='admin-page'>
       <View className='admin-header'>
@@ -191,39 +358,43 @@ export default function AdminDashboard() {
         </View>
       </View>
 
-      <View className='admin-nav'>
-        {featureToggles === null ? (
-          <View className='admin-loading'><Text>{t('admin.dashboard.loading')}</Text></View>
-        ) : (
-          ADMIN_LINKS
-            .filter((link) => !link.superAdminOnly || user?.roles?.includes('SuperAdmin'))
-            .filter((link) => {
-              if (link.featureToggleKey && featureToggles[link.featureToggleKey] === false) return false;
-              // Hide admin-permission-gated links for non-SuperAdmin when toggle is off
-              if (link.adminPermissionKey && !user?.roles?.includes('SuperAdmin')) {
-                if (featureToggles[link.adminPermissionKey] === false) return false;
-              }
-              return true;
-            })
-            .map((link) => {
-              const IconComp = link.icon;
-              return (
-                <View
-                  key={link.key}
-                  className='admin-nav__card'
-                  onClick={() => goTo(link.url)}
-                >
-                  <View className='admin-nav__card-icon'><IconComp size={24} color='var(--accent-primary)' /></View>
-                  <View className='admin-nav__card-body'>
-                    <Text className='admin-nav__card-title'>{t(link.titleKey)}</Text>
-                    <Text className='admin-nav__card-desc'>{t(link.descKey)}</Text>
+      {featureToggles === null ? (
+        <View className='admin-loading'><Text>{t('admin.dashboard.loading')}</Text></View>
+      ) : (
+        <View className='dashboard-layout'>
+          <DashboardCategoryNav
+            categories={visibleCategories}
+            activeCategory={effectiveActiveCategory}
+            onCategoryChange={setActiveCategory}
+          />
+          <View className='dashboard-content'>
+            <Text className='dashboard-content__title'>
+              {activeCategoryObj ? t(activeCategoryObj.labelKey) : ''}
+            </Text>
+            <CollapsibleSection title={activeCategoryObj ? t(activeCategoryObj.labelKey) : ''} defaultExpanded>
+              {activeLinks.map((link) => {
+                const IconComp = link.icon;
+                return (
+                  <View
+                    key={link.key}
+                    className='admin-nav__card'
+                    onClick={() => goTo(link.url)}
+                  >
+                    <View className='admin-nav__card-icon'>
+                      <IconComp size={24} color='var(--accent-primary)' />
+                    </View>
+                    <View className='admin-nav__card-body'>
+                      <Text className='admin-nav__card-title'>{t(link.titleKey)}</Text>
+                      <Text className='admin-nav__card-desc'>{t(link.descKey)}</Text>
+                    </View>
+                    <Text className='admin-nav__card-arrow'>›</Text>
                   </View>
-                  <Text className='admin-nav__card-arrow'>›</Text>
-                </View>
-              );
-            })
-        )}
-      </View>
+                );
+              })}
+            </CollapsibleSection>
+          </View>
+        </View>
+      )}
     </View>
   );
 }

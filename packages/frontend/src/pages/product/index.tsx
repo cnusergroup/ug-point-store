@@ -6,6 +6,7 @@ import { request } from '../../utils/request';
 import { useTranslation } from '../../i18n';
 import { goBack } from '../../utils/navigation';
 import { TicketIcon, GiftIcon, WarningIcon, ShoppingBagIcon, CartIcon } from '../../components/icons';
+import PageToolbar from '../../components/PageToolbar';
 import './index.scss';
 
 /** Product image info */
@@ -167,6 +168,7 @@ export default function ProductDetailPage() {
 
   const canUserRedeem = (): boolean => {
     if (!product || !user) return false;
+    if (product.status === 'inactive') return false;
     if (needsSizeSelection) return false;
     const effectiveStock = getEffectiveStock();
     if (effectiveStock <= 0) return false;
@@ -181,6 +183,7 @@ export default function ProductDetailPage() {
 
   const canAddToCart = (): boolean => {
     if (!product) return false;
+    if (product.status === 'inactive') return false;
     if (needsSizeSelection) return false;
     const effectiveStock = getEffectiveStock();
     return effectiveStock > 0;
@@ -188,6 +191,7 @@ export default function ProductDetailPage() {
 
   const getRedeemButtonText = (): string => {
     if (!product) return '';
+    if (product.status === 'inactive') return t('product.delisted');
     if (needsSizeSelection) return t('product.selectSizeHint');
     const effectiveStock = getEffectiveStock();
     if (effectiveStock <= 0) return t('product.soldOut');
@@ -214,9 +218,7 @@ export default function ProductDetailPage() {
   if (error || !product) {
     return (
       <View className='detail-page'>
-        <View className='detail-header'>
-          <Text className='detail-header__back' onClick={handleBack}>{t('product.backButton')}</Text>
-        </View>
+        <PageToolbar title='' onBack={handleBack} />
         <View className='detail-error'>
           <Text className='detail-error__text'>{error || t('product.notFound')}</Text>
         </View>
@@ -225,6 +227,7 @@ export default function ProductDetailPage() {
   }
 
   const isCode = product.type === 'code_exclusive';
+  const isDelisted = product.status === 'inactive';
   const redeemable = canUserRedeem();
   const cartEnabled = canAddToCart();
   const buttonText = getRedeemButtonText();
@@ -236,15 +239,16 @@ export default function ProductDetailPage() {
   return (
     <View className='detail-page'>
       {/* Top bar */}
-      <View className='detail-header'>
-        <Text className='detail-header__back' onClick={handleBack}>{t('product.backButton')}</Text>
-        {user && (
+      <PageToolbar
+        title=''
+        onBack={handleBack}
+        rightSlot={user ? (
           <View className='detail-header__points'>
             <Text className='detail-header__points-diamond'>◆</Text>
             <Text className='detail-header__points-value'>{user.points.toLocaleString()}</Text>
           </View>
-        )}
-      </View>
+        ) : undefined}
+      />
 
       {/* Content */}
       <View className='detail-content'>
@@ -293,6 +297,11 @@ export default function ProductDetailPage() {
 
           <View className='detail-info'>
             <Text className='detail-info__name'>{product.name}</Text>
+
+            {/* Delisted badge */}
+            {isDelisted && (
+              <Text className='detail-info__delisted-badge'>{t('product.delistedBadge')}</Text>
+            )}
 
             {/* Role badges for points products */}
             {!isCode && product.allowedRoles && (
@@ -410,7 +419,7 @@ export default function ProductDetailPage() {
           </View>
         )}
         {/* Quantity selector: only for points products with stock > 0 */}
-        {!isCode && !isSoldOut && !needsSizeSelection && (
+        {!isCode && !isSoldOut && !isDelisted && !needsSizeSelection && (
           <View className='detail-quantity'>
             <Text className='detail-quantity__label'>{t('product.quantityLabel')}</Text>
             <View className='detail-quantity__controls'>

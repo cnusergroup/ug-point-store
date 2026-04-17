@@ -47,6 +47,10 @@ vi.mock('./tags', () => ({
   getTagCloudTags: vi.fn(),
 }));
 
+vi.mock('./reservation-activities', () => ({
+  listReservationActivities: vi.fn(),
+}));
+
 // Mock feature toggles and content permission
 vi.mock('../settings/feature-toggles', () => ({
   getFeatureToggles: vi.fn(),
@@ -80,6 +84,7 @@ import { createReservation, getDownloadUrl } from './reservation';
 import { editContentItem } from './edit';
 import { listCategories } from './admin';
 import { searchTags, getHotTags, getTagCloudTags } from './tags';
+import { listReservationActivities } from './reservation-activities';
 
 function makeEvent(overrides: Partial<APIGatewayProxyEvent> = {}): APIGatewayProxyEvent {
   return {
@@ -338,12 +343,60 @@ describe('Content Lambda Handler', () => {
   });
 
   describe('POST /api/content/:id/reserve', () => {
-    it('routes to createReservation and returns result', async () => {
+    it('routes to createReservation with activity fields and returns result', async () => {
       vi.mocked(createReservation).mockResolvedValue({ success: true });
-      const event = makeEvent({ httpMethod: 'POST', path: '/api/content/content-1/reserve' });
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/content/content-1/reserve',
+        body: JSON.stringify({
+          activityId: 'act-1',
+          activityType: '线上活动',
+          activityUG: 'UG-Test',
+          activityTopic: 'Test Topic',
+          activityDate: '2024-06-15',
+        }),
+      });
       const result = await handler(event);
       expect(result.statusCode).toBe(200);
       expect(JSON.parse(result.body).success).toBe(true);
+      expect(createReservation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          contentId: 'content-1',
+          userId: 'user-123',
+          activityId: 'act-1',
+          activityType: '线上活动',
+          activityUG: 'UG-Test',
+          activityTopic: 'Test Topic',
+          activityDate: '2024-06-15',
+        }),
+        expect.anything(),
+        expect.objectContaining({
+          reservationsTable: '',
+          contentItemsTable: '',
+          activitiesTable: '',
+        }),
+      );
+    });
+
+    it('returns 400 INVALID_REQUEST when activityId is missing', async () => {
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/content/content-1/reserve',
+        body: JSON.stringify({}),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+    });
+
+    it('returns 400 INVALID_REQUEST when body is empty', async () => {
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/content/content-1/reserve',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
     });
 
     it('returns error when reservation fails', async () => {
@@ -351,7 +404,17 @@ describe('Content Lambda Handler', () => {
         success: false,
         error: { code: 'CONTENT_NOT_FOUND', message: '内容不存在' },
       });
-      const event = makeEvent({ httpMethod: 'POST', path: '/api/content/content-2/reserve' });
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/content/content-2/reserve',
+        body: JSON.stringify({
+          activityId: 'act-1',
+          activityType: '线上活动',
+          activityUG: 'UG-Test',
+          activityTopic: 'Test Topic',
+          activityDate: '2024-06-15',
+        }),
+      });
       const result = await handler(event);
       expect(result.statusCode).toBe(404);
     });
@@ -505,6 +568,89 @@ describe('Content Lambda Handler', () => {
       const body = JSON.parse(result.body);
       expect(body.tags).toHaveLength(1);
       expect(getTagCloudTags).toHaveBeenCalled();
+    });
+  });
+
+  // ── Reservation Activities route tests ─────────────────────
+
+  describe('GET /api/content/reservation-activities', () => {
+    it('routes to listReservationActivities and returns results', async () => {
+      vi.mocked(listReservationActivities).mockResolvedValue({
+        success: true,
+        activities: [
+          {
+            activityId: 'act-1',
+            activityType: '线上活动',
+            ugName: 'UG-A',
+            topic: 'Test Topic',
+            activityDate: '2024-06-15',
+            syncedAt: '2024-01-01T00:00:00.000Z',
+            sourceUrl: 'https://example.com/act-1',
+          },
+        ],
+        lastKey: undefined,
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/content/reservation-activities',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.activities).toHaveLength(1);
+      expect(body.activities[0].activityId).toBe('act-1');
+    });
+
+    it('passes pageSize and lastKey query params', async () => {
+      vi.mocked(listReservationActivities).mockResolvedValue({
+        success: true,
+        activities: [],
+        lastKey: undefined,
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/content/reservation-activities',
+        queryStringParameters: { pageSize: '10', lastKey: 'some-key' },
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(listReservationActivities).toHaveBeenCalledWith(
+        { pageSize: 10, lastKey: 'some-key' },
+        expect.anything(),
+        expect.objectContaining({ activitiesTable: '', ugsTable: '' }),
+      );
+    });
+
+    it('returns error when listReservationActivities fails', async () => {
+      vi.mocked(listReservationActivities).mockResolvedValue({
+        success: false,
+        activities: [],
+        error: { code: 'INTERNAL_ERROR', message: 'Internal server error' },
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/content/reservation-activities',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INTERNAL_ERROR');
+    });
+
+    it('does not match CONTENT_ID_REGEX (route priority check)', async () => {
+      // This test ensures /api/content/reservation-activities is matched
+      // as a specific route and NOT as a content ID
+      vi.mocked(listReservationActivities).mockResolvedValue({
+        success: true,
+        activities: [],
+      });
+      const event = makeEvent({
+        httpMethod: 'GET',
+        path: '/api/content/reservation-activities',
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      // getContentDetail should NOT be called
+      expect(getContentDetail).not.toHaveBeenCalled();
     });
   });
 

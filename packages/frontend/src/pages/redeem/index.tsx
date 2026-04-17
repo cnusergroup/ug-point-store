@@ -6,6 +6,7 @@ import { request, RequestError } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
 import { LocationIcon, TicketIcon, GiftIcon } from '../../components/icons';
+import PageToolbar from '../../components/PageToolbar';
 import './index.scss';
 
 /** Redemption page mode */
@@ -315,11 +316,7 @@ export default function RedeemPage() {
   if (pageLoading || featureLoading) {
     return (
       <View className='redeem-page'>
-        <View className='redeem-header'>
-          <Text className='redeem-header__back' onClick={handleBack}>{t('redeem.backButton')}</Text>
-          <Text className='redeem-header__title'>{t('redeem.redeemTitle')}</Text>
-          <View className='redeem-header__spacer' />
-        </View>
+        <PageToolbar title={t('redeem.redeemTitle')} onBack={handleBack} />
         <View className='redeem-loading'>
           <Text className='redeem-loading__text'>{t('redeem.loadingText')}</Text>
         </View>
@@ -331,11 +328,7 @@ export default function RedeemPage() {
   if (!productId && mode !== 'points-code') {
     return (
       <View className='redeem-page'>
-        <View className='redeem-header'>
-          <Text className='redeem-header__back' onClick={handleBack}>{t('redeem.backButton')}</Text>
-          <Text className='redeem-header__title'>{t('redeem.redeemTitle')}</Text>
-          <View className='redeem-header__spacer' />
-        </View>
+        <PageToolbar title={t('redeem.redeemTitle')} onBack={handleBack} />
         <View className='redeem-error-page'>
           <Text className='redeem-error-page__text'>{t('redeem.missingProduct')}</Text>
           <View className='redeem-error-page__back-btn' onClick={goToProductList}>
@@ -420,11 +413,7 @@ export default function RedeemPage() {
 
   return (
     <View className='redeem-page'>
-      <View className='redeem-header'>
-        <Text className='redeem-header__back' onClick={handleBack}>{t('redeem.backButton')}</Text>
-        <Text className='redeem-header__title'>{headerTitle}</Text>
-        <View className='redeem-header__spacer' />
-      </View>
+      <PageToolbar title={headerTitle} onBack={handleBack} />
 
       <View className='redeem-content'>
         {/* Product summary (when product exists) */}

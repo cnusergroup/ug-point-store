@@ -122,17 +122,84 @@ describe('Property 6: Approval preserves quota', () => {
 });
 
 // ============================================================
-// Feature: speaker-travel-sponsorship, Property 7: Rejection returns quota
+// Feature: travel-independent-quota, Property 6: Reject preserves required output fields
 //
-// For any pending travel application with earnDeducted = D, after reviewTravelApplication
-// with action "reject" succeeds, the application status should be "rejected", and
-// TransactWriteCommand decreases travelEarnUsed by D.
+// For any pending travel application and any non-empty reject reason string,
+// after rejection the returned application has status = 'rejected', a non-empty
+// rejectReason, a valid reviewerId, a valid reviewerNickname, and a valid ISO
+// timestamp reviewedAt.
 //
-// **Validates: Requirements 5.7, 15.3**
+// **Validates: Requirements 6.1**
 // ============================================================
 
-describe('Property 7: Rejection returns quota', () => {
-  it('should set status=rejected, TransactWriteCommand decreases travelEarnUsed by earnDeducted', () => {
+describe('Feature: travel-independent-quota, Property 6: Reject preserves required output fields', () => {
+  it('should return rejected application with all required output fields populated', () => {
+    fc.assert(
+      fc.asyncProperty(
+        makePendingApplicationArb(),
+        fc.string({ minLength: 3, maxLength: 20 }).filter((s) => s.trim().length > 0),
+        nicknameArb,
+        fc.string({ minLength: 1, maxLength: 100 }).filter((s) => s.trim().length > 0),
+        async (pendingApp, reviewerId, reviewerNickname, rejectReason) => {
+          const sendMock = vi.fn();
+          // Call 1: GetCommand returns pending application
+          sendMock.mockResolvedValueOnce({ Item: pendingApp });
+          // Call 2: UpdateCommand succeeds
+          sendMock.mockResolvedValueOnce({});
+
+          const client = { send: sendMock } as any;
+
+          const input: ReviewTravelApplicationInput = {
+            applicationId: pendingApp.applicationId,
+            reviewerId,
+            reviewerNickname,
+            action: 'reject',
+            rejectReason,
+          };
+
+          const result = await reviewTravelApplication(input, client, tables);
+
+          // Status should be rejected
+          expect(result.success).toBe(true);
+          expect(result.application).toBeDefined();
+          expect(result.application!.status).toBe('rejected');
+
+          // rejectReason should be non-empty (we passed a non-empty string)
+          expect(result.application!.rejectReason).toBe(rejectReason);
+          expect(result.application!.rejectReason!.length).toBeGreaterThan(0);
+
+          // reviewerId should be valid
+          expect(result.application!.reviewerId).toBe(reviewerId);
+          expect(result.application!.reviewerId!.length).toBeGreaterThan(0);
+
+          // reviewerNickname should be valid
+          expect(result.application!.reviewerNickname).toBe(reviewerNickname);
+          expect(result.application!.reviewerNickname!.length).toBeGreaterThan(0);
+
+          // reviewedAt should be a valid ISO timestamp
+          expect(result.application!.reviewedAt).toBeDefined();
+          expect(result.application!.reviewedAt!.length).toBeGreaterThan(0);
+          const parsedDate = new Date(result.application!.reviewedAt!);
+          expect(parsedDate.getTime()).not.toBeNaN();
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+});
+
+// ============================================================
+// Feature: travel-independent-quota, Property 7: Rejection uses simple UpdateCommand
+//
+// For any pending travel application, after reviewTravelApplication with action "reject"
+// succeeds, the reject path uses a single UpdateCommand (not TransactWriteCommand)
+// targeting only the TravelApplications table. No user record update occurs.
+//
+// **Validates: Requirements 6.1, 6.2, 6.3**
+// ============================================================
+
+describe('Feature: travel-independent-quota, Property 7: Rejection uses simple UpdateCommand', () => {
+  it('should use UpdateCommand on reject targeting only TravelApplications table (no user record update)', () => {
     fc.assert(
       fc.asyncProperty(
         makePendingApplicationArb(),
@@ -143,7 +210,7 @@ describe('Property 7: Rejection returns quota', () => {
           const sendMock = vi.fn();
           // Call 1: GetCommand returns pending application
           sendMock.mockResolvedValueOnce({ Item: pendingApp });
-          // Call 2: TransactWriteCommand succeeds
+          // Call 2: UpdateCommand succeeds
           sendMock.mockResolvedValueOnce({});
 
           const client = { send: sendMock } as any;
@@ -163,22 +230,16 @@ describe('Property 7: Rejection returns quota', () => {
           expect(result.application).toBeDefined();
           expect(result.application!.status).toBe('rejected');
 
-          // TransactWriteCommand was used
+          // UpdateCommand was used (not TransactWriteCommand)
           expect(sendMock).toHaveBeenCalledTimes(2);
-          const txCmd = sendMock.mock.calls[1][0];
-          expect(txCmd.constructor.name).toBe('TransactWriteCommand');
+          const updateCmd = sendMock.mock.calls[1][0];
+          expect(updateCmd.constructor.name).toBe('UpdateCommand');
 
-          // Transaction should have 2 items
-          const transactItems = txCmd.input.TransactItems;
-          expect(transactItems).toHaveLength(2);
+          // UpdateCommand targets only TravelApplications table
+          expect(updateCmd.input.TableName).toBe(TRAVEL_APPLICATIONS_TABLE);
 
-          // Second item should decrease travelEarnUsed by earnDeducted (D)
-          const userUpdate = transactItems[1].Update;
-          expect(userUpdate.TableName).toBe(USERS_TABLE);
-          expect(userUpdate.ExpressionAttributeValues[':deducted']).toBe(pendingApp.earnDeducted);
-
-          // ConditionExpression ensures non-negative
-          expect(userUpdate.ConditionExpression).toContain('travelEarnUsed >= :deducted');
+          // No TransactItems (not a TransactWriteCommand)
+          expect(updateCmd.input.TransactItems).toBeUndefined();
         },
       ),
       { numRuns: 100 },

@@ -9,16 +9,16 @@ import type { EmailTemplate } from './templates';
 // Default template content
 // ============================================================
 
-const FOOTER_ZH = '<p style="font-size:12px;color:#94a3b8;">此邮件由 AWS Community 积分商城自动发送</p>';
-const FOOTER_UNSUB_ZH = '<p style="font-size:12px;color:#94a3b8;">此邮件由 AWS Community 积分商城自动发送。如不想收到此类邮件，请在设置中关闭订阅。</p>';
-const FOOTER_EN = '<p style="font-size:12px;color:#94a3b8;">This email was sent automatically by AWS Community Points Mall</p>';
-const FOOTER_UNSUB_EN = '<p style="font-size:12px;color:#94a3b8;">This email was sent automatically by AWS Community Points Mall. To unsubscribe, update your settings.</p>';
-const FOOTER_JA = '<p style="font-size:12px;color:#94a3b8;">このメールは AWS Community ポイントモールから自動送信されました</p>';
-const FOOTER_UNSUB_JA = '<p style="font-size:12px;color:#94a3b8;">このメールは AWS Community ポイントモールから自動送信されました。配信停止は設定から変更できます。</p>';
-const FOOTER_KO = '<p style="font-size:12px;color:#94a3b8;">이 이메일은 AWS Community 포인트몰에서 자동 발송되었습니다</p>';
-const FOOTER_UNSUB_KO = '<p style="font-size:12px;color:#94a3b8;">이 이메일은 AWS Community 포인트몰에서 자동 발송되었습니다. 수신 거부는 설정에서 변경할 수 있습니다.</p>';
-const FOOTER_ZHTW = '<p style="font-size:12px;color:#94a3b8;">此郵件由 AWS Community 積分商城自動發送</p>';
-const FOOTER_UNSUB_ZHTW = '<p style="font-size:12px;color:#94a3b8;">此郵件由 AWS Community 積分商城自動發送。如不想收到此類郵件，請在設定中關閉訂閱。</p>';
+const FOOTER_ZH = '<p style="font-size:12px;color:#94a3b8;">此邮件由 User Group 福利广场自动发送</p>';
+const FOOTER_UNSUB_ZH = '<p style="font-size:12px;color:#94a3b8;">此邮件由 User Group 福利广场自动发送。如不想收到此类邮件，请在设置中关闭订阅。</p>';
+const FOOTER_EN = '<p style="font-size:12px;color:#94a3b8;">This email was sent automatically by User Group Benefits Plaza</p>';
+const FOOTER_UNSUB_EN = '<p style="font-size:12px;color:#94a3b8;">This email was sent automatically by User Group Benefits Plaza. To unsubscribe, update your settings.</p>';
+const FOOTER_JA = '<p style="font-size:12px;color:#94a3b8;">このメールは User Group 福利広場から自動送信されました</p>';
+const FOOTER_UNSUB_JA = '<p style="font-size:12px;color:#94a3b8;">このメールは User Group 福利広場から自動送信されました。配信停止は設定から変更できます。</p>';
+const FOOTER_KO = '<p style="font-size:12px;color:#94a3b8;">이 이메일은 User Group 복지광장에서 자동 발송되었습니다</p>';
+const FOOTER_UNSUB_KO = '<p style="font-size:12px;color:#94a3b8;">이 이메일은 User Group 복지광장에서 자동 발송되었습니다. 수신 거부는 설정에서 변경할 수 있습니다.</p>';
+const FOOTER_ZHTW = '<p style="font-size:12px;color:#94a3b8;">此郵件由 User Group 福利廣場自動發送</p>';
+const FOOTER_UNSUB_ZHTW = '<p style="font-size:12px;color:#94a3b8;">此郵件由 User Group 福利廣場自動發送。如不想收到此類郵件，請在設定中關閉訂閱。</p>';
 
 const HR = '<hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />';
 
@@ -32,13 +32,13 @@ function wrap(inner: string, fontFamily = "'Noto Sans SC',sans-serif"): string {
 
 const pointsEarnedTemplates: Record<EmailLocale, { subject: string; body: string }> = {
   zh: {
-    subject: '🎉 积分到账啦，快来商城逛逛吧！',
+    subject: '🎉 积分到账啦，快来福利广场逛逛吧！',
     body: wrap([
       '<h2 style="color:#6366f1;">Hi {{nickname}}，你的积分到账啦！</h2>',
       '<p style="font-size:16px;color:#334155;">恭喜你获得了 <strong style="color:#6366f1;">{{points}} 积分</strong>！</p>',
       '<p style="color:#64748b;">来源：{{source}}</p>',
       '<p style="color:#64748b;">当前余额：<strong>{{balance}} 积分</strong></p>',
-      '<p style="margin-top:24px;">快去商城看看有什么好东西可以兑换吧～ 🛍️</p>',
+      '<p style="margin-top:24px;">快去福利广场看看有什么好东西可以兑换吧～ 🛍️</p>',
       HR,
       FOOTER_ZH,
     ].join('\n  ')),
@@ -62,7 +62,7 @@ const pointsEarnedTemplates: Record<EmailLocale, { subject: string; body: string
       '<p style="font-size:16px;color:#334155;"><strong style="color:#6366f1;">{{points}} ポイント</strong>を獲得しました！</p>',
       '<p style="color:#64748b;">獲得元：{{source}}</p>',
       '<p style="color:#64748b;">現在の残高：<strong>{{balance}} ポイント</strong></p>',
-      '<p style="margin-top:24px;">モールで交換できるアイテムをチェックしましょう！ 🛍️</p>',
+      '<p style="margin-top:24px;">福利広場で交換できるアイテムをチェックしましょう！ 🛍️</p>',
       HR,
       FOOTER_JA,
     ].join('\n  ')),
@@ -74,19 +74,19 @@ const pointsEarnedTemplates: Record<EmailLocale, { subject: string; body: string
       '<p style="font-size:16px;color:#334155;"><strong style="color:#6366f1;">{{points}} 포인트</strong>를 획득했습니다!</p>',
       '<p style="color:#64748b;">출처: {{source}}</p>',
       '<p style="color:#64748b;">현재 잔액: <strong>{{balance}} 포인트</strong></p>',
-      '<p style="margin-top:24px;">몰에서 교환할 수 있는 상품을 확인해 보세요! 🛍️</p>',
+      '<p style="margin-top:24px;">몰에서 교환할 수 있는 굿즈를 확인해 보세요! 🛍️</p>',
       HR,
       FOOTER_KO,
     ].join('\n  ')),
   },
   'zh-TW': {
-    subject: '🎉 積分到帳啦，快來商城逛逛吧！',
+    subject: '🎉 積分到帳啦，快來福利廣場逛逛吧！',
     body: wrap([
       '<h2 style="color:#6366f1;">Hi {{nickname}}，你的積分到帳啦！</h2>',
       '<p style="font-size:16px;color:#334155;">恭喜你獲得了 <strong style="color:#6366f1;">{{points}} 積分</strong>！</p>',
       '<p style="color:#64748b;">來源：{{source}}</p>',
       '<p style="color:#64748b;">目前餘額：<strong>{{balance}} 積分</strong></p>',
-      '<p style="margin-top:24px;">快去商城看看有什麼好東西可以兌換吧～ 🛍️</p>',
+      '<p style="margin-top:24px;">快去福利廣場看看有什麼好東西可以兌換吧～ 🛍️</p>',
       HR,
       FOOTER_ZHTW,
     ].join('\n  ')),
@@ -106,7 +106,7 @@ const newOrderTemplates: Record<EmailLocale, { subject: string; body: string }> 
       HR,
       '<h3 style="color:#334155;margin-bottom:8px;">📋 订单信息</h3>',
       '<p style="color:#64748b;">订单号：<strong>{{orderId}}</strong></p>',
-      '<p style="color:#64748b;white-space:pre-line;">商品：<strong>{{productNames}}</strong></p>',
+      '<p style="color:#64748b;white-space:pre-line;">周边：<strong>{{productNames}}</strong></p>',
       HR,
       '<h3 style="color:#334155;margin-bottom:8px;">📮 收件信息（快递用）</h3>',
       '<table style="border-collapse:collapse;width:100%;">',
@@ -146,7 +146,7 @@ const newOrderTemplates: Record<EmailLocale, { subject: string; body: string }> 
       HR,
       '<h3 style="color:#334155;margin-bottom:8px;">📋 注文情報</h3>',
       '<p style="color:#64748b;">注文番号：<strong>{{orderId}}</strong></p>',
-      '<p style="color:#64748b;white-space:pre-line;">商品：<strong>{{productNames}}</strong></p>',
+      '<p style="color:#64748b;white-space:pre-line;">グッズ：<strong>{{productNames}}</strong></p>',
       HR,
       '<h3 style="color:#334155;margin-bottom:8px;">📮 配送先情報</h3>',
       '<table style="border-collapse:collapse;width:100%;">',
@@ -166,7 +166,7 @@ const newOrderTemplates: Record<EmailLocale, { subject: string; body: string }> 
       HR,
       '<h3 style="color:#334155;margin-bottom:8px;">📋 주문 정보</h3>',
       '<p style="color:#64748b;">주문번호: <strong>{{orderId}}</strong></p>',
-      '<p style="color:#64748b;white-space:pre-line;">상품: <strong>{{productNames}}</strong></p>',
+      '<p style="color:#64748b;white-space:pre-line;">굿즈: <strong>{{productNames}}</strong></p>',
       HR,
       '<h3 style="color:#334155;margin-bottom:8px;">📮 배송 정보</h3>',
       '<table style="border-collapse:collapse;width:100%;">',
@@ -186,7 +186,7 @@ const newOrderTemplates: Record<EmailLocale, { subject: string; body: string }> 
       HR,
       '<h3 style="color:#334155;margin-bottom:8px;">📋 訂單資訊</h3>',
       '<p style="color:#64748b;">訂單號：<strong>{{orderId}}</strong></p>',
-      '<p style="color:#64748b;white-space:pre-line;">商品：<strong>{{productNames}}</strong></p>',
+      '<p style="color:#64748b;white-space:pre-line;">周邊：<strong>{{productNames}}</strong></p>',
       HR,
       '<h3 style="color:#334155;margin-bottom:8px;">📮 收件資訊（快遞用）</h3>',
       '<table style="border-collapse:collapse;width:100%;">',
@@ -268,12 +268,12 @@ const orderShippedTemplates: Record<EmailLocale, { subject: string; body: string
 
 const newProductTemplates: Record<EmailLocale, { subject: string; body: string }> = {
   zh: {
-    subject: '🆕 商城上新啦，快来看看有什么好东西！',
+    subject: '🆕 福利广场上新啦，快来看看有什么好东西！',
     body: wrap([
-      '<h2 style="color:#6366f1;">商城上新提醒 ✨</h2>',
-      '<p style="font-size:16px;color:#334155;">以下新商品已上架：</p>',
+      '<h2 style="color:#6366f1;">福利广场上新提醒 ✨</h2>',
+      '<p style="font-size:16px;color:#334155;">以下新周边已上架：</p>',
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:16px 0;">{{productList}}</div>',
-      '<p style="margin-top:24px;">快去商城逛逛吧～ 🛒</p>',
+      '<p style="margin-top:24px;">快去福利广场逛逛吧～ 🛒</p>',
       HR,
       FOOTER_UNSUB_ZH,
     ].join('\n  ')),
@@ -290,21 +290,21 @@ const newProductTemplates: Record<EmailLocale, { subject: string; body: string }
     ].join('\n  ')),
   },
   ja: {
-    subject: '🆕 新商品が入荷しました！',
+    subject: '🆕 新グッズが入荷しました！',
     body: wrap([
-      '<h2 style="color:#6366f1;">新商品のお知らせ ✨</h2>',
-      '<p style="font-size:16px;color:#334155;">以下の新商品が入荷しました：</p>',
+      '<h2 style="color:#6366f1;">新グッズのお知らせ ✨</h2>',
+      '<p style="font-size:16px;color:#334155;">以下の新グッズが入荷しました：</p>',
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:16px 0;">{{productList}}</div>',
-      '<p style="margin-top:24px;">モールでチェックしましょう！ 🛒</p>',
+      '<p style="margin-top:24px;">福利広場でチェックしましょう！ 🛒</p>',
       HR,
       FOOTER_UNSUB_JA,
     ].join('\n  ')),
   },
   ko: {
-    subject: '🆕 새 상품이 등록되었습니다!',
+    subject: '🆕 새 굿즈가 등록되었습니다!',
     body: wrap([
-      '<h2 style="color:#6366f1;">새 상품 알림 ✨</h2>',
-      '<p style="font-size:16px;color:#334155;">다음 새 상품이 등록되었습니다:</p>',
+      '<h2 style="color:#6366f1;">새 굿즈 알림 ✨</h2>',
+      '<p style="font-size:16px;color:#334155;">다음 새 굿즈가 등록되었습니다:</p>',
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:16px 0;">{{productList}}</div>',
       '<p style="margin-top:24px;">몰에서 확인해 보세요! 🛒</p>',
       HR,
@@ -312,12 +312,12 @@ const newProductTemplates: Record<EmailLocale, { subject: string; body: string }
     ].join('\n  ')),
   },
   'zh-TW': {
-    subject: '🆕 商城上新啦，快來看看！',
+    subject: '🆕 福利廣場上新啦，快來看看！',
     body: wrap([
-      '<h2 style="color:#6366f1;">商城上新提醒 ✨</h2>',
-      '<p style="font-size:16px;color:#334155;">以下新商品已上架：</p>',
+      '<h2 style="color:#6366f1;">福利廣場上新提醒 ✨</h2>',
+      '<p style="font-size:16px;color:#334155;">以下新周邊已上架：</p>',
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:16px 0;">{{productList}}</div>',
-      '<p style="margin-top:24px;">快去商城逛逛吧～ 🛒</p>',
+      '<p style="margin-top:24px;">快去福利廣場逛逛吧～ 🛒</p>',
       HR,
       FOOTER_UNSUB_ZHTW,
     ].join('\n  ')),

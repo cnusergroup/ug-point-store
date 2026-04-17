@@ -108,7 +108,7 @@ describe('Points Lambda Handler - Routing', () => {
     vi.mocked(getFeatureToggles).mockResolvedValue({
       codeRedemptionEnabled: true,
       pointsClaimEnabled: true,
-    });
+    } as any);
   });
 
   it('returns 404 for unknown routes', async () => {
@@ -400,7 +400,7 @@ describe('Points Lambda Handler - Routing', () => {
       vi.mocked(getFeatureToggles).mockResolvedValue({
         codeRedemptionEnabled: true,
         pointsClaimEnabled: false,
-      });
+      } as any);
       const event = makeEvent({
         httpMethod: 'GET',
         path: '/api/settings/feature-toggles',
@@ -419,7 +419,7 @@ describe('Points Lambda Handler - Routing', () => {
       vi.mocked(getFeatureToggles).mockResolvedValue({
         codeRedemptionEnabled: false,
         pointsClaimEnabled: true,
-      });
+      } as any);
       const event = makeEvent({
         httpMethod: 'POST',
         path: '/api/points/redeem-code',
@@ -436,7 +436,7 @@ describe('Points Lambda Handler - Routing', () => {
       vi.mocked(getFeatureToggles).mockResolvedValue({
         codeRedemptionEnabled: true,
         pointsClaimEnabled: false,
-      });
+      } as any);
       const event = makeEvent({
         httpMethod: 'POST',
         path: '/api/claims',
@@ -563,7 +563,7 @@ describe('Points Lambda Handler - Routing', () => {
     it('routes to getTravelQuota for Speaker and returns quota', async () => {
       mockUserRoles = ['Speaker'];
       const mockQuota = {
-        earnTotal: 2000,
+        speakerEarnTotal: 2000,
         travelEarnUsed: 500,
         domesticAvailable: 3,
         internationalAvailable: 1,

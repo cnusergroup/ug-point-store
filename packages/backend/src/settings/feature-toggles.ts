@@ -21,6 +21,24 @@ export interface ContentRolePermissions {
   Volunteer: RolePermissions;
 }
 
+export interface PointsRuleConfig {
+  uglPointsPerEvent: number;        // UGL 每场积分，默认 50
+  volunteerPointsPerEvent: number;  // 志愿者每场积分，默认 30
+  volunteerMaxPerEvent: number;     // 志愿者每场最大人数，默认 10
+  speakerTypeAPoints: number;       // Speaker A类积分，默认 100
+  speakerTypeBPoints: number;       // Speaker B类积分，默认 50
+  speakerRoundtablePoints: number;  // 圆桌嘉宾积分，默认 50
+}
+
+export const DEFAULT_POINTS_RULE_CONFIG: PointsRuleConfig = {
+  uglPointsPerEvent: 50,
+  volunteerPointsPerEvent: 30,
+  volunteerMaxPerEvent: 10,
+  speakerTypeAPoints: 100,
+  speakerTypeBPoints: 50,
+  speakerRoundtablePoints: 50,
+};
+
 export interface FeatureToggles {
   codeRedemptionEnabled: boolean;
   pointsClaimEnabled: boolean;
@@ -48,6 +66,16 @@ export interface FeatureToggles {
   adminEmailProductsEnabled: boolean;
   /** Whether Admin (non-SuperAdmin) can trigger new content email notifications */
   adminEmailContentEnabled: boolean;
+  /** Points awarded when a content reservation is approved (positive integer, default 10) */
+  reservationApprovalPoints: number;
+  /** Whether the leaderboard ranking tab is visible */
+  leaderboardRankingEnabled: boolean;
+  /** Whether the leaderboard announcement tab is visible */
+  leaderboardAnnouncementEnabled: boolean;
+  /** Update frequency label shown on the ranking page */
+  leaderboardUpdateFrequency: 'realtime' | 'daily' | 'weekly' | 'monthly';
+  /** Points rule configuration for batch distribution */
+  pointsRuleConfig: PointsRuleConfig;
 }
 
 export interface UpdateFeatureTogglesInput {
@@ -64,6 +92,11 @@ export interface UpdateFeatureTogglesInput {
   emailNewContentEnabled: boolean;
   adminEmailProductsEnabled: boolean;
   adminEmailContentEnabled: boolean;
+  reservationApprovalPoints: number;
+  leaderboardRankingEnabled: boolean;
+  leaderboardAnnouncementEnabled: boolean;
+  leaderboardUpdateFrequency: 'realtime' | 'daily' | 'weekly' | 'monthly';
+  pointsRuleConfig?: PointsRuleConfig;
   updatedBy: string;
 }
 
@@ -127,6 +160,11 @@ const DEFAULT_TOGGLES: FeatureToggles = {
   emailNewContentEnabled: false,
   adminEmailProductsEnabled: false,          // default: Admin cannot trigger product email notifications
   adminEmailContentEnabled: false,           // default: Admin cannot trigger content email notifications
+  reservationApprovalPoints: 10,             // default: 10 points for reservation approval
+  leaderboardRankingEnabled: false,          // default: leaderboard ranking disabled
+  leaderboardAnnouncementEnabled: false,     // default: leaderboard announcement disabled
+  leaderboardUpdateFrequency: 'weekly',      // default: weekly update frequency
+  pointsRuleConfig: { ...DEFAULT_POINTS_RULE_CONFIG },
 };
 
 // ---- Core Functions ----
@@ -183,6 +221,34 @@ export async function getFeatureToggles(
       emailNewContentEnabled:   result.Item.emailNewContentEnabled === true,      // default false
       adminEmailProductsEnabled: result.Item.adminEmailProductsEnabled === true,  // default false
       adminEmailContentEnabled:  result.Item.adminEmailContentEnabled === true,   // default false
+      reservationApprovalPoints: typeof result.Item.reservationApprovalPoints === 'number' && result.Item.reservationApprovalPoints > 0
+        ? result.Item.reservationApprovalPoints
+        : 10,  // default 10
+      leaderboardRankingEnabled:      result.Item.leaderboardRankingEnabled === true,       // default false
+      leaderboardAnnouncementEnabled: result.Item.leaderboardAnnouncementEnabled === true,  // default false
+      leaderboardUpdateFrequency:
+        result.Item.leaderboardUpdateFrequency === 'realtime' ||
+        result.Item.leaderboardUpdateFrequency === 'daily' ||
+        result.Item.leaderboardUpdateFrequency === 'weekly' ||
+        result.Item.leaderboardUpdateFrequency === 'monthly'
+          ? result.Item.leaderboardUpdateFrequency
+          : 'weekly',  // default 'weekly'
+      pointsRuleConfig: (() => {
+        const raw = result.Item.pointsRuleConfig as Record<string, unknown> | undefined;
+        if (!raw || typeof raw !== 'object') return { ...DEFAULT_POINTS_RULE_CONFIG };
+        const safePositiveInt = (val: unknown, def: number): number => {
+          if (typeof val === 'number' && Number.isInteger(val) && val >= 1) return val;
+          return def;
+        };
+        return {
+          uglPointsPerEvent: safePositiveInt(raw.uglPointsPerEvent, DEFAULT_POINTS_RULE_CONFIG.uglPointsPerEvent),
+          volunteerPointsPerEvent: safePositiveInt(raw.volunteerPointsPerEvent, DEFAULT_POINTS_RULE_CONFIG.volunteerPointsPerEvent),
+          volunteerMaxPerEvent: safePositiveInt(raw.volunteerMaxPerEvent, DEFAULT_POINTS_RULE_CONFIG.volunteerMaxPerEvent),
+          speakerTypeAPoints: safePositiveInt(raw.speakerTypeAPoints, DEFAULT_POINTS_RULE_CONFIG.speakerTypeAPoints),
+          speakerTypeBPoints: safePositiveInt(raw.speakerTypeBPoints, DEFAULT_POINTS_RULE_CONFIG.speakerTypeBPoints),
+          speakerRoundtablePoints: safePositiveInt(raw.speakerRoundtablePoints, DEFAULT_POINTS_RULE_CONFIG.speakerRoundtablePoints),
+        };
+      })(),
     };
   } catch {
     // Safe degradation: return defaults when read fails
@@ -214,7 +280,12 @@ export async function updateFeatureToggles(
     typeof input.emailNewProductEnabled !== 'boolean' ||
     typeof input.emailNewContentEnabled !== 'boolean' ||
     typeof input.adminEmailProductsEnabled !== 'boolean' ||
-    typeof input.adminEmailContentEnabled !== 'boolean'
+    typeof input.adminEmailContentEnabled !== 'boolean' ||
+    typeof input.reservationApprovalPoints !== 'number' ||
+    !Number.isInteger(input.reservationApprovalPoints) ||
+    input.reservationApprovalPoints < 1 ||
+    typeof input.leaderboardRankingEnabled !== 'boolean' ||
+    typeof input.leaderboardAnnouncementEnabled !== 'boolean'
   ) {
     return {
       success: false,
@@ -222,14 +293,37 @@ export async function updateFeatureToggles(
     };
   }
 
+  // Validate leaderboardUpdateFrequency
+  const validFrequencies = ['realtime', 'daily', 'weekly', 'monthly'];
+  if (!validFrequencies.includes(input.leaderboardUpdateFrequency)) {
+    return {
+      success: false,
+      error: { code: 'INVALID_REQUEST', message: '更新频率值无效，取值为 daily、weekly 或 monthly' },
+    };
+  }
+
+  // Validate pointsRuleConfig if provided
+  if (input.pointsRuleConfig) {
+    const prc = input.pointsRuleConfig;
+    const fields: (keyof PointsRuleConfig)[] = [
+      'uglPointsPerEvent', 'volunteerPointsPerEvent', 'volunteerMaxPerEvent',
+      'speakerTypeAPoints', 'speakerTypeBPoints', 'speakerRoundtablePoints',
+    ];
+    for (const field of fields) {
+      const val = prc[field];
+      if (typeof val !== 'number' || !Number.isInteger(val) || val < 1) {
+        return {
+          success: false,
+          error: { code: 'INVALID_REQUEST', message: `积分规则配置 ${field} 必须为正整数` },
+        };
+      }
+    }
+  }
+
   const now = new Date().toISOString();
 
-  // Use UpdateCommand to only update toggle fields — never touches contentRolePermissions
-  await dynamoClient.send(
-    new UpdateCommand({
-      TableName: usersTable,
-      Key: { userId: FEATURE_TOGGLES_KEY },
-      UpdateExpression: `SET
+  // Build update expression — conditionally include pointsRuleConfig
+  let updateExpression = `SET
         codeRedemptionEnabled = :cre,
         pointsClaimEnabled = :pce,
         adminProductsEnabled = :ape,
@@ -243,9 +337,14 @@ export async function updateFeatureToggles(
         emailNewContentEnabled = :enc,
         adminEmailProductsEnabled = :aepe,
         adminEmailContentEnabled = :aece,
+        reservationApprovalPoints = :rap,
+        leaderboardRankingEnabled = :lre,
+        leaderboardAnnouncementEnabled = :lae,
+        leaderboardUpdateFrequency = :luf,
         updatedAt = :ua,
-        updatedBy = :ub`,
-      ExpressionAttributeValues: {
+        updatedBy = :ub`;
+
+  const expressionAttributeValues: Record<string, unknown> = {
         ':cre': input.codeRedemptionEnabled,
         ':pce': input.pointsClaimEnabled,
         ':ape': input.adminProductsEnabled,
@@ -259,9 +358,26 @@ export async function updateFeatureToggles(
         ':enc': input.emailNewContentEnabled,
         ':aepe': input.adminEmailProductsEnabled,
         ':aece': input.adminEmailContentEnabled,
+        ':rap': input.reservationApprovalPoints,
+        ':lre': input.leaderboardRankingEnabled,
+        ':lae': input.leaderboardAnnouncementEnabled,
+        ':luf': input.leaderboardUpdateFrequency,
         ':ua': now,
         ':ub': input.updatedBy,
-      },
+  };
+
+  if (input.pointsRuleConfig) {
+    updateExpression += `, pointsRuleConfig = :prc`;
+    expressionAttributeValues[':prc'] = input.pointsRuleConfig;
+  }
+
+  // Use UpdateCommand to only update toggle fields — never touches contentRolePermissions
+  await dynamoClient.send(
+    new UpdateCommand({
+      TableName: usersTable,
+      Key: { userId: FEATURE_TOGGLES_KEY },
+      UpdateExpression: updateExpression,
+      ExpressionAttributeValues: expressionAttributeValues,
     }),
   );
 
@@ -305,6 +421,11 @@ export async function updateFeatureToggles(
       emailNewContentEnabled: input.emailNewContentEnabled,
       adminEmailProductsEnabled: input.adminEmailProductsEnabled,
       adminEmailContentEnabled: input.adminEmailContentEnabled,
+      reservationApprovalPoints: input.reservationApprovalPoints,
+      leaderboardRankingEnabled: input.leaderboardRankingEnabled,
+      leaderboardAnnouncementEnabled: input.leaderboardAnnouncementEnabled,
+      leaderboardUpdateFrequency: input.leaderboardUpdateFrequency,
+      pointsRuleConfig: input.pointsRuleConfig ?? (item.pointsRuleConfig as PointsRuleConfig | undefined) ?? { ...DEFAULT_POINTS_RULE_CONFIG },
       updatedAt: now,
       updatedBy: input.updatedBy,
     },

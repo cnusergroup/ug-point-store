@@ -33,8 +33,14 @@ function makeValidInput(overrides: Partial<BatchDistributionInput> = {}): BatchD
     points: 100,
     reason: '季度活动奖励',
     targetRole: 'Speaker',
+    speakerType: 'typeA',
     distributorId: 'admin-001',
     distributorNickname: 'AdminUser',
+    activityId: 'act-001',
+    activityType: '线下活动',
+    activityUG: 'Tokyo',
+    activityTopic: 'AWS Summit',
+    activityDate: '2024-06-15',
     ...overrides,
   };
 }
@@ -50,6 +56,8 @@ describe('validateBatchDistributionInput', () => {
       points: 50,
       reason: '奖励',
       targetRole: 'Speaker',
+      activityId: 'act-001',
+      speakerType: 'typeA',
     });
     expect(result.valid).toBe(true);
   });
@@ -143,6 +151,35 @@ describe('validateBatchDistributionInput', () => {
     });
     expect(result.valid).toBe(false);
   });
+
+  it('should reject missing activityId', () => {
+    const result = validateBatchDistributionInput({
+      userIds: ['u1'],
+      points: 50,
+      reason: '奖励',
+      targetRole: 'Speaker',
+    });
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error.code).toBe('INVALID_REQUEST');
+      expect(result.error.message).toContain('activityId');
+    }
+  });
+
+  it('should reject empty string activityId', () => {
+    const result = validateBatchDistributionInput({
+      userIds: ['u1'],
+      points: 50,
+      reason: '奖励',
+      targetRole: 'Speaker',
+      activityId: '',
+    });
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error.code).toBe('INVALID_REQUEST');
+      expect(result.error.message).toContain('activityId');
+    }
+  });
 });
 
 // ============================================================
@@ -157,6 +194,12 @@ describe('executeBatchDistribution — deduplication', () => {
   });
 
   it('should deduplicate userIds so each user receives points only once', async () => {
+    // GetCommand for feature-toggles (pointsRuleConfig)
+    client.send.mockResolvedValueOnce({
+      Item: { userId: 'feature-toggles', pointsRuleConfig: { uglPointsPerEvent: 50, volunteerPointsPerEvent: 30, volunteerMaxPerEvent: 10, speakerTypeAPoints: 100, speakerTypeBPoints: 50, speakerRoundtablePoints: 50 } },
+    });
+    // QueryCommand for awarded users (empty)
+    client.send.mockResolvedValueOnce({ Items: [] });
     // BatchGetCommand returns user data
     client.send.mockResolvedValueOnce({
       Responses: {
@@ -171,7 +214,7 @@ describe('executeBatchDistribution — deduplication', () => {
     client.send.mockResolvedValueOnce({});
 
     const result = await executeBatchDistribution(
-      makeValidInput({ userIds: ['u1', 'u1', 'u1'] }),
+      makeValidInput({ userIds: ['u1', 'u1', 'u1'], speakerType: 'typeA' }),
       client,
       TABLES,
     );
@@ -181,7 +224,7 @@ describe('executeBatchDistribution — deduplication', () => {
     expect(result.totalPoints).toBe(100); // 1 user × 100 points
 
     // Verify TransactWriteCommand has exactly 2 items (1 user × 2 ops)
-    const txCmd = client.send.mock.calls[1][0];
+    const txCmd = client.send.mock.calls[3][0];
     expect(txCmd.constructor.name).toBe('TransactWriteCommand');
     expect(txCmd.input.TransactItems).toHaveLength(2);
   });
@@ -199,6 +242,12 @@ describe('executeBatchDistribution — transaction construction', () => {
   });
 
   it('should build correct DynamoDB transaction parameters', async () => {
+    // GetCommand for feature-toggles
+    client.send.mockResolvedValueOnce({
+      Item: { userId: 'feature-toggles', pointsRuleConfig: { uglPointsPerEvent: 50, volunteerPointsPerEvent: 30, volunteerMaxPerEvent: 10, speakerTypeAPoints: 100, speakerTypeBPoints: 50, speakerRoundtablePoints: 50 } },
+    });
+    // QueryCommand for awarded users (empty)
+    client.send.mockResolvedValueOnce({ Items: [] });
     client.send.mockResolvedValueOnce({
       Responses: {
         [USERS_TABLE]: [
@@ -213,18 +262,18 @@ describe('executeBatchDistribution — transaction construction', () => {
     client.send.mockResolvedValueOnce({});
 
     const result = await executeBatchDistribution(
-      makeValidInput({ userIds: ['u1', 'u2'], points: 300 }),
+      makeValidInput({ userIds: ['u1', 'u2'], points: 100, targetRole: 'Speaker', speakerType: 'typeA' }),
       client,
       TABLES,
     );
 
     expect(result.success).toBe(true);
     expect(result.successCount).toBe(2);
-    expect(result.totalPoints).toBe(600);
+    expect(result.totalPoints).toBe(200);
     expect(result.distributionId).toBeDefined();
 
-    // Verify TransactWriteCommand structure
-    const txCmd = client.send.mock.calls[1][0];
+    // Verify TransactWriteCommand structure (offset by 2 for feature-toggles + awarded query)
+    const txCmd = client.send.mock.calls[3][0];
     expect(txCmd.constructor.name).toBe('TransactWriteCommand');
     const items = txCmd.input.TransactItems;
     // 2 users × 2 ops = 4 items
@@ -233,13 +282,13 @@ describe('executeBatchDistribution — transaction construction', () => {
     // First user: Update + Put
     expect(items[0].Update.TableName).toBe(USERS_TABLE);
     expect(items[0].Update.Key).toEqual({ userId: 'u1' });
-    expect(items[0].Update.ExpressionAttributeValues[':pv']).toBe(300);
+    expect(items[0].Update.ExpressionAttributeValues[':pv']).toBe(100);
 
     expect(items[1].Put.TableName).toBe(POINTS_RECORDS_TABLE);
     expect(items[1].Put.Item.userId).toBe('u1');
     expect(items[1].Put.Item.type).toBe('earn');
-    expect(items[1].Put.Item.amount).toBe(300);
-    expect(items[1].Put.Item.balanceAfter).toBe(500); // 200 + 300
+    expect(items[1].Put.Item.amount).toBe(100);
+    expect(items[1].Put.Item.balanceAfter).toBe(300); // 200 + 100
 
     // Second user: Update + Put
     expect(items[2].Update.TableName).toBe(USERS_TABLE);
@@ -247,15 +296,153 @@ describe('executeBatchDistribution — transaction construction', () => {
 
     expect(items[3].Put.TableName).toBe(POINTS_RECORDS_TABLE);
     expect(items[3].Put.Item.userId).toBe('u2');
-    expect(items[3].Put.Item.balanceAfter).toBe(350); // 50 + 300
+    expect(items[3].Put.Item.balanceAfter).toBe(150); // 50 + 100
 
     // Verify PutCommand for distribution record
-    const putCmd = client.send.mock.calls[2][0];
+    const putCmd = client.send.mock.calls[4][0];
     expect(putCmd.constructor.name).toBe('PutCommand');
     expect(putCmd.input.TableName).toBe(BATCH_DISTRIBUTIONS_TABLE);
     expect(putCmd.input.Item.pk).toBe('ALL');
     expect(putCmd.input.Item.successCount).toBe(2);
-    expect(putCmd.input.Item.totalPoints).toBe(600);
+    expect(putCmd.input.Item.totalPoints).toBe(200);
+  });
+});
+
+// ============================================================
+// 3b. Activity validation and metadata in distribution
+// ============================================================
+
+const ACTIVITIES_TABLE = 'Activities';
+const TABLES_WITH_ACTIVITIES = {
+  ...TABLES,
+  activitiesTable: ACTIVITIES_TABLE,
+};
+
+describe('executeBatchDistribution — activityId validation', () => {
+  let client: ReturnType<typeof createMockDynamoClient>;
+
+  beforeEach(() => {
+    client = createMockDynamoClient();
+  });
+
+  it('should return ACTIVITY_NOT_FOUND when activityId does not exist in Activities table', async () => {
+    // GetCommand for activityId returns no item
+    client.send.mockResolvedValueOnce({ Item: undefined });
+
+    const result = await executeBatchDistribution(
+      makeValidInput({ activityId: 'nonexistent-act' }),
+      client,
+      TABLES_WITH_ACTIVITIES,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('ACTIVITY_NOT_FOUND');
+    expect(result.error?.message).toContain('活动');
+
+    // Verify GetCommand was called with correct table and key
+    const getCmd = client.send.mock.calls[0][0];
+    expect(getCmd.constructor.name).toBe('GetCommand');
+    expect(getCmd.input.TableName).toBe(ACTIVITIES_TABLE);
+    expect(getCmd.input.Key).toEqual({ activityId: 'nonexistent-act' });
+
+    // No further DynamoDB calls should be made
+    expect(client.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('should write activity metadata to Distribution_Record on successful distribution', async () => {
+    // GetCommand for activityId returns existing activity
+    client.send.mockResolvedValueOnce({
+      Item: { activityId: 'act-001', activityType: '线下活动', ugName: 'Tokyo', topic: 'AWS Summit', activityDate: '2024-06-15' },
+    });
+    // GetCommand for feature-toggles
+    client.send.mockResolvedValueOnce({
+      Item: { userId: 'feature-toggles', pointsRuleConfig: { uglPointsPerEvent: 50, volunteerPointsPerEvent: 30, volunteerMaxPerEvent: 10, speakerTypeAPoints: 100, speakerTypeBPoints: 50, speakerRoundtablePoints: 50 } },
+    });
+    // QueryCommand for awarded users (empty)
+    client.send.mockResolvedValueOnce({ Items: [] });
+    // BatchGetCommand returns user data
+    client.send.mockResolvedValueOnce({
+      Responses: {
+        [USERS_TABLE]: [
+          { userId: 'u1', points: 100, nickname: 'Alice', email: 'alice@test.com' },
+        ],
+      },
+    });
+    // TransactWriteCommand succeeds
+    client.send.mockResolvedValueOnce({});
+    // PutCommand for distribution record
+    client.send.mockResolvedValueOnce({});
+
+    const input = makeValidInput({
+      userIds: ['u1'],
+      activityId: 'act-001',
+      activityType: '线下活动',
+      activityUG: 'Tokyo',
+      activityTopic: 'AWS Summit',
+      activityDate: '2024-06-15',
+    });
+
+    const result = await executeBatchDistribution(input, client, TABLES_WITH_ACTIVITIES);
+
+    expect(result.success).toBe(true);
+
+    // Verify Distribution_Record contains activity metadata (offset by 2 for feature-toggles + awarded)
+    const putCmd = client.send.mock.calls[5][0];
+    expect(putCmd.constructor.name).toBe('PutCommand');
+    expect(putCmd.input.TableName).toBe(BATCH_DISTRIBUTIONS_TABLE);
+    const record = putCmd.input.Item;
+    expect(record.activityId).toBe('act-001');
+    expect(record.activityType).toBe('线下活动');
+    expect(record.activityUG).toBe('Tokyo');
+    expect(record.activityTopic).toBe('AWS Summit');
+    expect(record.activityDate).toBe('2024-06-15');
+  });
+
+  it('should write activityId to each PointsRecord on successful distribution', async () => {
+    // GetCommand for activityId returns existing activity
+    client.send.mockResolvedValueOnce({
+      Item: { activityId: 'act-002', activityType: '线上活动', ugName: 'Security', topic: 'Cloud Security Workshop', activityDate: '2024-07-20' },
+    });
+    // GetCommand for feature-toggles
+    client.send.mockResolvedValueOnce({
+      Item: { userId: 'feature-toggles', pointsRuleConfig: { uglPointsPerEvent: 50, volunteerPointsPerEvent: 30, volunteerMaxPerEvent: 10, speakerTypeAPoints: 100, speakerTypeBPoints: 50, speakerRoundtablePoints: 50 } },
+    });
+    // QueryCommand for awarded users (empty)
+    client.send.mockResolvedValueOnce({ Items: [] });
+    // BatchGetCommand returns user data
+    client.send.mockResolvedValueOnce({
+      Responses: {
+        [USERS_TABLE]: [
+          { userId: 'u1', points: 50, nickname: 'Alice', email: 'alice@test.com' },
+          { userId: 'u2', points: 200, nickname: 'Bob', email: 'bob@test.com' },
+        ],
+      },
+    });
+    // TransactWriteCommand succeeds
+    client.send.mockResolvedValueOnce({});
+    // PutCommand for distribution record
+    client.send.mockResolvedValueOnce({});
+
+    const input = makeValidInput({
+      userIds: ['u1', 'u2'],
+      activityId: 'act-002',
+      activityType: '线上活动',
+      activityUG: 'Security',
+      activityTopic: 'Cloud Security Workshop',
+      activityDate: '2024-07-20',
+    });
+
+    const result = await executeBatchDistribution(input, client, TABLES_WITH_ACTIVITIES);
+
+    expect(result.success).toBe(true);
+
+    // Verify TransactWriteCommand — each PointsRecord Put should contain activityId (offset by 2)
+    const txCmd = client.send.mock.calls[4][0];
+    expect(txCmd.constructor.name).toBe('TransactWriteCommand');
+    const items = txCmd.input.TransactItems;
+    // 2 users × 2 ops = 4 items; Put items are at index 1 and 3
+    expect(items[1].Put.Item.activityId).toBe('act-002');
+    expect(items[3].Put.Item.activityId).toBe('act-002');
   });
 });
 
