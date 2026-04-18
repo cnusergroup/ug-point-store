@@ -1583,6 +1583,7 @@ async function handleUpdateFeatureToggles(event: AuthenticatedEvent): Promise<AP
       emailOrderShippedEnabled: body.emailOrderShippedEnabled === true,    // default false
       emailNewProductEnabled: body.emailNewProductEnabled === true,        // default false
       emailNewContentEnabled: body.emailNewContentEnabled === true,        // default false
+      emailContentUpdatedEnabled: body.emailContentUpdatedEnabled === true, // default false
       adminEmailProductsEnabled: body.adminEmailProductsEnabled === true,  // default false
       adminEmailContentEnabled: body.adminEmailContentEnabled === true,    // default false
       reservationApprovalPoints: typeof body.reservationApprovalPoints === 'number' && Number.isInteger(body.reservationApprovalPoints) && body.reservationApprovalPoints >= 1

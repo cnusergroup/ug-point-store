@@ -1,12 +1,51 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { View, Text, ScrollView, Input } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
+
+/** Hook: disable right-click, Ctrl+S, and drag on the page to deter casual downloading */
+function useDownloadPrevention() {
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Block Ctrl+S / Cmd+S
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+      }
+      // Block Ctrl+Shift+S (Save As)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'S') {
+        e.preventDefault();
+      }
+    };
+
+    const handleDragStart = (e: DragEvent) => {
+      e.preventDefault();
+    };
+
+    document.addEventListener('contextmenu', handleContextMenu);
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('dragstart', handleDragStart);
+
+    return () => {
+      document.removeEventListener('contextmenu', handleContextMenu);
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('dragstart', handleDragStart);
+    };
+  }, []);
+}
+
+
 import { useAppStore } from '../../store';
 import { request } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
 import type { ContentItem, ContentComment } from '@points-mall/shared';
 import PageToolbar from '../../components/PageToolbar';
+import PdfViewer from '../../components/PdfViewer';
 import './detail.scss';
 
 interface RolePermissions {
@@ -143,14 +182,6 @@ function getFilePublicUrl(fileKey: string): string {
   return `/${fileKey}`;
 }
 
-/** Get full public URL for external services like Office Online Viewer */
-function getFileFullUrl(fileKey: string): string {
-  if (typeof window !== 'undefined') {
-    return `${window.location.origin}/${fileKey}`;
-  }
-  return `/${fileKey}`;
-}
-
 /** Check if file is PDF */
 function isPdf(fileName: string): boolean {
   return getFileExtension(fileName) === 'pdf';
@@ -168,6 +199,9 @@ export default function ContentDetailPage() {
   const { t } = useTranslation();
   const user = useAppStore((s) => s.user);
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
+
+  // Activate download prevention (right-click, Ctrl+S, drag)
+  useDownloadPrevention();
 
   const [item, setItem] = useState<ContentItem | null>(null);
   const [hasReserved, setHasReserved] = useState(false);
@@ -526,11 +560,9 @@ export default function ContentDetailPage() {
                   <Text className='detail-owner__reject-text'>{item.rejectReason}</Text>
                 </View>
               )}
-              {item.reservationCount === 0 && (
-                <View className='detail-owner__edit-btn btn-secondary' onClick={handleEdit}>
-                  <Text>{t('contentHub.detail.editButton')}</Text>
-                </View>
-              )}
+              <View className='detail-owner__edit-btn btn-secondary' onClick={handleEdit}>
+                <Text>{t('contentHub.detail.editButton')}</Text>
+              </View>
             </View>
           )}
         </View>
@@ -564,20 +596,19 @@ export default function ContentDetailPage() {
         {item.fileKey && (
           <View className='detail-preview'>
             <Text className='detail-preview__label'>{t('contentHub.detail.previewLabel')} · {item.fileName}</Text>
-            {isPdf(item.fileName) ? (
-              <iframe
-                className='detail-preview__frame'
-                src={`${getFilePublicUrl(item.fileKey)}#toolbar=0&navpanes=0&scrollbar=1`}
-                title={item.fileName}
-              />
-            ) : isOfficeDoc(item.fileName) ? (
-              <View className='detail-preview__wrapper'>
-                <iframe
-                  className='detail-preview__frame'
-                  src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(getFileFullUrl(item.fileKey))}&wdDownloadButton=0&wdPrint=0&wdEmbedCode=0`}
-                  title={item.fileName}
-                />
+            {item.previewStatus === 'pending' ? (
+              <View className='detail-preview__pending'>
+                <View className='detail-preview__spinner' />
+                <Text className='detail-preview__pending-text'>{t('contentHub.detail.previewPending')}</Text>
               </View>
+            ) : item.previewStatus === 'failed' ? (
+              <View className='detail-preview__failed'>
+                <Text className='detail-preview__failed-text'>{t('contentHub.detail.previewFailed')}</Text>
+              </View>
+            ) : item.previewFileKey ? (
+              <PdfViewer url={getFilePublicUrl(item.previewFileKey)} />
+            ) : isPdf(item.fileName) ? (
+              <PdfViewer url={getFilePublicUrl(item.fileKey)} />
             ) : (
               <View className='detail-preview__unsupported'>
                 <Text className='detail-preview__unsupported-text'>{t('contentHub.detail.previewUnsupported')}</Text>
