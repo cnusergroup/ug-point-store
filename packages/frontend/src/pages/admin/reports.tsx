@@ -146,6 +146,7 @@ interface InventoryAlertRecord {
   currentStock: number;
   totalStock: number;
   productStatus: 'active' | 'inactive';
+  sizeOptions?: { name: string; stock: number }[];
 }
 
 interface TravelStatisticsRecord {
@@ -724,8 +725,21 @@ function getColumns(tab: ReportTab, t: (key: string) => string): ColumnDef[] {
       return [
         { key: 'productName', labelKey: 'admin.reports.colProductName', width: '160px' },
         { key: 'productType', labelKey: 'admin.reports.colProductType', width: '120px', render: (r: InventoryAlertRecord) => <Text>{r.productType === 'points' ? t('admin.reports.filterProductTypePoints') : t('admin.reports.filterProductTypeCodeExclusive')}</Text> },
-        { key: 'currentStock', labelKey: 'admin.reports.colCurrentStock', width: '100px', render: (r: InventoryAlertRecord) => <Text style={{ fontFamily: 'var(--font-display)', fontWeight: '600' }}>{r.currentStock}</Text> },
-        { key: 'totalStock', labelKey: 'admin.reports.colTotalStock', width: '100px' },
+        { key: 'currentStock', labelKey: 'admin.reports.colCurrentStock', width: '180px', render: (r: InventoryAlertRecord) => {
+          if (r.sizeOptions && r.sizeOptions.length > 0) {
+            return (
+              <View style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                {r.sizeOptions.map(opt => (
+                  <Text key={opt.name} style={{ fontFamily: 'var(--font-display)', fontSize: '12px', color: opt.stock < 5 ? 'var(--error)' : 'var(--text-primary)' }}>
+                    {opt.name}: <Text style={{ fontWeight: '600' }}>{opt.stock}</Text>
+                  </Text>
+                ))}
+              </View>
+            );
+          }
+          return <Text style={{ fontFamily: 'var(--font-display)', fontWeight: '600' }}>{r.currentStock}</Text>;
+        }},
+        { key: 'totalStock', labelKey: 'admin.reports.colTotalStock', width: '100px', render: (r: InventoryAlertRecord) => <Text style={{ fontFamily: 'var(--font-display)', fontWeight: '600' }}>{r.totalStock}</Text> },
         { key: 'productStatus', labelKey: 'admin.reports.colProductStatus', width: '100px', render: (r: InventoryAlertRecord) => <Text>{r.productStatus === 'active' ? t('admin.reports.filterProductStatusActive') : t('admin.reports.filterProductStatusInactive')}</Text> },
       ];
     case 'travel-statistics':

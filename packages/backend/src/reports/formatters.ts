@@ -299,7 +299,9 @@ export function formatInventoryAlertForExport(records: InventoryAlertRecord[]): 
   return records.map(r => ({
     productName: r.productName,
     productType: formatProductType(r.productType),
-    currentStock: r.currentStock,
+    currentStock: r.sizeOptions && r.sizeOptions.length > 0
+      ? r.sizeOptions.map(opt => `${opt.name}:${opt.stock}`).join(' / ')
+      : r.currentStock,
     totalStock: r.totalStock,
     productStatus: r.productStatus === 'active' ? '上架中' : '已下架',
   }));

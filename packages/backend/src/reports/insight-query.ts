@@ -113,6 +113,7 @@ export interface InventoryAlertRecord {
   currentStock: number;
   totalStock: number;    // 含尺码选项时为所有尺码 stock 之和
   productStatus: 'active' | 'inactive';
+  sizeOptions?: { name: string; stock: number }[];  // 尺码库存明细
 }
 
 /** 库存预警查询结果 */
@@ -862,13 +863,19 @@ export async function queryInventoryAlert(
 
       const totalStock = calculateTotalStock(stock, sizeOptions);
 
+      // For sized products, currentStock = minimum size stock (most urgent)
+      const effectiveCurrentStock = sizeOptions && sizeOptions.length > 0
+        ? Math.min(...sizeOptions.map(opt => opt.stock))
+        : stock;
+
       records.push({
         productId: (item.productId as string) ?? '',
         productName: (item.name as string) ?? '',
         productType: type,
-        currentStock: stock,
+        currentStock: effectiveCurrentStock,
         totalStock,
         productStatus: status as 'active' | 'inactive',
+        ...(sizeOptions && sizeOptions.length > 0 ? { sizeOptions } : {}),
       });
     }
 
