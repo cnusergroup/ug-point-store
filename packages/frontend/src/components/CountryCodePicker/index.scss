@@ -1,0 +1,104 @@
+.country-code-picker {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+
+  &__trigger {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg-surface);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: var(--transition-fast);
+    white-space: nowrap;
+    height: 100%;
+    box-sizing: border-box;
+
+    &:hover {
+      border-color: var(--card-border-hover);
+      background: var(--bg-hover);
+    }
+  }
+
+  &__flag {
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  &__code {
+    font-family: var(--font-display);
+    font-size: 14px;
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+
+  &__arrow {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    margin-left: var(--space-1);
+  }
+
+  &__dropdown {
+    position: absolute;
+    top: calc(100% + var(--space-1));
+    left: 0;
+    z-index: 100;
+    min-width: 240px;
+    max-height: 280px;
+    overflow-y: auto;
+    background: var(--bg-elevated);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    padding: var(--space-1) 0;
+  }
+
+  &__option {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    cursor: pointer;
+    transition: var(--transition-fast);
+
+    &:hover {
+      background: var(--bg-hover);
+    }
+
+    &--selected {
+      background: var(--bg-hover);
+      font-weight: 600;
+    }
+  }
+
+  &__option-flag {
+    font-size: 16px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  &__option-code {
+    font-family: var(--font-display);
+    font-size: 13px;
+    color: var(--text-primary);
+    min-width: 48px;
+    flex-shrink: 0;
+  }
+
+  &__option-name {
+    font-size: 13px;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__divider {
+    height: 1px;
+    background: var(--card-border);
+    margin: var(--space-1) var(--space-3);
+  }
+}

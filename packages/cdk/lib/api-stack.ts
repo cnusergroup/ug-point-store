@@ -206,12 +206,13 @@ export class ApiStack extends cdk.Stack {
     pointsRecordsTable.grantReadData(leaderboardFn);
     batchDistributionsTable.grantReadData(leaderboardFn);
 
-    // --- Sync Lambda (Feishu activity data sync) ---
+    // --- Sync Lambda (Feishu + Meetup activity data sync) ---
     const syncFn = new NodejsFunction(this, 'SyncFunction', {
       ...commonFnProps,
       functionName: 'PointsMall-Sync',
       entry: path.join(backendSrcPath, 'sync/handler.ts'),
       handler: 'handler',
+      timeout: cdk.Duration.seconds(120),
       environment: {
         ACTIVITIES_TABLE: activitiesTable.tableName,
         USERS_TABLE: usersTable.tableName,

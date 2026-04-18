@@ -571,11 +571,13 @@ export default function ContentDetailPage() {
                 title={item.fileName}
               />
             ) : isOfficeDoc(item.fileName) ? (
-              <iframe
-                className='detail-preview__frame'
-                src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(getFileFullUrl(item.fileKey))}`}
-                title={item.fileName}
-              />
+              <View className='detail-preview__wrapper'>
+                <iframe
+                  className='detail-preview__frame'
+                  src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(getFileFullUrl(item.fileKey))}&wdDownloadButton=0&wdPrint=0&wdEmbedCode=0`}
+                  title={item.fileName}
+                />
+              </View>
             ) : (
               <View className='detail-preview__unsupported'>
                 <Text className='detail-preview__unsupported-text'>{t('contentHub.detail.previewUnsupported')}</Text>
@@ -600,19 +602,34 @@ export default function ContentDetailPage() {
         {/* Actions: Reserve/Download + Like */}
         <View className='detail-actions'>
           <View className='detail-actions__reserve-btn'>
-            {canReserve && !hasReserved && (
-              <View
-                className={`btn-primary ${reserving ? 'btn-primary--disabled' : ''}`}
-                onClick={handleReserve}
-              >
-                <Text>{reserving ? t('contentHub.detail.reserving') : t('contentHub.detail.reserveButton')}</Text>
-              </View>
-            )}
-            {canDownload && hasReserved && (
-              <View className='btn-primary' onClick={handleDownload}>
-                <Text>{t('contentHub.detail.downloadButton')}</Text>
-              </View>
-            )}
+            {(() => {
+              const isAdminUser = user?.roles?.includes('SuperAdmin');
+              if (isAdminUser) {
+                // SuperAdmin/Admin: always show download button, no reservation required
+                return (
+                  <View className='btn-primary' onClick={handleDownload}>
+                    <Text>{t('contentHub.detail.downloadButton')}</Text>
+                  </View>
+                );
+              }
+              return (
+                <>
+                  {canReserve && !hasReserved && (
+                    <View
+                      className={`btn-primary ${reserving ? 'btn-primary--disabled' : ''}`}
+                      onClick={handleReserve}
+                    >
+                      <Text>{reserving ? t('contentHub.detail.reserving') : t('contentHub.detail.reserveButton')}</Text>
+                    </View>
+                  )}
+                  {canDownload && hasReserved && (
+                    <View className='btn-primary' onClick={handleDownload}>
+                      <Text>{t('contentHub.detail.downloadButton')}</Text>
+                    </View>
+                  )}
+                </>
+              );
+            })()}
           </View>
           <View
             className={`detail-actions__like-btn ${hasLiked ? 'detail-actions__like-btn--liked' : ''}`}

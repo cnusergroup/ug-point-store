@@ -125,7 +125,7 @@ export default function ProductDetailPage() {
     }
     if (product.type === 'points') {
       const sizeParam = selectedSize ? `&selectedSize=${encodeURIComponent(selectedSize)}` : '';
-      Taro.navigateTo({ url: `/pages/order-confirm/index?productId=${product.productId}&quantity=1${sizeParam}` });
+      Taro.navigateTo({ url: `/pages/order-confirm/index?productId=${product.productId}&quantity=${quantity}${sizeParam}` });
     } else {
       Taro.navigateTo({ url: `/pages/redeem/index?productId=${product.productId}&type=code` });
     }

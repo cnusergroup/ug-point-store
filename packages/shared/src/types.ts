@@ -383,8 +383,25 @@ export function calculateCartTotal(items: { pointsCost: number; quantity: number
   return items.reduce((sum, item) => sum + item.pointsCost * item.quantity, 0);
 }
 
-/** 手机号遮蔽（前3位 + **** + 后4位） */
+/**
+ * 手机号遮蔽（支持国际格式和旧格式）
+ * - 国际格式 "+CC-NNNN"：保留区号，号码部分 ≥6 位时保留前3后2中间****，<6 位时保留首末中间****
+ * - 旧格式纯数字：保留前3 + **** + 后4（向后兼容）
+ */
 export function maskPhone(phone: string): string {
+  // 尝试匹配国际格式
+  const match = phone.match(/^\+(\d{1,4})-(\d{4,15})$/);
+  if (match) {
+    const cc = match[1];
+    const num = match[2];
+    if (num.length >= 6) {
+      return `+${cc} ${num.slice(0, 3)}****${num.slice(-2)}`;
+    }
+    // 号码部分 <6 位：保留首末中间****
+    return `+${cc} ${num[0]}****${num[num.length - 1]}`;
+  }
+
+  // 旧格式纯数字：前3 + **** + 后4
   return phone.slice(0, 3) + '****' + phone.slice(7);
 }
 

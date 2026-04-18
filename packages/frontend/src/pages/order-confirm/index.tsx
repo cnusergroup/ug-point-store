@@ -4,8 +4,15 @@ import Taro, { useRouter } from '@tarojs/taro';
 import { request } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
+import {
+  getDefaultDialCode,
+  formatPhone,
+  displayPhone,
+} from '@points-mall/shared';
 import { GiftIcon } from '../../components/icons';
+import CountryCodePicker from '../../components/CountryCodePicker';
 import PageToolbar from '../../components/PageToolbar';
+import { useAppStore } from '../../store';
 import './index.scss';
 
 /** Address from API */
@@ -46,7 +53,15 @@ interface CartSelectedItem {
 }
 
 export default function OrderConfirmPage() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const cfCountry = (() => {
+    try {
+      if (typeof document === 'undefined') return null;
+      const match = document.cookie.match(/(?:^|;\s*)cf_country=([^;]*)/);
+      return match?.[1]?.trim() || null;
+    } catch { return null; }
+  })();
+  const defaultDialCode = getDefaultDialCode(locale, cfCountry);
   const router = useRouter();
   const fromCart = router.params.from === 'cart';
   const directProductId = router.params.productId || '';
@@ -63,6 +78,7 @@ export default function OrderConfirmPage() {
 
   // Address form state
   const [formName, setFormName] = useState('');
+  const [formCountryCode, setFormCountryCode] = useState(defaultDialCode);
   const [formPhone, setFormPhone] = useState('');
   const [formAddress, setFormAddress] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -102,6 +118,25 @@ export default function OrderConfirmPage() {
             request<ProductDetail>({ url: `/api/products/${ci.productId}` }),
           ),
         );
+        // Check stock availability
+        const outOfStockItems = cartItems.filter((ci, i) => {
+          const p = productDetails[i];
+          return !p || p.status !== 'active' || p.stock < ci.quantity;
+        });
+        if (outOfStockItems.length > 0) {
+          const names = outOfStockItems.map((ci) => {
+            const matchIdx = cartItems.indexOf(ci);
+            return productDetails[matchIdx]?.name || ci.productId;
+          });
+          Taro.showModal({
+            title: t('orderConfirm.outOfStockTitle'),
+            content: `${names.join('、')} ${t('orderConfirm.stockChanged') || '库存已变动，请返回重新选择'}`,
+            showCancel: false,
+            confirmText: '返回',
+            success: () => { Taro.navigateBack(); },
+          });
+          return;
+        }
         const displayItems: OrderItemDisplay[] = cartItems.map((ci, idx) => {
           const p = productDetails[idx];
           return {
@@ -118,6 +153,17 @@ export default function OrderConfirmPage() {
       } else if (directProductId) {
         // Direct order from product detail page
         const p = await request<ProductDetail>({ url: `/api/products/${directProductId}` });
+        // Check stock availability
+        if (p.status !== 'active' || p.stock < directQuantity) {
+          Taro.showModal({
+            title: t('orderConfirm.outOfStockTitle'),
+            content: `${p.name} ${t('orderConfirm.stockChanged') || '库存已变动，请返回重新选择'}`,
+            showCancel: false,
+            confirmText: '返回',
+            success: () => { Taro.navigateBack(); },
+          });
+          return;
+        }
         setItems([
           {
             productId: p.productId,
@@ -153,7 +199,7 @@ export default function OrderConfirmPage() {
     if (!formName.trim() || formName.length > 20) {
       errors.name = t('orderConfirm.recipientNameError');
     }
-    if (!/^1\d{10}$/.test(formPhone)) {
+    if (!/^\d{4,15}$/.test(formPhone)) {
       errors.phone = t('orderConfirm.phoneError');
     }
     if (!formAddress.trim() || formAddress.length > 200) {
@@ -170,11 +216,12 @@ export default function OrderConfirmPage() {
       await request({
         url: '/api/addresses',
         method: 'POST',
-        data: { recipientName: formName, phone: formPhone, detailAddress: formAddress },
+        data: { recipientName: formName, phone: formatPhone(formCountryCode, formPhone), detailAddress: formAddress },
       });
       Taro.showToast({ title: t('orderConfirm.addressAdded'), icon: 'success' });
       setShowAddressForm(false);
       setFormName('');
+      setFormCountryCode(defaultDialCode);
       setFormPhone('');
       setFormAddress('');
       setFormErrors({});
@@ -228,22 +275,25 @@ export default function OrderConfirmPage() {
       }
 
       Taro.showToast({ title: t('orderConfirm.redeemSuccess'), icon: 'success' });
+      // Refresh user points and cart count in store
+      useAppStore.getState().fetchProfile();
+      useAppStore.getState().fetchCartCount();
       setTimeout(() => {
         Taro.redirectTo({ url: `/pages/order-detail/index?id=${orderId}` });
       }, 1000);
     } catch (err: any) {
+      console.error('[OrderConfirm] Submit failed:', err);
       const code = err?.code || '';
       const msg = err?.message || t('orderConfirm.redeemFailed');
       if (code === 'INSUFFICIENT_POINTS') {
-        Taro.showToast({ title: t('orderConfirm.insufficientPoints'), icon: 'none', duration: 2000 });
+        Taro.showToast({ title: t('orderConfirm.insufficientPoints'), icon: 'none', duration: 3000 });
       } else if (code === 'OUT_OF_STOCK' || code === 'SIZE_OUT_OF_STOCK') {
-        const serverMsg = err?.data?.message || err?.message || '';
         Taro.showModal({
           title: t('orderConfirm.outOfStockTitle'),
-          content: t('orderConfirm.outOfStockMessage', { message: serverMsg }),
+          content: msg || t('orderConfirm.redeemFailed'),
           showCancel: true,
-          confirmText: t('orderConfirm.backToCart'),
-          cancelText: t('orderConfirm.stayHere'),
+          confirmText: '返回',
+          cancelText: '留下',
           success: (res) => {
             if (res.confirm) {
               Taro.navigateBack();
@@ -251,9 +301,14 @@ export default function OrderConfirmPage() {
           },
         });
       } else if (code === 'NO_ADDRESS_SELECTED') {
-        Taro.showToast({ title: t('orderConfirm.selectAddress'), icon: 'none', duration: 2000 });
+        Taro.showToast({ title: t('orderConfirm.selectAddress'), icon: 'none', duration: 3000 });
       } else {
-        Taro.showToast({ title: msg, icon: 'none', duration: 2000 });
+        Taro.showModal({
+          title: t('orderConfirm.redeemFailed'),
+          content: msg,
+          showCancel: false,
+          confirmText: '确定',
+        });
       }
     } finally {
       setSubmitting(false);
@@ -312,7 +367,7 @@ export default function OrderConfirmPage() {
                   <View className='confirm-address-card__info'>
                     <View className='confirm-address-card__name-row'>
                       <Text className='confirm-address-card__name'>{addr.recipientName}</Text>
-                      <Text className='confirm-address-card__phone'>{addr.phone}</Text>
+                      <Text className='confirm-address-card__phone'>{displayPhone(addr.phone)}</Text>
                       {addr.isDefault && <Text className='confirm-address-card__badge'>{t('orderConfirm.defaultBadge')}</Text>}
                     </View>
                     <Text className='confirm-address-card__detail'>{addr.detailAddress}</Text>
@@ -401,14 +456,20 @@ export default function OrderConfirmPage() {
 
             <View className='confirm-modal__field'>
               <Text className='confirm-modal__label'>{t('orderConfirm.phoneLabel')}</Text>
-              <input
-                className='confirm-modal__input'
-                type='tel'
-                placeholder={t('orderConfirm.phonePlaceholder')}
-                value={formPhone}
-                maxLength={11}
-                onInput={(e: any) => setFormPhone(e.target.value || e.detail?.value || '')}
-              />
+              <View className='confirm-modal__phone-row'>
+                <CountryCodePicker
+                  value={formCountryCode}
+                  onChange={(code) => setFormCountryCode(code)}
+                />
+                <input
+                  className='confirm-modal__input confirm-modal__input--phone'
+                  type='tel'
+                  placeholder={t('orderConfirm.phonePlaceholder')}
+                  value={formPhone}
+                  maxLength={15}
+                  onInput={(e: any) => setFormPhone(e.target.value || e.detail?.value || '')}
+                />
+              </View>
               {formErrors.phone && <Text className='confirm-modal__error'>{formErrors.phone}</Text>}
             </View>
 

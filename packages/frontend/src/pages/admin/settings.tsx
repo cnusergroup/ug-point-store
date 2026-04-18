@@ -107,6 +107,16 @@ const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   newContent: 'admin.settings.email.newContentLabel',
 };
 
+interface MeetupSyncConfigState {
+  groups: { urlname: string; displayName: string }[];
+  meetupToken: string;
+  meetupCsrf: string;
+  meetupSession: string;
+  autoSyncEnabled: boolean;
+  lastSyncTime?: string;
+  lastSyncResult?: string;
+}
+
 interface CategoryConfig {
   key: string;
   labelKey: string;
@@ -523,7 +533,36 @@ export default function AdminSettingsPage() {
   const [activitiesLoading, setActivitiesLoading] = useState(false);
   const [activitiesLastKey, setActivitiesLastKey] = useState<string | undefined>(undefined);
   const [activitiesHasMore, setActivitiesHasMore] = useState(false);
-  const [syncActiveTab, setSyncActiveTab] = useState<'config' | 'actions'>('config');
+  const [syncActiveTab, setSyncActiveTab] = useState<'config' | 'meetup' | 'website' | 'actions'>('config');
+
+  // Website sync config state (Taiwan UG)
+  const [websiteConfig, setWebsiteConfig] = useState<{
+    sources: { url: string; displayName: string }[];
+    lastSyncTime?: string;
+    lastSyncResult?: string;
+  }>({
+    sources: [],
+  });
+  const [websiteConfigLoading, setWebsiteConfigLoading] = useState(false);
+  const [websiteConfigSaving, setWebsiteConfigSaving] = useState(false);
+  const [websiteSyncing, setWebsiteSyncing] = useState(false);
+  const [websiteNewSourceUrl, setWebsiteNewSourceUrl] = useState('');
+  const [websiteNewSourceDisplayName, setWebsiteNewSourceDisplayName] = useState('');
+
+  // Meetup sync config state
+  const [meetupConfig, setMeetupConfig] = useState<MeetupSyncConfigState>({
+    groups: [],
+    meetupToken: '',
+    meetupCsrf: '',
+    meetupSession: '',
+    autoSyncEnabled: false,
+  });
+  const [meetupConfigLoading, setMeetupConfigLoading] = useState(false);
+  const [meetupConfigSaving, setMeetupConfigSaving] = useState(false);
+  const [meetupTesting, setMeetupTesting] = useState(false);
+  const [meetupSyncing, setMeetupSyncing] = useState(false);
+  const [meetupNewGroupUrlname, setMeetupNewGroupUrlname] = useState('');
+  const [meetupNewGroupDisplayName, setMeetupNewGroupDisplayName] = useState('');
 
   // Points rule config state
   const [pointsRuleConfig, setPointsRuleConfig] = useState<PointsRuleConfig>({
@@ -856,9 +895,7 @@ export default function AdminSettingsPage() {
       });
       const msg = `${t('activitySync.fetchSuccess' as any)}：${res.syncedCount ?? 0} / ${res.skippedCount ?? 0}`;
       Taro.showToast({ title: msg, icon: 'none', duration: 3000 });
-      // Refresh config to get updated lastSyncTime
       fetchSyncConfig();
-      // Refresh activities list
       fetchSyncedActivities(true);
     } catch (err) {
       if (err instanceof RequestError) {
@@ -869,6 +906,110 @@ export default function AdminSettingsPage() {
     } finally {
       setSyncRunning(false);
     }
+  };
+
+  const fetchMeetupSyncConfig = useCallback(async () => {
+    setMeetupConfigLoading(true);
+    try {
+      const res = await request<{
+        groups?: { urlname: string; displayName: string }[];
+        meetupToken?: string;
+        meetupCsrf?: string;
+        meetupSession?: string;
+        autoSyncEnabled?: boolean;
+        lastSyncTime?: string;
+        lastSyncResult?: string;
+      }>({ url: '/api/admin/settings/meetup-sync-config' });
+      setMeetupConfig({
+        groups: res.groups || [],
+        meetupToken: res.meetupToken || '',
+        meetupCsrf: res.meetupCsrf || '',
+        meetupSession: res.meetupSession || '',
+        autoSyncEnabled: res.autoSyncEnabled || false,
+        lastSyncTime: res.lastSyncTime,
+        lastSyncResult: res.lastSyncResult,
+      });
+    } catch { /* Keep defaults */ } finally { setMeetupConfigLoading(false); }
+  }, []);
+
+  const fetchWebsiteSyncConfig = useCallback(async () => {
+    setWebsiteConfigLoading(true);
+    try {
+      const res = await request<{
+        sources?: { url: string; displayName: string }[];
+        lastSyncTime?: string;
+        lastSyncResult?: string;
+      }>({ url: '/api/admin/settings/website-sync-config' });
+      setWebsiteConfig({
+        sources: res.sources || [],
+        lastSyncTime: res.lastSyncTime,
+        lastSyncResult: res.lastSyncResult,
+      });
+    } catch { /* Keep defaults */ } finally { setWebsiteConfigLoading(false); }
+  }, []);
+
+  const handleSaveWebsiteConfig = async () => {
+    for (const source of websiteConfig.sources) {
+      if (!source.url.startsWith('https://')) { Taro.showToast({ title: t('activitySync.websiteUrlValidation' as any), icon: 'none' }); return; }
+      if (!source.displayName.trim()) { Taro.showToast({ title: t('activitySync.websiteSourceDisplayNamePlaceholder' as any), icon: 'none' }); return; }
+    }
+    setWebsiteConfigSaving(true);
+    try {
+      await request({ url: '/api/admin/settings/website-sync-config', method: 'PUT', data: { sources: websiteConfig.sources } });
+      Taro.showToast({ title: t('activitySync.saveSuccess' as any), icon: 'none' });
+      fetchWebsiteSyncConfig();
+    } catch (err) {
+      Taro.showToast({ title: err instanceof RequestError ? err.message : t('activitySync.saveFailed' as any), icon: 'none' });
+    } finally { setWebsiteConfigSaving(false); }
+  };
+
+  const handleWebsiteSync = async () => {
+    setWebsiteSyncing(true);
+    try {
+      const res = await request<{ syncedCount?: number; skippedCount?: number; warnings?: string[] }>({ url: '/api/admin/sync/website', method: 'POST' });
+      const msg = `${t('activitySync.websiteSyncSuccess' as any)}：${res.syncedCount ?? 0} / ${res.skippedCount ?? 0}`;
+      Taro.showToast({ title: msg, icon: 'none', duration: 3000 });
+      fetchWebsiteSyncConfig();
+      fetchSyncedActivities(true);
+    } catch (err) {
+      Taro.showToast({ title: err instanceof RequestError ? err.message : t('activitySync.websiteSyncFailed' as any), icon: 'none' });
+    } finally { setWebsiteSyncing(false); }
+  };
+
+  const handleSaveMeetupConfig = async () => {
+    setMeetupConfigSaving(true);
+    try {
+      await request({ url: '/api/admin/settings/meetup-sync-config', method: 'PUT', data: { groups: meetupConfig.groups, meetupToken: meetupConfig.meetupToken, meetupCsrf: meetupConfig.meetupCsrf, meetupSession: meetupConfig.meetupSession, autoSyncEnabled: meetupConfig.autoSyncEnabled } });
+      Taro.showToast({ title: t('activitySync.saveSuccess' as any), icon: 'none' });
+      fetchMeetupSyncConfig();
+    } catch (err) {
+      Taro.showToast({ title: err instanceof RequestError ? err.message : t('activitySync.saveFailed' as any), icon: 'none' });
+    } finally { setMeetupConfigSaving(false); }
+  };
+
+  const handleTestMeetupConnection = async () => {
+    setMeetupTesting(true);
+    try {
+      const res = await request<{ success: boolean; error?: { code: string; message: string } }>({ url: '/api/admin/settings/meetup-sync-config/test', method: 'POST', data: { meetupToken: meetupConfig.meetupToken, meetupCsrf: meetupConfig.meetupCsrf, meetupSession: meetupConfig.meetupSession } });
+      if (res.success) { Taro.showToast({ title: t('activitySync.meetupTestSuccess' as any), icon: 'none' }); }
+      else { Taro.showToast({ title: res.error?.code === 'MEETUP_AUTH_EXPIRED' ? t('activitySync.meetupAuthExpired' as any) : t('activitySync.meetupTestFailed' as any), icon: 'none' }); }
+    } catch (err) {
+      Taro.showToast({ title: err instanceof RequestError ? err.message : t('activitySync.meetupTestFailed' as any), icon: 'none' });
+    } finally { setMeetupTesting(false); }
+  };
+
+  const handleMeetupSync = async () => {
+    setMeetupSyncing(true);
+    try {
+      const res = await request<{ syncedCount?: number; skippedCount?: number; warnings?: string[] }>({ url: '/api/admin/sync/meetup', method: 'POST' });
+      const msg = `${t('activitySync.meetupSyncSuccess' as any)}：${res.syncedCount ?? 0} / ${res.skippedCount ?? 0}`;
+      Taro.showToast({ title: msg, icon: 'none', duration: 3000 });
+      fetchMeetupSyncConfig();
+      fetchSyncedActivities(true);
+    } catch (err) {
+      const msg = (err instanceof RequestError && err.code === 'MEETUP_AUTH_EXPIRED') ? t('activitySync.meetupAuthExpired' as any) : (err instanceof RequestError ? err.message : t('activitySync.meetupSyncFailed' as any));
+      Taro.showToast({ title: msg, icon: 'none' });
+    } finally { setMeetupSyncing(false); }
   };
 
   const fetchSyncedActivities = useCallback(async (reset = false, lastKeyOverride?: string) => {
@@ -914,8 +1055,10 @@ export default function AdminSettingsPage() {
     fetchAdminUsers();
     fetchUGs();
     fetchSyncConfig();
+    fetchMeetupSyncConfig();
+    fetchWebsiteSyncConfig();
     fetchSyncedActivities(true);
-  }, [isAuthenticated, isSuperAdmin, fetchSettings, fetchTravelSettings, fetchInviteSettings, fetchAdminUsers, fetchUGs, fetchSyncConfig, fetchSyncedActivities]);
+  }, [isAuthenticated, isSuperAdmin, fetchSettings, fetchTravelSettings, fetchInviteSettings, fetchAdminUsers, fetchUGs, fetchSyncConfig, fetchMeetupSyncConfig, fetchWebsiteSyncConfig, fetchSyncedActivities]);
 
   const handleToggle = async (key: keyof FeatureToggles, newValue: boolean) => {
     const prev = { ...settings };
@@ -1887,201 +2030,221 @@ export default function AdminSettingsPage() {
             {activeCategory === 'activity-sync' && (
               <>
                 <Text className='settings-content__category-title'>{t('activitySync.title' as any)}</Text>
-                <CollapsibleSection title={t('activitySync.sectionConfigTitle' as any)} description={t('activitySync.sectionConfigDesc' as any)}>
-                  {/* Tab switcher */}
-                  <View className='sync-tabs'>
-                    <View
-                      className={`sync-tabs__tab${syncActiveTab === 'config' ? ' sync-tabs__tab--active' : ''}`}
-                      onClick={() => setSyncActiveTab('config')}
-                    >
-                      <Text className='sync-tabs__tab-text'>同步配置</Text>
-                    </View>
-                    <View
-                      className={`sync-tabs__tab${syncActiveTab === 'actions' ? ' sync-tabs__tab--active' : ''}`}
-                      onClick={() => setSyncActiveTab('actions')}
-                    >
-                      <Text className='sync-tabs__tab-text'>同步操作</Text>
-                    </View>
+
+                {/* Source tabs */}
+                <View className='sync-source-tabs'>
+                  <View className={`sync-source-tabs__tab${syncActiveTab === 'config' ? ' sync-source-tabs__tab--active' : ''}`} onClick={() => setSyncActiveTab('config')}>
+                    <Text className='sync-source-tabs__tab-text'>Feishu</Text>
                   </View>
+                  <View className={`sync-source-tabs__tab${syncActiveTab === 'meetup' ? ' sync-source-tabs__tab--active' : ''}`} onClick={() => setSyncActiveTab('meetup')}>
+                    <Text className='sync-source-tabs__tab-text'>Meetup</Text>
+                  </View>
+                  <View className={`sync-source-tabs__tab${syncActiveTab === 'website' ? ' sync-source-tabs__tab--active' : ''}`} onClick={() => setSyncActiveTab('website')}>
+                    <Text className='sync-source-tabs__tab-text'>Website</Text>
+                  </View>
+                  <View className={`sync-source-tabs__tab${syncActiveTab === 'actions' ? ' sync-source-tabs__tab--active' : ''}`} onClick={() => setSyncActiveTab('actions')}>
+                    <Text className='sync-source-tabs__tab-text'>{t('activitySync.sectionActivitiesTitle' as any)}</Text>
+                  </View>
+                </View>
 
-                  {/* Tab: Sync Config */}
-                  {syncActiveTab === 'config' && (
-                    <>
-                      {syncConfigLoading ? (
-                        <View className='settings-loading'>
-                          <Text>{t('activitySync.loading' as any)}</Text>
-                        </View>
-                      ) : (
-                        <View className='toggle-list'>
-                          {/* Sync interval */}
-                          <View className='sync-config-field'>
-                            <View className='sync-config-field__info'>
-                              <Text className='sync-config-field__label'>{t('activitySync.syncIntervalLabel' as any)}</Text>
-                              <Text className='sync-config-field__desc'>{t('activitySync.syncIntervalDesc' as any)}</Text>
-                            </View>
-                            <View className='sync-config-field__input'>
-                              <Input
-                                type='number'
-                                value={String(syncConfig.syncIntervalDays)}
-                                onInput={(e) => {
-                                  const val = parseInt(e.detail.value, 10);
-                                  if (!isNaN(val) && val >= 1 && val <= 30) {
-                                    setSyncConfig((prev) => ({ ...prev, syncIntervalDays: val }));
-                                  }
-                                }}
-                                placeholder='1~30'
-                                className='threshold-input'
-                              />
-                            </View>
-                          </View>
-
-                          {/* Feishu table URL */}
-                          <View className='sync-config-field'>
-                            <View className='sync-config-field__info'>
-                              <Text className='sync-config-field__label'>{t('activitySync.feishuUrlLabel' as any)}</Text>
-                              <Text className='sync-config-field__desc'>{t('activitySync.feishuUrlDesc' as any)}</Text>
-                            </View>
-                            <View className='sync-config-field__input'>
-                              <Input
-                                type='text'
-                                value={syncConfig.feishuTableUrl}
-                                onInput={(e) => setSyncConfig((prev) => ({ ...prev, feishuTableUrl: e.detail.value }))}
-                                placeholder='https://...'
-                                className='threshold-input'
-                              />
-                            </View>
-                          </View>
-
-                          {/* Feishu App ID */}
-                          <View className='sync-config-field'>
-                            <View className='sync-config-field__info'>
-                              <Text className='sync-config-field__label'>{t('activitySync.feishuAppIdLabel' as any)}</Text>
-                              <Text className='sync-config-field__desc'>{t('activitySync.feishuAppIdDesc' as any)}</Text>
-                            </View>
-                            <View className='sync-config-field__input'>
-                              <Input
-                                type='text'
-                                value={syncConfig.feishuAppId}
-                                onInput={(e) => setSyncConfig((prev) => ({ ...prev, feishuAppId: e.detail.value }))}
-                                placeholder='cli_xxxxx'
-                                className='threshold-input'
-                              />
-                            </View>
-                          </View>
-
-                          {/* Feishu App Secret */}
-                          <View className='sync-config-field'>
-                            <View className='sync-config-field__info'>
-                              <Text className='sync-config-field__label'>{t('activitySync.feishuAppSecretLabel' as any)}</Text>
-                              <Text className='sync-config-field__desc'>{t('activitySync.feishuAppSecretDesc' as any)}</Text>
-                            </View>
-                            <View className='sync-config-field__input'>
-                              <Input
-                                type='text'
-                                password
-                                value={syncConfig.feishuAppSecret}
-                                onInput={(e) => setSyncConfig((prev) => ({ ...prev, feishuAppSecret: e.detail.value }))}
-                                placeholder='••••••••'
-                                className='threshold-input'
-                              />
-                            </View>
-                          </View>
-
-                          {/* Save config button */}
-                          <View className='sync-config-actions'>
-                            <View
-                              className={`sync-config-actions__save${syncConfigSaving ? ' sync-config-actions__save--disabled' : ''}`}
-                              onClick={syncConfigSaving ? undefined : handleSaveSyncConfig}
-                            >
-                              <Text className='sync-config-actions__save-text'>
-                                {syncConfigSaving ? t('activitySync.saving' as any) : t('activitySync.saveButton' as any)}
-                              </Text>
-                            </View>
-                          </View>
-                        </View>
-                      )}
-                    </>
-                  )}
-
-                  {/* Tab: Sync Actions */}
-                  {syncActiveTab === 'actions' && (
-                    <View className='toggle-list'>
-                      {/* Manual sync button */}
-                      <View className='sync-config-actions'>
-                        <View
-                          className={`sync-config-actions__fetch${syncRunning ? ' sync-config-actions__fetch--disabled' : ''}`}
-                          onClick={syncRunning ? undefined : handleManualSync}
-                        >
-                          <RefreshIcon size={16} color='var(--text-inverse)' />
-                          <Text className='sync-config-actions__fetch-text'>
-                            {syncRunning ? t('activitySync.fetching' as any) : t('activitySync.fetchButton' as any)}
-                          </Text>
+                {/* ── Feishu Tab ── */}
+                {syncActiveTab === 'config' && (
+                  <View className='sync-panel'>
+                    <View className='sync-panel__header'>
+                      <View className='sync-panel__header-info'>
+                        <Text className='sync-panel__title'>{t('activitySync.sectionConfigTitle' as any)}</Text>
+                        <Text className='sync-panel__desc'>{t('activitySync.sectionConfigDesc' as any)}</Text>
+                      </View>
+                      <View className='sync-panel__header-actions'>
+                        <View className={`sync-panel__action-btn sync-panel__action-btn--primary${syncRunning ? ' sync-panel__action-btn--disabled' : ''}`} onClick={syncRunning ? undefined : handleManualSync}>
+                          <RefreshIcon size={14} color='var(--text-inverse)' />
+                          <Text className='sync-panel__action-btn-text'>{syncRunning ? t('activitySync.feishuSyncing' as any) : t('activitySync.feishuSyncButton' as any)}</Text>
                         </View>
                       </View>
-
-                      {/* Last sync status */}
-                      {syncConfig.lastSyncTime && (
-                        <View className='sync-status'>
-                          <Text className='sync-status__label'>{t('activitySync.lastSyncLabel' as any)}：</Text>
-                          <Text className='sync-status__time'>
-                            {new Date(syncConfig.lastSyncTime).toLocaleString('zh-CN')}
-                          </Text>
-                          {syncConfig.lastSyncResult && (
-                            <View className={`sync-status__badge sync-status__badge--${syncConfig.lastSyncResult === 'success' ? 'success' : 'error'}`}>
-                              <Text className='sync-status__badge-text'>
-                                {syncConfig.lastSyncResult === 'success' ? t('activitySync.syncStatusSuccess' as any) : t('activitySync.syncStatusFailed' as any)}
-                              </Text>
-                            </View>
-                          )}
+                    </View>
+                    {syncConfig.lastSyncTime && (
+                      <View className='sync-panel__status-bar'>
+                        <Text className='sync-panel__status-label'>{t('activitySync.lastSyncLabel' as any)}</Text>
+                        <Text className='sync-panel__status-time'>{new Date(syncConfig.lastSyncTime).toLocaleString('zh-CN')}</Text>
+                        {syncConfig.lastSyncResult && (
+                          <View className={`sync-panel__status-badge sync-panel__status-badge--${syncConfig.lastSyncResult === 'success' ? 'success' : 'error'}`}>
+                            <Text className='sync-panel__status-badge-text'>{syncConfig.lastSyncResult === 'success' ? t('activitySync.syncStatusSuccess' as any) : t('activitySync.syncStatusFailed' as any)}</Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
+                    {syncConfigLoading ? (
+                      <View className='sync-panel__loading'><Text>{t('activitySync.loading' as any)}</Text></View>
+                    ) : (
+                      <View className='sync-panel__body'>
+                        <View className='sync-field-grid'>
+                          <View className='sync-field'>
+                            <Text className='sync-field__label'>{t('activitySync.syncIntervalLabel' as any)}</Text>
+                            <Text className='sync-field__hint'>{t('activitySync.syncIntervalDesc' as any)}</Text>
+                            <Input type='number' value={String(syncConfig.syncIntervalDays)} onInput={(e) => { const val = parseInt(e.detail.value, 10); if (!isNaN(val) && val >= 1 && val <= 30) setSyncConfig((prev) => ({ ...prev, syncIntervalDays: val })); }} placeholder='1~30' className='sync-field__input' />
+                          </View>
+                          <View className='sync-field'>
+                            <Text className='sync-field__label'>{t('activitySync.feishuUrlLabel' as any)}</Text>
+                            <Text className='sync-field__hint'>{t('activitySync.feishuUrlDesc' as any)}</Text>
+                            <Input type='text' value={syncConfig.feishuTableUrl} onInput={(e) => setSyncConfig((prev) => ({ ...prev, feishuTableUrl: e.detail.value }))} placeholder='https://...' className='sync-field__input' />
+                          </View>
+                          <View className='sync-field'>
+                            <Text className='sync-field__label'>{t('activitySync.feishuAppIdLabel' as any)}</Text>
+                            <Text className='sync-field__hint'>{t('activitySync.feishuAppIdDesc' as any)}</Text>
+                            <Input type='text' value={syncConfig.feishuAppId} onInput={(e) => setSyncConfig((prev) => ({ ...prev, feishuAppId: e.detail.value }))} placeholder='cli_xxxxx' className='sync-field__input' />
+                          </View>
+                          <View className='sync-field'>
+                            <Text className='sync-field__label'>{t('activitySync.feishuAppSecretLabel' as any)}</Text>
+                            <Text className='sync-field__hint'>{t('activitySync.feishuAppSecretDesc' as any)}</Text>
+                            <Input type='text' password value={syncConfig.feishuAppSecret} onInput={(e) => setSyncConfig((prev) => ({ ...prev, feishuAppSecret: e.detail.value }))} placeholder='••••••••' className='sync-field__input' />
+                          </View>
                         </View>
-                      )}
-
-                      {/* Synced activities list */}
-                      <View className='sync-activities-section'>
-                        <View className='sync-activities-section__header'>
-                          <Text className='sync-activities-section__title'>{t('activitySync.sectionActivitiesTitle' as any)}</Text>
-                          <Text className='sync-activities-section__count'>{syncedActivities.length} 条</Text>
+                        <View className='sync-panel__footer'>
+                          <View className={`sync-panel__action-btn sync-panel__action-btn--save${syncConfigSaving ? ' sync-panel__action-btn--disabled' : ''}`} onClick={syncConfigSaving ? undefined : handleSaveSyncConfig}>
+                            <Text className='sync-panel__action-btn-text'>{syncConfigSaving ? t('activitySync.saving' as any) : t('activitySync.saveButton' as any)}</Text>
+                          </View>
                         </View>
-                        <View className='sync-activities-section__list'>
-                          {activitiesLoading && syncedActivities.length === 0 ? (
-                            <View className='settings-loading'>
-                              <Text>{t('activitySync.loading' as any)}</Text>
-                            </View>
-                          ) : syncedActivities.length === 0 ? (
-                            <View className='ug-empty'>
-                              <Text className='ug-empty__text'>{t('activitySync.empty' as any)}</Text>
-                            </View>
-                          ) : (
-                            <>
-                              {syncedActivities.map((activity) => (
-                                <View key={activity.activityId} className='activity-item'>
-                                  <View className='activity-item__header'>
-                                    <View className={`activity-item__type-badge activity-item__type-badge--${activity.activityType === '线上活动' ? 'online' : 'offline'}`}>
-                                      <Text className='activity-item__type-text'>{activity.activityType}</Text>
-                                    </View>
-                                    <Text className='activity-item__ug'>{activity.ugName}</Text>
-                                  </View>
-                                  <Text className='activity-item__topic'>{activity.topic}</Text>
-                                  <Text className='activity-item__date'>{activity.activityDate}</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {/* ── Meetup Tab ── */}
+                {syncActiveTab === 'meetup' && (
+                  <View className='sync-panel'>
+                    <View className='sync-panel__header'>
+                      <View className='sync-panel__header-info'>
+                        <Text className='sync-panel__title'>{t('activitySync.meetupSectionTitle' as any)}</Text>
+                        <Text className='sync-panel__desc'>{t('activitySync.meetupSectionDesc' as any)}</Text>
+                      </View>
+                      <View className='sync-panel__header-actions'>
+                        <View className={`sync-panel__action-btn sync-panel__action-btn--outline${meetupTesting ? ' sync-panel__action-btn--disabled' : ''}`} onClick={meetupTesting ? undefined : handleTestMeetupConnection}>
+                          <Text className='sync-panel__action-btn-text'>{meetupTesting ? t('activitySync.meetupTesting' as any) : t('activitySync.meetupTestButton' as any)}</Text>
+                        </View>
+                        <View className={`sync-panel__action-btn sync-panel__action-btn--primary${meetupSyncing ? ' sync-panel__action-btn--disabled' : ''}`} onClick={meetupSyncing ? undefined : handleMeetupSync}>
+                          <RefreshIcon size={14} color='var(--text-inverse)' />
+                          <Text className='sync-panel__action-btn-text'>{meetupSyncing ? t('activitySync.meetupSyncing' as any) : t('activitySync.meetupSyncButton' as any)}</Text>
+                        </View>
+                      </View>
+                    </View>
+                    {meetupConfig.lastSyncTime && (
+                      <View className='sync-panel__status-bar'>
+                        <Text className='sync-panel__status-label'>{t('activitySync.meetupLastSyncLabel' as any)}</Text>
+                        <Text className='sync-panel__status-time'>{new Date(meetupConfig.lastSyncTime).toLocaleString('zh-CN')}</Text>
+                        {meetupConfig.lastSyncResult && (<View className={`sync-panel__status-badge sync-panel__status-badge--${meetupConfig.lastSyncResult === 'success' ? 'success' : 'error'}`}><Text className='sync-panel__status-badge-text'>{meetupConfig.lastSyncResult === 'success' ? t('activitySync.syncStatusSuccess' as any) : t('activitySync.syncStatusFailed' as any)}</Text></View>)}
+                      </View>
+                    )}
+                    {meetupConfigLoading ? (<View className='sync-panel__loading'><Text>{t('activitySync.loading' as any)}</Text></View>) : (
+                      <View className='sync-panel__body'>
+                        <View className='sync-panel__section'>
+                          <Text className='sync-panel__section-title'>{t('activitySync.meetupGroupsLabel' as any)}</Text>
+                          {meetupConfig.groups.length === 0 ? (<View className='sync-panel__empty'><Text className='sync-panel__empty-text'>{t('activitySync.meetupNoGroups' as any)}</Text></View>) : (
+                            <View className='sync-source-list'>
+                              {meetupConfig.groups.map((group, idx) => (
+                                <View key={idx} className='sync-source-item'>
+                                  <View className='sync-source-item__info'><Text className='sync-source-item__name'>{group.displayName}</Text><Text className='sync-source-item__url'>{group.urlname}</Text></View>
+                                  <View className='sync-source-item__remove' onClick={() => setMeetupConfig((prev) => ({ ...prev, groups: prev.groups.filter((_, i) => i !== idx) }))}><Text className='sync-source-item__remove-text'>{t('activitySync.meetupRemoveGroup' as any)}</Text></View>
                                 </View>
                               ))}
-                              {activitiesHasMore && (
-                                <View
-                                  className={`sync-load-more${activitiesLoading ? ' sync-load-more--loading' : ''}`}
-                                  onClick={activitiesLoading ? undefined : () => fetchSyncedActivities(false, activitiesLastKey)}
-                                >
-                                  <Text className='sync-load-more__text'>
-                                    {activitiesLoading ? t('activitySync.loading' as any) : t('activitySync.loadMore' as any)}
-                                  </Text>
-                                </View>
-                              )}
-                            </>
+                            </View>
                           )}
+                          <View className='sync-add-row'>
+                            <Input className='sync-add-row__input' value={meetupNewGroupUrlname} onInput={(e) => setMeetupNewGroupUrlname(e.detail.value)} placeholder={t('activitySync.meetupGroupUrlnamePlaceholder' as any)} />
+                            <Input className='sync-add-row__input' value={meetupNewGroupDisplayName} onInput={(e) => setMeetupNewGroupDisplayName(e.detail.value)} placeholder={t('activitySync.meetupGroupDisplayNamePlaceholder' as any)} />
+                            <View className={`sync-add-row__btn${(!meetupNewGroupUrlname.trim() || !meetupNewGroupDisplayName.trim()) ? ' sync-add-row__btn--disabled' : ''}`} onClick={(!meetupNewGroupUrlname.trim() || !meetupNewGroupDisplayName.trim()) ? undefined : () => { setMeetupConfig((prev) => ({ ...prev, groups: [...prev.groups, { urlname: meetupNewGroupUrlname.trim(), displayName: meetupNewGroupDisplayName.trim() }] })); setMeetupNewGroupUrlname(''); setMeetupNewGroupDisplayName(''); }}><Text className='sync-add-row__btn-text'>{t('activitySync.meetupAddGroup' as any)}</Text></View>
+                          </View>
+                        </View>
+                        <View className='sync-panel__section'>
+                          <Text className='sync-panel__section-title'>{t('activitySync.meetupTokenLabel' as any)}</Text>
+                          <View className='sync-field-grid'>
+                            <View className='sync-field'><Text className='sync-field__label'>Access Token</Text><Input type='text' password value={meetupConfig.meetupToken} onInput={(e) => setMeetupConfig((prev) => ({ ...prev, meetupToken: e.detail.value }))} placeholder={t('activitySync.meetupTokenPlaceholder' as any)} className='sync-field__input' /></View>
+                            <View className='sync-field'><Text className='sync-field__label'>CSRF Token</Text><Input type='text' password value={meetupConfig.meetupCsrf} onInput={(e) => setMeetupConfig((prev) => ({ ...prev, meetupCsrf: e.detail.value }))} placeholder={t('activitySync.meetupCsrfPlaceholder' as any)} className='sync-field__input' /></View>
+                            <View className='sync-field'><Text className='sync-field__label'>Session</Text><Input type='text' password value={meetupConfig.meetupSession} onInput={(e) => setMeetupConfig((prev) => ({ ...prev, meetupSession: e.detail.value }))} placeholder={t('activitySync.meetupSessionPlaceholder' as any)} className='sync-field__input' /></View>
+                          </View>
+                        </View>
+                        <View className='sync-panel__toggle-row'>
+                          <View className='sync-panel__toggle-info'><Text className='sync-panel__toggle-label'>{t('activitySync.meetupAutoSyncLabel' as any)}</Text><Text className='sync-panel__toggle-desc'>{t('activitySync.meetupAutoSyncDesc' as any)}</Text></View>
+                          <Switch checked={meetupConfig.autoSyncEnabled} onChange={(e) => setMeetupConfig((prev) => ({ ...prev, autoSyncEnabled: e.detail.value }))} color='var(--accent-primary)' />
+                        </View>
+                        <View className='sync-panel__footer'>
+                          <View className={`sync-panel__action-btn sync-panel__action-btn--save${meetupConfigSaving ? ' sync-panel__action-btn--disabled' : ''}`} onClick={meetupConfigSaving ? undefined : handleSaveMeetupConfig}><Text className='sync-panel__action-btn-text'>{meetupConfigSaving ? t('activitySync.saving' as any) : t('activitySync.saveButton' as any)}</Text></View>
                         </View>
                       </View>
+                    )}
+                  </View>
+                )}
+
+                {/* ── Website Tab ── */}
+                {syncActiveTab === 'website' && (
+                  <View className='sync-panel'>
+                    <View className='sync-panel__header'>
+                      <View className='sync-panel__header-info'><Text className='sync-panel__title'>{t('activitySync.websiteSyncSectionTitle' as any)}</Text><Text className='sync-panel__desc'>{t('activitySync.websiteSyncSectionDesc' as any)}</Text></View>
+                      <View className='sync-panel__header-actions'>
+                        <View className={`sync-panel__action-btn sync-panel__action-btn--primary${websiteSyncing ? ' sync-panel__action-btn--disabled' : ''}`} onClick={websiteSyncing ? undefined : handleWebsiteSync}><RefreshIcon size={14} color='var(--text-inverse)' /><Text className='sync-panel__action-btn-text'>{websiteSyncing ? t('activitySync.websiteSyncing' as any) : t('activitySync.websiteSyncButton' as any)}</Text></View>
+                      </View>
                     </View>
-                  )}
-                </CollapsibleSection>
+                    {websiteConfig.lastSyncTime && (
+                      <View className='sync-panel__status-bar'>
+                        <Text className='sync-panel__status-label'>{t('activitySync.websiteLastSyncLabel' as any)}</Text>
+                        <Text className='sync-panel__status-time'>{new Date(websiteConfig.lastSyncTime).toLocaleString('zh-CN')}</Text>
+                        {websiteConfig.lastSyncResult && (<View className={`sync-panel__status-badge sync-panel__status-badge--${websiteConfig.lastSyncResult === 'success' ? 'success' : 'error'}`}><Text className='sync-panel__status-badge-text'>{websiteConfig.lastSyncResult === 'success' ? t('activitySync.syncStatusSuccess' as any) : t('activitySync.syncStatusFailed' as any)}</Text></View>)}
+                      </View>
+                    )}
+                    {websiteConfigLoading ? (<View className='sync-panel__loading'><Text>{t('activitySync.loading' as any)}</Text></View>) : (
+                      <View className='sync-panel__body'>
+                        <View className='sync-panel__section'>
+                          <Text className='sync-panel__section-title'>{t('activitySync.websiteSourceUrlLabel' as any)}</Text>
+                          {websiteConfig.sources.length === 0 ? (<View className='sync-panel__empty'><Text className='sync-panel__empty-text'>{t('activitySync.websiteNoSources' as any)}</Text></View>) : (
+                            <View className='sync-source-list'>
+                              {websiteConfig.sources.map((source, idx) => (
+                                <View key={idx} className='sync-source-item'>
+                                  <View className='sync-source-item__info'><Text className='sync-source-item__name'>{source.displayName}</Text><Text className='sync-source-item__url'>{source.url}</Text></View>
+                                  <View className='sync-source-item__remove' onClick={() => setWebsiteConfig((prev) => ({ ...prev, sources: prev.sources.filter((_, i) => i !== idx) }))}><Text className='sync-source-item__remove-text'>{t('activitySync.websiteRemoveSource' as any)}</Text></View>
+                                </View>
+                              ))}
+                            </View>
+                          )}
+                          <View className='sync-add-row'>
+                            <Input className='sync-add-row__input' value={websiteNewSourceUrl} onInput={(e) => setWebsiteNewSourceUrl(e.detail.value)} placeholder={t('activitySync.websiteSourceUrlPlaceholder' as any)} />
+                            <Input className='sync-add-row__input' value={websiteNewSourceDisplayName} onInput={(e) => setWebsiteNewSourceDisplayName(e.detail.value)} placeholder={t('activitySync.websiteSourceDisplayNamePlaceholder' as any)} />
+                            <View className={`sync-add-row__btn${(!websiteNewSourceUrl.trim().startsWith('https://') || !websiteNewSourceDisplayName.trim() || websiteConfig.sources.length >= 20) ? ' sync-add-row__btn--disabled' : ''}`} onClick={(!websiteNewSourceUrl.trim().startsWith('https://') || !websiteNewSourceDisplayName.trim() || websiteConfig.sources.length >= 20) ? undefined : () => { setWebsiteConfig((prev) => ({ ...prev, sources: [...prev.sources, { url: websiteNewSourceUrl.trim(), displayName: websiteNewSourceDisplayName.trim() }] })); setWebsiteNewSourceUrl(''); setWebsiteNewSourceDisplayName(''); }}><Text className='sync-add-row__btn-text'>{t('activitySync.websiteAddSource' as any)}</Text></View>
+                          </View>
+                          {websiteNewSourceUrl.trim() && !websiteNewSourceUrl.trim().startsWith('https://') && (<Text className='sync-panel__validation-error'>{t('activitySync.websiteUrlValidation' as any)}</Text>)}
+                        </View>
+                        <View className='sync-panel__footer'>
+                          <View className={`sync-panel__action-btn sync-panel__action-btn--save${websiteConfigSaving ? ' sync-panel__action-btn--disabled' : ''}`} onClick={websiteConfigSaving ? undefined : handleSaveWebsiteConfig}><Text className='sync-panel__action-btn-text'>{websiteConfigSaving ? t('activitySync.saving' as any) : t('activitySync.saveButton' as any)}</Text></View>
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {/* ── Activities Tab ── */}
+                {syncActiveTab === 'actions' && (
+                  <View className='sync-panel'>
+                    <View className='sync-panel__header'>
+                      <View className='sync-panel__header-info'><Text className='sync-panel__title'>{t('activitySync.sectionActivitiesTitle' as any)}</Text></View>
+                      <Text className='sync-panel__count'>{syncedActivities.length} 条</Text>
+                    </View>
+                    <View className='sync-panel__activities-list'>
+                      {activitiesLoading && syncedActivities.length === 0 ? (<View className='sync-panel__loading'><Text>{t('activitySync.loading' as any)}</Text></View>) : syncedActivities.length === 0 ? (<View className='sync-panel__empty'><Text className='sync-panel__empty-text'>{t('activitySync.empty' as any)}</Text></View>) : (
+                        <>
+                          {syncedActivities.map((activity) => (
+                            <View key={activity.activityId} className='activity-item'>
+                              <View className='activity-item__header'>
+                                <View className={`activity-item__type-badge activity-item__type-badge--${activity.activityType === '线上活动' ? 'online' : 'offline'}`}><Text className='activity-item__type-text'>{activity.activityType}</Text></View>
+                                <Text className='activity-item__ug'>{activity.ugName}</Text>
+                              </View>
+                              <Text className='activity-item__topic'>{activity.topic}</Text>
+                              <Text className='activity-item__date'>{activity.activityDate}</Text>
+                            </View>
+                          ))}
+                          {activitiesHasMore && (<View className={`sync-load-more${activitiesLoading ? ' sync-load-more--loading' : ''}`} onClick={activitiesLoading ? undefined : () => fetchSyncedActivities(false, activitiesLastKey)}><Text className='sync-load-more__text'>{activitiesLoading ? t('activitySync.loading' as any) : t('activitySync.loadMore' as any)}</Text></View>)}
+                        </>
+                      )}
+                    </View>
+                  </View>
+                )}
               </>
             )}
 

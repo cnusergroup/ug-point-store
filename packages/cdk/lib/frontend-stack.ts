@@ -1,3 +1,4 @@
+import * as path from 'path';
 import * as cdk from 'aws-cdk-lib';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
@@ -129,6 +130,15 @@ export class FrontendStack extends cdk.Stack {
       }),
     };
 
+    // CloudFront Function: write cf_country cookie from Viewer-Country header
+    const countryCookieFn = new cloudfront.Function(this, 'CountryCookieFunction', {
+      code: cloudfront.FunctionCode.fromFile({
+        filePath: path.join(__dirname, '../lambda/cf-country-cookie/index.js'),
+      }),
+      runtime: cloudfront.FunctionRuntime.JS_2_0,
+      comment: 'Sets cf_country cookie from CloudFront-Viewer-Country header',
+    });
+
     const domainName = props.domainName;
     const certificateArn = props.certificateArn;
 
@@ -141,6 +151,10 @@ export class FrontendStack extends cdk.Stack {
         origin: staticOrigin,
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        functionAssociations: [{
+          function: countryCookieFn,
+          eventType: cloudfront.FunctionEventType.VIEWER_RESPONSE,
+        }],
       },
       additionalBehaviors: {
         '/api/*': {

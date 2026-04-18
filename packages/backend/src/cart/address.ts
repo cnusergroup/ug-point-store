@@ -27,7 +27,7 @@ function generateId(): string {
 
 /** Validate address input fields */
 function validateAddressInput(data: AddressRequest): { code: string; message: string } | null {
-  if (!data.phone || !/^1\d{10}$/.test(data.phone)) {
+  if (!data.phone || !/^\+\d{1,4}-\d{4,15}$/.test(data.phone)) {
     return { code: ErrorCodes.INVALID_PHONE, message: ErrorMessages.INVALID_PHONE };
   }
   if (!data.recipientName || data.recipientName.length < 1 || data.recipientName.length > 20) {

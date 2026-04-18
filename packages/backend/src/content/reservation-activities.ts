@@ -1,7 +1,6 @@
 import {
   DynamoDBDocumentClient,
   QueryCommand,
-  ScanCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type { ActivityRecord, UGRecord } from '@points-mall/shared';
 
@@ -56,10 +55,10 @@ export async function listReservationActivities(
       return { success: true, activities: [] };
     }
 
-    // Step 2: Query all activities via activityDate-index, descending
-    // We need to scan/query all and filter client-side because DynamoDB
-    // doesn't support IN filter on partition key of a GSI efficiently.
+    // Step 2: Query future activities via activityDate-index, ascending
+    // Only return activities with activityDate >= today (YYYY-MM-DD)
     // The activityDate-index has PK='ALL', SK=activityDate.
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
     const exclusiveStartKey = options.lastKey
       ? JSON.parse(Buffer.from(options.lastKey, 'base64').toString('utf-8'))
       : undefined;
@@ -76,10 +75,10 @@ export async function listReservationActivities(
         new QueryCommand({
           TableName: tables.activitiesTable,
           IndexName: 'activityDate-index',
-          KeyConditionExpression: '#pk = :pk',
-          ExpressionAttributeNames: { '#pk': 'pk' },
-          ExpressionAttributeValues: { ':pk': 'ALL' },
-          ScanIndexForward: false, // descending by activityDate
+          KeyConditionExpression: '#pk = :pk AND #activityDate >= :today',
+          ExpressionAttributeNames: { '#pk': 'pk', '#activityDate': 'activityDate' },
+          ExpressionAttributeValues: { ':pk': 'ALL', ':today': today },
+          ScanIndexForward: true, // ascending — nearest future activities first
           Limit: fetchLimit,
           ...(dynamoLastKey ? { ExclusiveStartKey: dynamoLastKey } : {}),
         }),

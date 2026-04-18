@@ -935,3 +935,267 @@ describe('Feature: activity-points-tracking, Property 8: Batch distribution vali
     );
   });
 });
+
+
+// ============================================================
+// Property 9 (Exploration): Bug condition — UNFIXED code returns POINTS_MISMATCH for skipPointsValidation=true
+// Feature: superadmin-quarterly-points-fix, Property 9: Exploration test for bug condition
+// Validates: Requirements 1.1
+// NOTE: The fix is already applied. This test is skipped because it demonstrates the UNFIXED behavior.
+//       It was verified on unfixed code and confirmed the bug: any input with skipPointsValidation=true
+//       and points ≠ expectedPoints would return POINTS_MISMATCH, blocking SuperAdmin quarterly awards.
+// ============================================================
+
+describe('Feature: superadmin-quarterly-points-fix, Property 9: Exploration — UNFIXED code returns POINTS_MISMATCH when skipPointsValidation=true', () => {
+  // The pointsRuleConfig used in mocks
+  const pointsRuleConfig = {
+    uglPointsPerEvent: 50,
+    volunteerPointsPerEvent: 30,
+    volunteerMaxPerEvent: 10,
+    speakerTypeAPoints: 100,
+    speakerTypeBPoints: 50,
+    speakerRoundtablePoints: 50,
+  };
+
+  it.skip('UNFIXED: for any input with skipPointsValidation=true and points ≠ expectedPoints, executeBatchDistribution returns POINTS_MISMATCH (bug confirmed before fix)', async () => {
+    // This test demonstrates the bug that existed before the fix was applied.
+    // On UNFIXED code, the POINTS_MISMATCH check was unconditional:
+    //   if (input.points !== expectedPoints) return { success: false, error: { code: 'POINTS_MISMATCH', ... } }
+    // So even with skipPointsValidation=true, any mismatched points would be rejected.
+    //
+    // On FIXED code, this test would FAIL because skipPointsValidation=true now correctly
+    // bypasses the POINTS_MISMATCH check. Hence it is skipped.
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.uuid(), { minLength: 1, maxLength: 5 }).map(ids => [...new Set(ids)]).filter(ids => ids.length > 0),
+        // Generate points that do NOT match Speaker typeA expected (100)
+        fc.integer({ min: 1, max: 10000 }).filter(p => p !== pointsRuleConfig.speakerTypeAPoints),
+        async (userIds, points) => {
+          const mockClient = {
+            send: vi.fn().mockImplementation((cmd: any) => {
+              const name = cmd.constructor.name;
+              if (name === 'GetCommand') {
+                // Return feature-toggles with pointsRuleConfig
+                return Promise.resolve({
+                  Item: { userId: 'feature-toggles', pointsRuleConfig },
+                });
+              }
+              if (name === 'QueryCommand') {
+                // No previously awarded users
+                return Promise.resolve({ Items: [] });
+              }
+              if (name === 'BatchGetCommand') {
+                return Promise.resolve({
+                  Responses: {
+                    Users: userIds.map(id => ({
+                      userId: id, points: 0, nickname: 'user', email: 'u@test.com',
+                    })),
+                  },
+                });
+              }
+              if (name === 'TransactWriteCommand') return Promise.resolve({});
+              if (name === 'PutCommand') return Promise.resolve({});
+              return Promise.resolve({});
+            }),
+          } as any;
+
+          const input: BatchDistributionInput = {
+            userIds,
+            points,
+            reason: 'quarterly award',
+            targetRole: 'Speaker',
+            speakerType: 'typeA',
+            distributorId: 'superadmin-001',
+            distributorNickname: 'SuperAdmin',
+            activityId: 'act-quarterly-001',
+            activityType: '季度奖励',
+            activityUG: 'Global',
+            activityTopic: 'Q4 Award',
+            activityDate: '2024-12-31',
+            skipPointsValidation: true,
+          };
+
+          // On UNFIXED code, this would return POINTS_MISMATCH because the check was unconditional
+          const result = await executeBatchDistribution(input, mockClient, {
+            usersTable: 'Users',
+            pointsRecordsTable: 'PointsRecords',
+            batchDistributionsTable: 'BatchDistributions',
+          });
+
+          // UNFIXED behavior: POINTS_MISMATCH returned despite skipPointsValidation=true
+          expect(result.success).toBe(false);
+          expect(result.error).toBeDefined();
+          expect(result.error!.code).toBe('POINTS_MISMATCH');
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+});
+
+// ============================================================
+// Property 10 (Fix): skipPointsValidation=true bypasses POINTS_MISMATCH and succeeds
+// Feature: superadmin-quarterly-points-fix, Property 10: Fix verification
+// **Validates: Requirements 2.1, 2.2**
+// ============================================================
+
+describe('Feature: superadmin-quarterly-points-fix, Property 10: Fix — skipPointsValidation=true bypasses POINTS_MISMATCH and succeeds', () => {
+  const pointsRuleConfig = {
+    uglPointsPerEvent: 50,
+    volunteerPointsPerEvent: 30,
+    volunteerMaxPerEvent: 10,
+    speakerTypeAPoints: 100,
+    speakerTypeBPoints: 50,
+    speakerRoundtablePoints: 50,
+  };
+
+  it('for any input with skipPointsValidation=true and any positive integer points, executeBatchDistribution succeeds with correct distributionId, successCount, and totalPoints', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.uuid(), { minLength: 1, maxLength: 10 }).map(ids => [...new Set(ids)]).filter(ids => ids.length > 0),
+        // Any positive integer points (including values that don't match config)
+        fc.integer({ min: 1, max: 10000 }).filter(p => p !== pointsRuleConfig.speakerTypeAPoints),
+        async (userIds, points) => {
+          let savedDistributionRecord: any = null;
+
+          const mockClient = {
+            send: vi.fn().mockImplementation((cmd: any) => {
+              const name = cmd.constructor.name;
+              if (name === 'GetCommand') {
+                // Return feature-toggles with pointsRuleConfig
+                return Promise.resolve({
+                  Item: { userId: 'feature-toggles', pointsRuleConfig },
+                });
+              }
+              if (name === 'QueryCommand') {
+                // No previously awarded users
+                return Promise.resolve({ Items: [] });
+              }
+              if (name === 'BatchGetCommand') {
+                return Promise.resolve({
+                  Responses: {
+                    Users: userIds.map(id => ({
+                      userId: id, points: 0, nickname: 'user', email: 'u@test.com',
+                    })),
+                  },
+                });
+              }
+              if (name === 'TransactWriteCommand') return Promise.resolve({});
+              if (name === 'PutCommand') {
+                savedDistributionRecord = cmd.input.Item;
+                return Promise.resolve({});
+              }
+              return Promise.resolve({});
+            }),
+          } as any;
+
+          const input: BatchDistributionInput = {
+            userIds,
+            points,
+            reason: 'quarterly award',
+            targetRole: 'Speaker',
+            speakerType: 'typeA',
+            distributorId: 'superadmin-001',
+            distributorNickname: 'SuperAdmin',
+            activityId: 'act-quarterly-001',
+            activityType: '季度奖励',
+            activityUG: 'Global',
+            activityTopic: 'Q4 Award',
+            activityDate: '2024-12-31',
+            skipPointsValidation: true,
+          };
+
+          const result = await executeBatchDistribution(input, mockClient, {
+            usersTable: 'Users',
+            pointsRecordsTable: 'PointsRecords',
+            batchDistributionsTable: 'BatchDistributions',
+          });
+
+          // Fix: skipPointsValidation=true bypasses POINTS_MISMATCH, distribution succeeds
+          expect(result.success).toBe(true);
+          expect(result.distributionId).toBeDefined();
+          expect(result.distributionId!.length).toBeGreaterThan(0);
+          expect(result.successCount).toBe(userIds.length);
+          expect(result.totalPoints).toBe(userIds.length * points);
+
+          // Verify distribution record was saved correctly
+          expect(savedDistributionRecord).toBeDefined();
+          expect(savedDistributionRecord.successCount).toBe(userIds.length);
+          expect(savedDistributionRecord.totalPoints).toBe(userIds.length * points);
+          expect(savedDistributionRecord.distributionId).toBe(result.distributionId);
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+});
+
+// ============================================================
+// Property 11 (Preservation): skipPointsValidation=undefined still returns POINTS_MISMATCH
+// Feature: superadmin-quarterly-points-fix, Property 11: Preservation verification
+// **Validates: Requirements 3.1, 3.2**
+// ============================================================
+
+describe('Feature: superadmin-quarterly-points-fix, Property 11: Preservation — skipPointsValidation=undefined still returns POINTS_MISMATCH', () => {
+  const pointsRuleConfig = {
+    uglPointsPerEvent: 50,
+    volunteerPointsPerEvent: 30,
+    volunteerMaxPerEvent: 10,
+    speakerTypeAPoints: 100,
+    speakerTypeBPoints: 50,
+    speakerRoundtablePoints: 50,
+  };
+
+  it('for any input with skipPointsValidation=undefined and points ≠ expectedPoints, executeBatchDistribution returns POINTS_MISMATCH error', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.uuid(), { minLength: 1, maxLength: 5 }).map(ids => [...new Set(ids)]).filter(ids => ids.length > 0),
+        // Generate points that do NOT match Speaker typeA expected (100)
+        fc.integer({ min: 1, max: 10000 }).filter(p => p !== pointsRuleConfig.speakerTypeAPoints),
+        async (userIds, points) => {
+          const mockClient = {
+            send: vi.fn().mockImplementation((cmd: any) => {
+              const name = cmd.constructor.name;
+              if (name === 'GetCommand') {
+                // Return feature-toggles with pointsRuleConfig
+                return Promise.resolve({
+                  Item: { userId: 'feature-toggles', pointsRuleConfig },
+                });
+              }
+              // Should not reach QueryCommand, BatchGetCommand, etc. because POINTS_MISMATCH is returned early
+              return Promise.resolve({});
+            }),
+          } as any;
+
+          const input: BatchDistributionInput = {
+            userIds,
+            points,
+            reason: 'regular batch distribution',
+            targetRole: 'Speaker',
+            speakerType: 'typeA',
+            distributorId: 'admin-001',
+            distributorNickname: 'Admin',
+            activityId: 'act-regular-001',
+            activityType: '线下活动',
+            activityUG: 'Tokyo',
+            activityTopic: 'AWS Meetup',
+            activityDate: '2024-06-15',
+            // skipPointsValidation is NOT set (undefined) — Admin regular batch distribution
+          };
+
+          const result = await executeBatchDistribution(input, mockClient, {
+            usersTable: 'Users',
+            pointsRecordsTable: 'PointsRecords',
+            batchDistributionsTable: 'BatchDistributions',
+          });
+
+          // Preservation: without skipPointsValidation, POINTS_MISMATCH is still enforced
+          expect(result.success).toBe(false);
+          expect(result.error).toBeDefined();
+          expect(result.error!.code).toBe('POINTS_MISMATCH');
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+});

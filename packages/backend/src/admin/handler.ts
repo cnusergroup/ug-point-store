@@ -1,6 +1,6 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { SESClient } from '@aws-sdk/client-ses';
 import { S3Client } from '@aws-sdk/client-s3';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
@@ -34,6 +34,8 @@ import { listActivities } from './activities';
 import { reviewReservation, listReservationApprovals, getVisibleUGNames } from '../content/reservation-approval';
 import { queryPointsDetail, queryUGActivitySummary, queryUserPointsRanking, queryActivityPointsSummary } from '../reports/query';
 import { executeExport, validateExportInput } from '../reports/export';
+import { maskCookie, testMeetupConnection } from '../sync/meetup-api';
+import { getMeetupSyncConfig } from '../sync/handler';
 import {
   queryPopularProducts,
   queryHotContent,
@@ -126,6 +128,12 @@ const UGS_RENAME_REGEX = /^\/api\/admin\/ugs\/([^/]+)$/;
 const UGS_LEADER_REGEX = /^\/api\/admin\/ugs\/([^/]+)\/leader$/;
 const UGS_DELETE_REGEX = /^\/api\/admin\/ugs\/([^/]+)$/;
 const RESERVATION_APPROVAL_REVIEW_REGEX = /^\/api\/admin\/reservation-approvals\/([^/]+)\/review$/;
+
+// Meetup sync config key
+const MEETUP_SYNC_CONFIG_KEY = 'meetup-sync-config';
+
+// Website sync config key
+const WEBSITE_SYNC_CONFIG_KEY = 'website-sync-config';
 
 /**
  * Check if the authenticated user has admin privileges.
@@ -232,6 +240,22 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
       return await handleUpdateSyncConfig(event);
     }
 
+    // PUT /api/admin/settings/meetup-sync-config — SuperAdmin only
+    if (path === '/api/admin/settings/meetup-sync-config') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleUpdateMeetupSyncConfig(event);
+    }
+
+    // PUT /api/admin/settings/website-sync-config — SuperAdmin only
+    if (path === '/api/admin/settings/website-sync-config') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleUpdateWebsiteSyncConfig(event);
+    }
+
     // PUT /api/admin/email-templates/{type}/{locale} — SuperAdmin only
     const emailTemplateMatch = path.match(EMAIL_TEMPLATES_UPDATE_REGEX);
     if (emailTemplateMatch) {
@@ -317,6 +341,38 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
         return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
       }
       return await handleManualSync();
+    }
+
+    // POST /api/admin/sync/feishu — SuperAdmin only, invoke Sync Lambda with source=feishu
+    if (path === '/api/admin/sync/feishu') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleFeishuSync();
+    }
+
+    // POST /api/admin/sync/meetup — SuperAdmin only, invoke Sync Lambda with source=meetup
+    if (path === '/api/admin/sync/meetup') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleMeetupSync();
+    }
+
+    // POST /api/admin/sync/website — SuperAdmin only, placeholder for local script
+    if (path === '/api/admin/sync/website') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleWebsiteSync();
+    }
+
+    // POST /api/admin/settings/meetup-sync-config/test — SuperAdmin only, test Meetup connection
+    if (path === '/api/admin/settings/meetup-sync-config/test') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleTestMeetupConnection(event);
     }
     // POST /api/admin/email-templates/seed — SuperAdmin only, seed default templates
     if (path === '/api/admin/email-templates/seed') {
@@ -408,6 +464,22 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
       return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
     }
     return await handleGetSyncConfig();
+  }
+
+  // GET /api/admin/settings/meetup-sync-config — SuperAdmin only
+  if (method === 'GET' && path === '/api/admin/settings/meetup-sync-config') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handleGetMeetupSyncConfig();
+  }
+
+  // GET /api/admin/settings/website-sync-config — SuperAdmin only
+  if (method === 'GET' && path === '/api/admin/settings/website-sync-config') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handleGetWebsiteSyncConfig();
   }
 
   // GET /api/admin/email-templates — Admin and SuperAdmin can access
@@ -876,7 +948,7 @@ async function handleDeleteImage(productId: string, imageKey: string): Promise<A
   }
 
   const images = product.images ?? [];
-  const fullKey = `products/${productId}/${imageKey}`;
+  const fullKey = `products/${productId}/images/${imageKey}`;
 
   // Try matching with the full constructed key first, then the raw imageKey
   const imageIndex = images.findIndex(img => img.key === fullKey || img.key === imageKey);
@@ -1268,6 +1340,7 @@ async function handleQuarterlyAward(event: AuthenticatedEvent): Promise<APIGatew
       activityUG: '',
       activityTopic: `季度贡献奖`,
       activityDate: awardDate as string,
+      skipPointsValidation: true,
     },
     dynamoClient,
     {
@@ -2158,7 +2231,7 @@ async function handleManualSync(): Promise<APIGatewayProxyResult> {
       new InvokeCommand({
         FunctionName: SYNC_FUNCTION_NAME,
         InvocationType: 'RequestResponse',
-        Payload: Buffer.from(JSON.stringify({ source: 'manual' })),
+        Payload: Buffer.from(JSON.stringify({ source: 'all' })),
       }),
     );
 
@@ -2175,6 +2248,74 @@ async function handleManualSync(): Promise<APIGatewayProxyResult> {
     console.error('[ManualSync] Failed to invoke Sync Lambda:', err);
     const message = err instanceof Error ? err.message : String(err);
     return errorResponse('SYNC_FAILED', `同步调用失败: ${message}`, 500);
+  }
+}
+
+async function handleFeishuSync(): Promise<APIGatewayProxyResult> {
+  if (!SYNC_FUNCTION_NAME) {
+    return errorResponse('INTERNAL_ERROR', '同步 Lambda 未配置', 500);
+  }
+
+  try {
+    const response = await lambdaClient.send(
+      new InvokeCommand({
+        FunctionName: SYNC_FUNCTION_NAME,
+        InvocationType: 'RequestResponse',
+        Payload: Buffer.from(JSON.stringify({ source: 'feishu' })),
+      }),
+    );
+
+    if (response.FunctionError) {
+      const errorPayload = response.Payload ? JSON.parse(Buffer.from(response.Payload).toString('utf-8')) : {};
+      return errorResponse('SYNC_FAILED', `飞书同步失败: ${errorPayload.errorMessage ?? response.FunctionError}`, 500);
+    }
+
+    const payload = response.Payload ? JSON.parse(Buffer.from(response.Payload).toString('utf-8')) : {};
+    const syncBody = typeof payload.body === 'string' ? JSON.parse(payload.body) : payload;
+
+    return jsonResponse(200, syncBody);
+  } catch (err) {
+    console.error('[FeishuSync] Failed to invoke Sync Lambda:', err);
+    const message = err instanceof Error ? err.message : String(err);
+    return errorResponse('SYNC_FAILED', `飞书同步调用失败: ${message}`, 500);
+  }
+}
+
+async function handleMeetupSync(): Promise<APIGatewayProxyResult> {
+  if (!SYNC_FUNCTION_NAME) {
+    return errorResponse('INTERNAL_ERROR', '同步 Lambda 未配置', 500);
+  }
+
+  try {
+    const invokeResult = await lambdaClient.send(
+      new InvokeCommand({
+        FunctionName: SYNC_FUNCTION_NAME,
+        InvocationType: 'RequestResponse',
+        Payload: Buffer.from(JSON.stringify({ source: 'meetup' })),
+      }),
+    );
+
+    if (invokeResult.Payload) {
+      const payloadStr = Buffer.from(invokeResult.Payload).toString('utf-8');
+      try {
+        const lambdaResponse = JSON.parse(payloadStr);
+        const body = typeof lambdaResponse.body === 'string' ? JSON.parse(lambdaResponse.body) : lambdaResponse.body;
+        return jsonResponse(200, {
+          success: body?.success ?? true,
+          syncedCount: body?.syncedCount ?? 0,
+          skippedCount: body?.skippedCount ?? 0,
+          warnings: body?.warnings,
+        });
+      } catch {
+        return jsonResponse(200, { success: true, syncedCount: 0, skippedCount: 0 });
+      }
+    }
+
+    return jsonResponse(200, { success: true, syncedCount: 0, skippedCount: 0 });
+  } catch (err) {
+    console.error('[MeetupSync] Failed to invoke Sync Lambda:', err);
+    const message = err instanceof Error ? err.message : String(err);
+    return errorResponse('SYNC_FAILED', `Meetup 同步调用失败: ${message}`, 500);
   }
 }
 
@@ -2276,6 +2417,152 @@ async function handleGetSyncConfig(): Promise<APIGatewayProxyResult> {
     updatedAt: result.Item.updatedAt ?? '',
     updatedBy: result.Item.updatedBy ?? '',
   });
+}
+
+// ---- Meetup Sync Config Route Handlers ----
+
+async function handleGetMeetupSyncConfig(): Promise<APIGatewayProxyResult> {
+  const config = await getMeetupSyncConfig(dynamoClient, USERS_TABLE);
+
+  if (!config) {
+    // Return default empty config
+    return jsonResponse(200, {
+      groups: [],
+      meetupToken: '',
+      meetupCsrf: '',
+      meetupSession: '',
+      autoSyncEnabled: false,
+      updatedAt: '',
+      updatedBy: '',
+    });
+  }
+
+  return jsonResponse(200, {
+    groups: config.groups ?? [],
+    meetupToken: maskCookie(config.meetupToken ?? ''),
+    meetupCsrf: maskCookie(config.meetupCsrf ?? ''),
+    meetupSession: maskCookie(config.meetupSession ?? ''),
+    autoSyncEnabled: config.autoSyncEnabled ?? false,
+    updatedAt: config.updatedAt ?? '',
+    updatedBy: config.updatedBy ?? '',
+  });
+}
+
+async function handleUpdateMeetupSyncConfig(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body) {
+    return errorResponse('INVALID_REQUEST', '请求参数无效', 400);
+  }
+
+  const { groups, meetupToken, meetupCsrf, meetupSession, autoSyncEnabled } = body;
+
+  // Validate groups: must be an array of { urlname, displayName }
+  if (groups !== undefined) {
+    if (!Array.isArray(groups)) {
+      return errorResponse('INVALID_REQUEST', 'groups 必须为数组', 400);
+    }
+    for (const g of groups) {
+      if (!g || typeof g !== 'object' || typeof (g as any).urlname !== 'string' || typeof (g as any).displayName !== 'string') {
+        return errorResponse('INVALID_REQUEST', 'groups 中每项必须包含 urlname 和 displayName 字符串', 400);
+      }
+    }
+  }
+
+  // Validate cookie fields: must be strings if provided
+  if (meetupToken !== undefined && typeof meetupToken !== 'string') {
+    return errorResponse('INVALID_REQUEST', 'meetupToken 必须为字符串', 400);
+  }
+  if (meetupCsrf !== undefined && typeof meetupCsrf !== 'string') {
+    return errorResponse('INVALID_REQUEST', 'meetupCsrf 必须为字符串', 400);
+  }
+  if (meetupSession !== undefined && typeof meetupSession !== 'string') {
+    return errorResponse('INVALID_REQUEST', 'meetupSession 必须为字符串', 400);
+  }
+
+  const now = new Date().toISOString();
+
+  // Read existing config to handle masked cookie values
+  const existingConfig = await getMeetupSyncConfig(dynamoClient, USERS_TABLE);
+
+  // Resolve cookie values: if value starts with '*', retain existing DB value
+  const resolvedToken = resolveMaskedCookie(meetupToken as string | undefined, existingConfig?.meetupToken);
+  const resolvedCsrf = resolveMaskedCookie(meetupCsrf as string | undefined, existingConfig?.meetupCsrf);
+  const resolvedSession = resolveMaskedCookie(meetupSession as string | undefined, existingConfig?.meetupSession);
+
+  const updatedConfig = {
+    userId: MEETUP_SYNC_CONFIG_KEY,
+    groups: (groups as any[]) ?? existingConfig?.groups ?? [],
+    meetupToken: resolvedToken,
+    meetupCsrf: resolvedCsrf,
+    meetupSession: resolvedSession,
+    autoSyncEnabled: autoSyncEnabled !== undefined ? Boolean(autoSyncEnabled) : (existingConfig?.autoSyncEnabled ?? false),
+    updatedAt: now,
+    updatedBy: event.user.userId,
+  };
+
+  await dynamoClient.send(
+    new PutCommand({
+      TableName: USERS_TABLE,
+      Item: updatedConfig,
+    }),
+  );
+
+  // Return config with masked cookies
+  return jsonResponse(200, {
+    groups: updatedConfig.groups,
+    meetupToken: maskCookie(updatedConfig.meetupToken),
+    meetupCsrf: maskCookie(updatedConfig.meetupCsrf),
+    meetupSession: maskCookie(updatedConfig.meetupSession),
+    autoSyncEnabled: updatedConfig.autoSyncEnabled,
+    updatedAt: updatedConfig.updatedAt,
+    updatedBy: updatedConfig.updatedBy,
+  });
+}
+
+/**
+ * Resolve a cookie value from a PUT request.
+ * If the value starts with '*', it's a masked value — retain the existing DB value.
+ * If undefined, retain the existing DB value.
+ * Otherwise, use the new value.
+ */
+function resolveMaskedCookie(newValue: string | undefined, existingValue: string | undefined): string {
+  if (newValue === undefined) return existingValue ?? '';
+  if (newValue.startsWith('*')) return existingValue ?? '';
+  return newValue;
+}
+
+async function handleTestMeetupConnection(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body) {
+    return errorResponse('INVALID_REQUEST', '请求参数无效', 400);
+  }
+
+  const { meetupToken, meetupCsrf, meetupSession } = body;
+
+  if (!meetupToken || typeof meetupToken !== 'string') {
+    return errorResponse('INVALID_REQUEST', 'meetupToken 为必填字段', 400);
+  }
+  if (!meetupCsrf || typeof meetupCsrf !== 'string') {
+    return errorResponse('INVALID_REQUEST', 'meetupCsrf 为必填字段', 400);
+  }
+  if (!meetupSession || typeof meetupSession !== 'string') {
+    return errorResponse('INVALID_REQUEST', 'meetupSession 为必填字段', 400);
+  }
+
+  const result = await testMeetupConnection({
+    meetupToken: meetupToken as string,
+    meetupCsrf: meetupCsrf as string,
+    meetupSession: meetupSession as string,
+  });
+
+  if (!result.success) {
+    return jsonResponse(400, {
+      success: false,
+      error: result.error,
+    });
+  }
+
+  return jsonResponse(200, { success: true });
 }
 
 // ---- Reservation Approval Route Handlers ----
@@ -2594,4 +2881,235 @@ async function handleInviteConversionReport(event: AuthenticatedEvent): Promise<
   }
 
   return jsonResponse(200, { record: result.record });
+}
+
+// ---- Website Sync Config Route Handlers ----
+
+async function handleGetWebsiteSyncConfig(): Promise<APIGatewayProxyResult> {
+  const result = await dynamoClient.send(
+    new GetCommand({
+      TableName: USERS_TABLE,
+      Key: { userId: WEBSITE_SYNC_CONFIG_KEY },
+    }),
+  );
+
+  if (!result.Item) {
+    // Return default empty config
+    return jsonResponse(200, {
+      sources: [],
+      updatedAt: '',
+      updatedBy: '',
+    });
+  }
+
+  return jsonResponse(200, {
+    sources: result.Item.sources ?? [],
+    updatedAt: result.Item.updatedAt ?? '',
+    updatedBy: result.Item.updatedBy ?? '',
+    lastSyncTime: result.Item.lastSyncTime ?? '',
+    lastSyncResult: result.Item.lastSyncResult ?? '',
+    lastSyncSummary: result.Item.lastSyncSummary ?? '',
+  });
+}
+
+async function handleUpdateWebsiteSyncConfig(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body) {
+    return errorResponse('INVALID_REQUEST', '请求参数无效', 400);
+  }
+
+  const { sources } = body;
+
+  // Validate sources: must be an array
+  if (!Array.isArray(sources)) {
+    return errorResponse('INVALID_REQUEST', 'sources 必须为数组', 400);
+  }
+
+  // Validate min 1 source
+  if (sources.length < 1) {
+    return errorResponse('INVALID_REQUEST', '至少需要 1 个同步源', 400);
+  }
+
+  // Validate max 20 sources
+  if (sources.length > 20) {
+    return errorResponse('INVALID_REQUEST', '最多支持 20 个同步源', 400);
+  }
+
+  // Validate each source
+  for (const s of sources) {
+    if (!s || typeof s !== 'object') {
+      return errorResponse('INVALID_REQUEST', 'sources 中每项必须为对象', 400);
+    }
+    const src = s as Record<string, unknown>;
+    if (typeof src.url !== 'string' || !src.url.startsWith('https://')) {
+      return errorResponse('INVALID_REQUEST', 'URL 必须以 https:// 开头', 400);
+    }
+    if (typeof src.displayName !== 'string' || src.displayName.trim() === '') {
+      return errorResponse('INVALID_REQUEST', 'displayName 不能为空', 400);
+    }
+  }
+
+  const now = new Date().toISOString();
+
+  // Read existing config to preserve lastSync fields
+  const existing = await dynamoClient.send(
+    new GetCommand({
+      TableName: USERS_TABLE,
+      Key: { userId: WEBSITE_SYNC_CONFIG_KEY },
+    }),
+  );
+
+  const currentConfig = existing.Item ?? {};
+
+  const updatedConfig = {
+    userId: WEBSITE_SYNC_CONFIG_KEY,
+    sources: (sources as any[]).map((s: any) => ({ url: s.url, displayName: s.displayName })),
+    updatedAt: now,
+    updatedBy: event.user.userId,
+    lastSyncTime: currentConfig.lastSyncTime ?? '',
+    lastSyncResult: currentConfig.lastSyncResult ?? '',
+    lastSyncSummary: currentConfig.lastSyncSummary ?? '',
+  };
+
+  await dynamoClient.send(
+    new PutCommand({
+      TableName: USERS_TABLE,
+      Item: updatedConfig,
+    }),
+  );
+
+  return jsonResponse(200, {
+    sources: updatedConfig.sources,
+    updatedAt: updatedConfig.updatedAt,
+    updatedBy: updatedConfig.updatedBy,
+    lastSyncTime: updatedConfig.lastSyncTime,
+    lastSyncResult: updatedConfig.lastSyncResult,
+    lastSyncSummary: updatedConfig.lastSyncSummary,
+  });
+}
+
+async function handleWebsiteSync(): Promise<APIGatewayProxyResult> {
+  try {
+    // 1. Read website-sync-config to get sources with displayName
+    const configResult = await dynamoClient.send(
+      new GetCommand({ TableName: USERS_TABLE, Key: { userId: WEBSITE_SYNC_CONFIG_KEY } }),
+    );
+    const sources: { url: string; displayName: string }[] = configResult.Item?.sources ?? [];
+    if (sources.length === 0) {
+      return jsonResponse(200, { success: true, syncedCount: 0, skippedCount: 0 });
+    }
+
+    const fetcherClient = new LambdaClient({ region: 'us-east-1' });
+    const { parseTaiwanDate } = require('../sync/taiwan-date-parser');
+    const { ulid } = require('ulid');
+    let syncedCount = 0;
+    let skippedCount = 0;
+
+    // Process each source from frontend config
+    for (const source of sources) {
+      const ugName = source.displayName;
+      let events: { topic: string; activityDate: string; sourceUrl: string; activityType: string }[] = [];
+
+      try {
+        if (source.url.includes('tw.events.awsug.net')) {
+          // Call tw-awsug-scraper Lambda
+          const result = await fetcherClient.send(
+            new InvokeCommand({
+              FunctionName: 'tw-awsug-scraper',
+              InvocationType: 'RequestResponse',
+              Payload: Buffer.from(JSON.stringify({})),
+            }),
+          );
+          if (result.Payload) {
+            const resp = JSON.parse(Buffer.from(result.Payload).toString('utf-8'));
+            const body = typeof resp.body === 'string' ? JSON.parse(resp.body) : resp;
+            for (const evt of (body.events ?? [])) {
+              if (!evt.title || !evt.time) continue;
+              const activityDate = parseTaiwanDate(evt.time);
+              if (!activityDate) continue;
+              const activityType = evt.location?.includes('Online') || evt.location?.includes('線上') || evt.location?.includes('YouTube') || evt.location?.includes('Zoom') ? '线上活动' : '线下活动';
+              events.push({ topic: evt.title, activityDate, sourceUrl: evt.url || source.url, activityType });
+            }
+          }
+        } else if (source.url.includes('awsug.com.tw')) {
+          // Call taiwan-ug-fetcher Lambda
+          const result = await fetcherClient.send(
+            new InvokeCommand({
+              FunctionName: 'taiwan-ug-fetcher',
+              InvocationType: 'RequestResponse',
+              Payload: Buffer.from(JSON.stringify({})),
+            }),
+          );
+          if (result.Payload) {
+            const resp = JSON.parse(Buffer.from(result.Payload).toString('utf-8'));
+            const body = typeof resp.body === 'string' ? JSON.parse(resp.body) : resp;
+            for (const evt of (body.data ?? [])) {
+              if (!evt.date || !evt.speakers || evt.speakers.length === 0) continue;
+              const activityDate = parseTaiwanDate(evt.date);
+              if (!activityDate) continue;
+              events.push({ topic: evt.speakers.join(' / '), activityDate, sourceUrl: evt.link || source.url, activityType: '线下活动' });
+            }
+          }
+        }
+
+        console.log(`[WebsiteSync] ${ugName}: found ${events.length} events`);
+
+        // Write events to DynamoDB with deduplication
+        for (const evt of events) {
+          const dedupeKey = `${evt.topic}#${evt.activityDate}#${ugName}`;
+          const existing = await dynamoClient.send(
+            new QueryCommand({
+              TableName: ACTIVITIES_TABLE,
+              IndexName: 'dedupeKey-index',
+              KeyConditionExpression: 'dedupeKey = :dk',
+              ExpressionAttributeValues: { ':dk': dedupeKey },
+              Limit: 1,
+            }),
+          );
+          if (existing.Items && existing.Items.length > 0) {
+            skippedCount++;
+            continue;
+          }
+          await dynamoClient.send(
+            new PutCommand({
+              TableName: ACTIVITIES_TABLE,
+              Item: {
+                activityId: ulid(),
+                pk: 'ALL',
+                activityType: evt.activityType,
+                ugName,
+                topic: evt.topic,
+                activityDate: evt.activityDate,
+                dedupeKey,
+                syncedAt: new Date().toISOString(),
+                sourceUrl: evt.sourceUrl,
+              },
+            }),
+          );
+          syncedCount++;
+        }
+      } catch (srcErr) {
+        console.error(`[WebsiteSync] ${ugName} failed:`, srcErr);
+      }
+    }
+
+    // Update config with lastSync info
+    const now = new Date().toISOString();
+    try {
+      if (configResult.Item) {
+        await dynamoClient.send(
+          new PutCommand({
+            TableName: USERS_TABLE,
+            Item: { ...configResult.Item, lastSyncTime: now, lastSyncResult: 'success', lastSyncSummary: `synced=${syncedCount}, skipped=${skippedCount}` },
+          }),
+        );
+      }
+    } catch { /* ignore */ }
+
+    return jsonResponse(200, { success: true, syncedCount, skippedCount });
+  } catch (err) {
+    console.error('[WebsiteSync] Failed:', err);
+    const message = err instanceof Error ? err.message : String(err);
+    return errorResponse('SYNC_FAILED', `台湾 UG 同步失败: ${message}`, 500);
+  }
 }

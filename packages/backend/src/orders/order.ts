@@ -349,9 +349,39 @@ export async function createOrder(
     },
   ];
 
-  await dynamoClient.send(
-    new TransactWriteCommand({ TransactItems: transactItems }),
-  );
+  try {
+    await dynamoClient.send(
+      new TransactWriteCommand({ TransactItems: transactItems }),
+    );
+  } catch (txErr: any) {
+    // TransactionCanceledException means a ConditionExpression failed
+    if (txErr.name === 'TransactionCanceledException') {
+      const reasons: any[] = txErr.CancellationReasons ?? [];
+      // reasons[0] = points deduction, reasons[1..N] = stock deductions
+      if (reasons[0]?.Code === 'ConditionalCheckFailed') {
+        return {
+          success: false,
+          error: { code: ErrorCodes.INSUFFICIENT_POINTS, message: '积分不足，请确认余额' },
+        };
+      }
+      // Check stock condition failures (index 1 onwards)
+      for (let i = 1; i < reasons.length; i++) {
+        if (reasons[i]?.Code === 'ConditionalCheckFailed') {
+          const failedItem = orderItems[i - 1];
+          return {
+            success: false,
+            error: { code: ErrorCodes.OUT_OF_STOCK, message: `商品 ${failedItem?.productName ?? ''} 库存不足或已下架` },
+          };
+        }
+      }
+      // Generic transaction failure
+      return {
+        success: false,
+        error: { code: ErrorCodes.OUT_OF_STOCK, message: '库存已变动，请返回重试' },
+      };
+    }
+    throw txErr; // Re-throw unexpected errors
+  }
 
   // 7. Remove redeemed items from cart (best-effort, after successful transaction)
   try {

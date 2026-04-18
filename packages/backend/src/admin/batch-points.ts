@@ -30,6 +30,8 @@ export interface BatchDistributionInput {
   activityUG: string;
   activityTopic: string;
   activityDate: string;
+  /** When true, skip POINTS_MISMATCH validation (used by SuperAdmin quarterly award) */
+  skipPointsValidation?: boolean;
 }
 
 /** 批量发放结果 */
@@ -210,7 +212,7 @@ export async function executeBatchDistribution(
   const config = toggles.pointsRuleConfig ?? { ...DEFAULT_POINTS_RULE_CONFIG };
   const expectedPoints = calculateExpectedPoints(input.targetRole, input.speakerType, config);
 
-  if (input.points !== expectedPoints) {
+  if (!input.skipPointsValidation && input.points !== expectedPoints) {
     return {
       success: false,
       error: {

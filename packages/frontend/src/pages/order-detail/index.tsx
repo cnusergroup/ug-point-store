@@ -7,6 +7,7 @@ import { useTranslation } from '../../i18n';
 import { maskPhone } from '@points-mall/shared';
 import { GiftIcon, ClockIcon, PackageIcon } from '../../components/icons';
 import PageToolbar from '../../components/PageToolbar';
+import TabBar from '../../components/TabBar';
 import type { ShippingStatus, ShippingEvent, OrderItem } from '@points-mall/shared';
 import './index.scss';
 
@@ -90,6 +91,7 @@ export default function OrderDetailPage() {
         <View className='detail-loading'>
           <Text className='detail-loading__text'>{t('orderDetail.loadingText')}</Text>
         </View>
+        <TabBar current='/pages/orders/index' />
       </View>
     );
   }
@@ -101,6 +103,7 @@ export default function OrderDetailPage() {
         <View className='detail-error'>
           <Text className='detail-error__text'>{error || t('orderDetail.notFound')}</Text>
         </View>
+        <TabBar current='/pages/orders/index' />
       </View>
     );
   }
@@ -200,6 +203,8 @@ export default function OrderDetailPage() {
           </View>
         )}
       </View>
+
+      <TabBar current='/pages/orders/index' />
     </View>
   );
 }

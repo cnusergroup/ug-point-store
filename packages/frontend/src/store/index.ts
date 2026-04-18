@@ -9,6 +9,7 @@ import type {
   OrderListItem,
 } from '@points-mall/shared';
 import type { Locale } from '../i18n/types';
+import { SUPPORTED_LOCALES, detectLocale } from '../i18n/locale-detector';
 
 const USER_KEY = 'user_info';
 
@@ -166,9 +167,30 @@ export const useAppStore = create<AppState>((set) => ({
   locale: ((): Locale => {
     try {
       const saved = Taro.getStorageSync('app_locale');
-      if (['zh', 'en', 'ja', 'ko', 'zh-TW'].includes(saved)) return saved as Locale;
+      if ((SUPPORTED_LOCALES as readonly string[]).includes(saved)) return saved as Locale;
     } catch { /* ignore */ }
-    return 'zh';
+
+    const detected = detectLocale({
+      getBrowserLanguage: () => {
+        try {
+          if (Taro.getEnv() === Taro.ENV_TYPE.WEAPP) {
+            return Taro.getSystemInfoSync().language ?? null;
+          }
+          return navigator?.language ?? null;
+        } catch { return null; }
+      },
+      getCountryCookie: () => {
+        try {
+          if (typeof document === 'undefined') return null;
+          const match = document.cookie.match(/(?:^|;\s*)cf_country=([^;]*)/);
+          return match?.[1]?.trim() || null;
+        } catch { return null; }
+      },
+    });
+
+    // Persist detected locale so detection doesn't re-run on next visit
+    try { Taro.setStorageSync('app_locale', detected); } catch { /* ignore */ }
+    return detected;
   })(),
 
   setLocale: (locale) => {

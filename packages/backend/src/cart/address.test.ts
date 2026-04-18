@@ -11,7 +11,7 @@ function createMockDynamoClient() {
 function makeAddressData(overrides: Record<string, any> = {}) {
   return {
     recipientName: '张三',
-    phone: '13800138000',
+    phone: '+86-13800138000',
     detailAddress: '北京市朝阳区某某路1号',
     ...overrides,
   };
@@ -22,7 +22,7 @@ function makeAddressRecord(overrides: Record<string, any> = {}) {
     addressId: 'addr-001',
     userId: 'user-001',
     recipientName: '张三',
-    phone: '13800138000',
+    phone: '+86-13800138000',
     detailAddress: '北京市朝阳区某某路1号',
     isDefault: false,
     createdAt: '2024-01-01T00:00:00.000Z',
@@ -44,8 +44,44 @@ describe('createAddress', () => {
     expect(result.error?.code).toBe(ErrorCodes.INVALID_PHONE);
   });
 
-  it('should reject phone not starting with 1', async () => {
-    const result = await createAddress('user-001', makeAddressData({ phone: '23800138000' }), client, ADDRESSES_TABLE);
+  it('should reject legacy pure-digit phone format', async () => {
+    const result = await createAddress('user-001', makeAddressData({ phone: '13800138000' }), client, ADDRESSES_TABLE);
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe(ErrorCodes.INVALID_PHONE);
+  });
+
+  it('should accept international phone format +81', async () => {
+    client.send.mockResolvedValueOnce({ Count: 0 });
+    client.send.mockResolvedValueOnce({});
+
+    const result = await createAddress('user-001', makeAddressData({ phone: '+81-09012345678' }), client, ADDRESSES_TABLE);
+    expect(result.success).toBe(true);
+    expect(result.data?.phone).toBe('+81-09012345678');
+  });
+
+  it('should accept international phone format +1', async () => {
+    client.send.mockResolvedValueOnce({ Count: 0 });
+    client.send.mockResolvedValueOnce({});
+
+    const result = await createAddress('user-001', makeAddressData({ phone: '+1-2025551234' }), client, ADDRESSES_TABLE);
+    expect(result.success).toBe(true);
+    expect(result.data?.phone).toBe('+1-2025551234');
+  });
+
+  it('should reject phone with number part less than 4 digits', async () => {
+    const result = await createAddress('user-001', makeAddressData({ phone: '+86-123' }), client, ADDRESSES_TABLE);
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe(ErrorCodes.INVALID_PHONE);
+  });
+
+  it('should reject phone missing number part', async () => {
+    const result = await createAddress('user-001', makeAddressData({ phone: '+86-' }), client, ADDRESSES_TABLE);
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe(ErrorCodes.INVALID_PHONE);
+  });
+
+  it('should reject phone with only country code', async () => {
+    const result = await createAddress('user-001', makeAddressData({ phone: '+86' }), client, ADDRESSES_TABLE);
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe(ErrorCodes.INVALID_PHONE);
   });
@@ -89,7 +125,7 @@ describe('createAddress', () => {
     const result = await createAddress('user-001', makeAddressData(), client, ADDRESSES_TABLE);
     expect(result.success).toBe(true);
     expect(result.data?.recipientName).toBe('张三');
-    expect(result.data?.phone).toBe('13800138000');
+    expect(result.data?.phone).toBe('+86-13800138000');
     expect(result.data?.userId).toBe('user-001');
     expect(result.data?.addressId).toBeDefined();
   });

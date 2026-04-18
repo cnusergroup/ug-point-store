@@ -478,6 +478,17 @@
     }
   }
 
+  &__phone-row {
+    display: flex;
+    gap: var(--space-2);
+    align-items: stretch;
+  }
+
+  &__input--phone {
+    flex: 1;
+    min-width: 0;
+  }
+
   &__textarea {
     min-height: 80px;
     resize: vertical;

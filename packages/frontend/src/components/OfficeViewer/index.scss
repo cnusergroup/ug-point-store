@@ -1,0 +1,92 @@
+.office-viewer {
+  width: 100%;
+
+  &__frame-wrap {
+    position: relative;
+    width: 100%;
+    height: 500px;
+  }
+
+  &__frame {
+    width: 100%;
+    height: 100%;
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    background: var(--bg-elevated);
+    display: block;
+  }
+
+  /* Full-coverage transparent overlay — blocks all iframe interaction */
+  &__overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+    display: flex;
+    cursor: pointer;
+  }
+
+  &__overlay-left,
+  &__overlay-right {
+    flex: 1;
+    height: 100%;
+    background: transparent;
+  }
+
+  &__overlay-left {
+    cursor: w-resize;
+  }
+
+  &__overlay-right {
+    cursor: e-resize;
+  }
+
+  &__controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    background: var(--bg-surface);
+    border: 1px solid var(--card-border);
+    border-top: none;
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+  }
+
+  &__btn {
+    padding: var(--space-1) var(--space-3);
+    background: var(--bg-elevated);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+
+    &:hover {
+      background: var(--bg-hover);
+    }
+
+    &--disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      &:hover {
+        background: var(--bg-elevated);
+      }
+    }
+  }
+
+  &__btn-text {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--text-primary);
+  }
+
+  &__page-info {
+    font-family: var(--font-display);
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+    min-width: 60px;
+    text-align: center;
+  }
+}

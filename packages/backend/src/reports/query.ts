@@ -237,6 +237,7 @@ export function aggregateByUG(records: RawPointsRecord[]): UGActivitySummaryReco
 
   for (const r of records) {
     const ug = r.activityUG ?? '';
+    if (!ug) continue; // Skip records without UG association
     if (!map.has(ug)) {
       map.set(ug, { activityIds: new Set(), totalPoints: 0, userIds: new Set() });
     }
@@ -443,6 +444,42 @@ async function batchGetUserNicknames(
     }
   }
   return nicknameMap;
+}
+
+/**
+ * BatchGet user nicknames AND roles from Users table.
+ * Returns a Map of userId → { nickname, roles }.
+ */
+async function batchGetUserDetails(
+  dynamoClient: DynamoDBDocumentClient,
+  usersTable: string,
+  userIds: string[],
+): Promise<Map<string, { nickname: string; roles: string[] }>> {
+  const map = new Map<string, { nickname: string; roles: string[] }>();
+  if (userIds.length === 0) return map;
+
+  const chunks = chunkArray(userIds, 100);
+  for (const chunk of chunks) {
+    const result = await dynamoClient.send(
+      new BatchGetCommand({
+        RequestItems: {
+          [usersTable]: {
+            Keys: chunk.map(userId => ({ userId })),
+            ProjectionExpression: 'userId, nickname, #r',
+            ExpressionAttributeNames: { '#r': 'roles' },
+          },
+        },
+      }),
+    );
+    const items = result.Responses?.[usersTable] ?? [];
+    for (const item of items) {
+      map.set(item.userId as string, {
+        nickname: (item.nickname as string) ?? '',
+        roles: (item.roles as string[]) ?? [],
+      });
+    }
+  }
+  return map;
 }
 
 /**
@@ -721,17 +758,20 @@ export async function queryUserPointsRanking(
     // Apply pagination
     const page = sorted.slice(offset, offset + pageSize);
 
-    // BatchGet user nicknames
+    // BatchGet user details (nickname + roles)
     const uniqueUserIds = page.map(r => r.userId);
-    const nicknameMap = await batchGetUserNicknames(dynamoClient, tables.usersTable, uniqueUserIds);
+    const userDetailsMap = await batchGetUserDetails(dynamoClient, tables.usersTable, uniqueUserIds);
 
     // Assign rank and build result records
+    const isAllRoles = !filter.targetRole || filter.targetRole === 'all';
     const records: UserRankingRecord[] = page.map((r, i) => ({
       rank: offset + i + 1,
       userId: r.userId,
-      nickname: nicknameMap.get(r.userId) ?? '',
+      nickname: userDetailsMap.get(r.userId)?.nickname ?? '',
       totalEarnPoints: r.totalEarnPoints,
-      targetRole: r.targetRole,
+      targetRole: isAllRoles
+        ? (userDetailsMap.get(r.userId)?.roles?.filter(role => role !== 'Admin' && role !== 'SuperAdmin').join(', ') || r.targetRole)
+        : r.targetRole,
     }));
 
     // Encode next offset as lastKey

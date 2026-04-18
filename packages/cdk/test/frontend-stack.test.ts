@@ -93,3 +93,45 @@ describe('FrontendStack - CloudFront Upload Proxy Infrastructure', () => {
     });
   });
 });
+
+describe('FrontendStack - CloudFront Function for Country Cookie', () => {
+  let template: Template;
+
+  beforeAll(() => {
+    const app = new cdk.App();
+    const stack = new FrontendStack(app, 'TestCFCountryCookieStack', {
+      apiUrl: 'https://test-api.execute-api.ap-northeast-1.amazonaws.com/prod/',
+      uploadTokenSecret: 'test-secret',
+      domainName: 'test.example.com',
+      certificateArn: 'arn:aws:acm:us-east-1:123456789012:certificate/test-cert-id',
+      edgeSignerLambdaArn: 'arn:aws:lambda:us-east-1:123456789012:function:test-edge-signer:1',
+    });
+    template = Template.fromStack(stack);
+  });
+
+  describe('CloudFront Function resource exists', () => {
+    it('should create a CloudFront Function with cloudfront-js-2.0 runtime', () => {
+      template.hasResourceProperties('AWS::CloudFront::Function', {
+        FunctionConfig: Match.objectLike({
+          Runtime: 'cloudfront-js-2.0',
+        }),
+      });
+    });
+  });
+
+  describe('CloudFront Function associated with default behavior as VIEWER_RESPONSE', () => {
+    it('should associate the CloudFront Function with the default behavior using viewer-response event type', () => {
+      template.hasResourceProperties('AWS::CloudFront::Distribution', {
+        DistributionConfig: {
+          DefaultCacheBehavior: Match.objectLike({
+            FunctionAssociations: Match.arrayWith([
+              Match.objectLike({
+                EventType: 'viewer-response',
+              }),
+            ]),
+          }),
+        },
+      });
+    });
+  });
+});

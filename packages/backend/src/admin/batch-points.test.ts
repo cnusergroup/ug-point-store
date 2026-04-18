@@ -626,3 +626,151 @@ describe('clampPageSize', () => {
     expect(clampPageSize(100)).toBe(100);
   });
 });
+
+// ============================================================
+// 8. skipPointsValidation — SuperAdmin quarterly points fix
+// ============================================================
+
+describe('executeBatchDistribution — skipPointsValidation', () => {
+  let client: ReturnType<typeof createMockDynamoClient>;
+
+  beforeEach(() => {
+    client = createMockDynamoClient();
+  });
+
+  it('should succeed with custom points when skipPointsValidation=true (no POINTS_MISMATCH)', async () => {
+    // GetCommand for feature-toggles (speakerTypeAPoints=100, but we send 200)
+    client.send.mockResolvedValueOnce({
+      Item: { userId: 'feature-toggles', pointsRuleConfig: { uglPointsPerEvent: 50, volunteerPointsPerEvent: 30, volunteerMaxPerEvent: 10, speakerTypeAPoints: 100, speakerTypeBPoints: 50, speakerRoundtablePoints: 50 } },
+    });
+    // QueryCommand for awarded users (empty)
+    client.send.mockResolvedValueOnce({ Items: [] });
+    // BatchGetCommand returns user data
+    client.send.mockResolvedValueOnce({
+      Responses: {
+        [USERS_TABLE]: [
+          { userId: 'user-001', points: 100, nickname: 'Alice', email: 'alice@test.com' },
+          { userId: 'user-002', points: 50, nickname: 'Bob', email: 'bob@test.com' },
+        ],
+      },
+    });
+    // TransactWriteCommand succeeds
+    client.send.mockResolvedValueOnce({});
+    // PutCommand for distribution record
+    client.send.mockResolvedValueOnce({});
+
+    const result = await executeBatchDistribution(
+      makeValidInput({ points: 200, skipPointsValidation: true }),
+      client,
+      TABLES,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.successCount).toBe(2);
+    expect(result.totalPoints).toBe(400); // 2 users × 200 points
+    expect(result.distributionId).toBeDefined();
+    expect(result.error).toBeUndefined();
+  });
+
+  it('should return POINTS_MISMATCH when skipPointsValidation is undefined and points mismatch', async () => {
+    // GetCommand for feature-toggles (speakerTypeAPoints=100, but we send 200)
+    client.send.mockResolvedValueOnce({
+      Item: { userId: 'feature-toggles', pointsRuleConfig: { uglPointsPerEvent: 50, volunteerPointsPerEvent: 30, volunteerMaxPerEvent: 10, speakerTypeAPoints: 100, speakerTypeBPoints: 50, speakerRoundtablePoints: 50 } },
+    });
+
+    const result = await executeBatchDistribution(
+      makeValidInput({ points: 200 }), // skipPointsValidation is undefined by default
+      client,
+      TABLES,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('POINTS_MISMATCH');
+  });
+
+  it('should still enforce volunteer limit when skipPointsValidation=true', async () => {
+    // GetCommand for feature-toggles (volunteerMaxPerEvent=10)
+    client.send.mockResolvedValueOnce({
+      Item: { userId: 'feature-toggles', pointsRuleConfig: { uglPointsPerEvent: 50, volunteerPointsPerEvent: 30, volunteerMaxPerEvent: 10, speakerTypeAPoints: 100, speakerTypeBPoints: 50, speakerRoundtablePoints: 50 } },
+    });
+
+    // 11 unique volunteer userIds — exceeds volunteerMaxPerEvent of 10
+    const userIds = Array.from({ length: 11 }, (_, i) => `vol-${String(i + 1).padStart(3, '0')}`);
+
+    const result = await executeBatchDistribution(
+      makeValidInput({
+        userIds,
+        points: 75,
+        targetRole: 'Volunteer',
+        speakerType: undefined,
+        skipPointsValidation: true,
+      }),
+      client,
+      TABLES,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('VOLUNTEER_LIMIT_EXCEEDED');
+  });
+
+  it('should still deduplicate userIds when skipPointsValidation=true', async () => {
+    // GetCommand for feature-toggles
+    client.send.mockResolvedValueOnce({
+      Item: { userId: 'feature-toggles', pointsRuleConfig: { uglPointsPerEvent: 50, volunteerPointsPerEvent: 30, volunteerMaxPerEvent: 10, speakerTypeAPoints: 100, speakerTypeBPoints: 50, speakerRoundtablePoints: 50 } },
+    });
+    // QueryCommand for awarded users (empty)
+    client.send.mockResolvedValueOnce({ Items: [] });
+    // BatchGetCommand returns user data (only 1 unique user)
+    client.send.mockResolvedValueOnce({
+      Responses: {
+        [USERS_TABLE]: [
+          { userId: 'user-001', points: 100, nickname: 'Alice', email: 'alice@test.com' },
+        ],
+      },
+    });
+    // TransactWriteCommand succeeds
+    client.send.mockResolvedValueOnce({});
+    // PutCommand for distribution record
+    client.send.mockResolvedValueOnce({});
+
+    const result = await executeBatchDistribution(
+      makeValidInput({
+        userIds: ['user-001', 'user-001', 'user-001'],
+        points: 200,
+        skipPointsValidation: true,
+      }),
+      client,
+      TABLES,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.successCount).toBe(1); // deduplicated to 1 user
+    expect(result.totalPoints).toBe(200); // 1 user × 200 points
+  });
+
+  it('should still enforce duplicate distribution check when skipPointsValidation=true', async () => {
+    // GetCommand for feature-toggles
+    client.send.mockResolvedValueOnce({
+      Item: { userId: 'feature-toggles', pointsRuleConfig: { uglPointsPerEvent: 50, volunteerPointsPerEvent: 30, volunteerMaxPerEvent: 10, speakerTypeAPoints: 100, speakerTypeBPoints: 50, speakerRoundtablePoints: 50 } },
+    });
+    // QueryCommand for awarded users — user-001 already awarded
+    client.send.mockResolvedValueOnce({
+      Items: [
+        { recipientIds: ['user-001'] },
+      ],
+    });
+
+    const result = await executeBatchDistribution(
+      makeValidInput({
+        userIds: ['user-001'],
+        points: 200,
+        skipPointsValidation: true,
+      }),
+      client,
+      TABLES,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('DUPLICATE_DISTRIBUTION');
+  });
+});

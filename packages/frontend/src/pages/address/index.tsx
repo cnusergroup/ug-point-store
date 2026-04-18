@@ -4,7 +4,15 @@ import Taro from '@tarojs/taro';
 import { request } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
+import {
+  getDefaultDialCode,
+  parsePhone,
+  formatPhone,
+  displayPhone,
+  validatePhoneNumber,
+} from '@points-mall/shared';
 import { LocationIcon } from '../../components/icons';
+import CountryCodePicker from '../../components/CountryCodePicker';
 import PageToolbar from '../../components/PageToolbar';
 import './index.scss';
 
@@ -23,6 +31,7 @@ interface AddressResponse {
 /** Form data for add/edit */
 interface AddressForm {
   recipientName: string;
+  countryCode: string;
   phone: string;
   detailAddress: string;
 }
@@ -34,7 +43,6 @@ interface FormErrors {
   detailAddress?: string;
 }
 
-const PHONE_REGEX = /^1\d{10}$/;
 const MAX_NAME_LENGTH = 20;
 const MAX_ADDRESS_LENGTH = 200;
 
@@ -43,7 +51,7 @@ function validateForm(form: AddressForm, t: (key: string) => string): FormErrors
   if (!form.recipientName.trim() || form.recipientName.length > MAX_NAME_LENGTH) {
     errors.recipientName = t('address.recipientNameError');
   }
-  if (!PHONE_REGEX.test(form.phone)) {
+  if (!validatePhoneNumber(form.phone)) {
     errors.phone = t('address.phoneError');
   }
   if (!form.detailAddress.trim() || form.detailAddress.length > MAX_ADDRESS_LENGTH) {
@@ -53,7 +61,16 @@ function validateForm(form: AddressForm, t: (key: string) => string): FormErrors
 }
 
 export default function AddressPage() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const cfCountry = (() => {
+    try {
+      if (typeof document === 'undefined') return null;
+      const match = document.cookie.match(/(?:^|;\s*)cf_country=([^;]*)/);
+      return match?.[1]?.trim() || null;
+    } catch { return null; }
+  })();
+  const defaultDialCode = getDefaultDialCode(locale, cfCountry);
+
   const [addresses, setAddresses] = useState<AddressResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -61,7 +78,7 @@ export default function AddressPage() {
   // Modal state
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState<AddressForm>({ recipientName: '', phone: '', detailAddress: '' });
+  const [form, setForm] = useState<AddressForm>({ recipientName: '', countryCode: defaultDialCode, phone: '', detailAddress: '' });
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [submitting, setSubmitting] = useState(false);
 
@@ -88,16 +105,18 @@ export default function AddressPage() {
 
   const openAddForm = () => {
     setEditingId(null);
-    setForm({ recipientName: '', phone: '', detailAddress: '' });
+    setForm({ recipientName: '', countryCode: defaultDialCode, phone: '', detailAddress: '' });
     setFormErrors({});
     setShowForm(true);
   };
 
   const openEditForm = (addr: AddressResponse) => {
     setEditingId(addr.addressId);
+    const parsed = parsePhone(addr.phone);
     setForm({
       recipientName: addr.recipientName,
-      phone: addr.phone,
+      countryCode: parsed?.countryCode || defaultDialCode,
+      phone: parsed?.phoneNumber || addr.phone,
       detailAddress: addr.detailAddress,
     });
     setFormErrors({});
@@ -114,20 +133,22 @@ export default function AddressPage() {
     setFormErrors(errors);
     if (Object.keys(errors).length > 0) return;
 
+    const phoneFormatted = formatPhone(form.countryCode, form.phone);
+
     setSubmitting(true);
     try {
       if (editingId) {
         await request({
           url: `/api/addresses/${editingId}`,
           method: 'PUT',
-          data: { recipientName: form.recipientName, phone: form.phone, detailAddress: form.detailAddress },
+          data: { recipientName: form.recipientName, phone: phoneFormatted, detailAddress: form.detailAddress },
         });
         Taro.showToast({ title: t('address.addressUpdated'), icon: 'success' });
       } else {
         await request({
           url: '/api/addresses',
           method: 'POST',
-          data: { recipientName: form.recipientName, phone: form.phone, detailAddress: form.detailAddress },
+          data: { recipientName: form.recipientName, phone: phoneFormatted, detailAddress: form.detailAddress },
         });
         Taro.showToast({ title: t('address.addressAdded'), icon: 'success' });
       }
@@ -203,7 +224,7 @@ export default function AddressPage() {
                   <View className='address-card__info'>
                     <View className='address-card__name-row'>
                       <Text className='address-card__name'>{addr.recipientName}</Text>
-                      <Text className='address-card__phone'>{addr.phone}</Text>
+                      <Text className='address-card__phone'>{displayPhone(addr.phone)}</Text>
                       {addr.isDefault && (
                         <Text className='address-card__badge'>{t('address.defaultBadge')}</Text>
                       )}
@@ -262,14 +283,20 @@ export default function AddressPage() {
 
             <View className='address-modal__field'>
               <Text className='address-modal__label'>{t('address.phoneLabel')}</Text>
-              <input
-                className='address-modal__input'
-                type='tel'
-                placeholder={t('address.phonePlaceholder')}
-                value={form.phone}
-                maxLength={11}
-                onInput={(e: any) => setForm((f) => ({ ...f, phone: e.target.value || e.detail?.value || '' }))}
-              />
+              <View className='address-modal__phone-row'>
+                <CountryCodePicker
+                  value={form.countryCode}
+                  onChange={(code) => setForm((f) => ({ ...f, countryCode: code }))}
+                />
+                <input
+                  className='address-modal__input address-modal__input--phone'
+                  type='tel'
+                  placeholder={t('address.phonePlaceholder')}
+                  value={form.phone}
+                  maxLength={15}
+                  onInput={(e: any) => setForm((f) => ({ ...f, phone: e.target.value || e.detail?.value || '' }))}
+                />
+              </View>
               {formErrors.phone && (
                 <Text className='address-modal__error'>{formErrors.phone}</Text>
               )}
