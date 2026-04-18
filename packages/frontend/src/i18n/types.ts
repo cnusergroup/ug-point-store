@@ -934,6 +934,8 @@ export interface TranslationDict {
         newProductDesc: string;
         newContentLabel: string;
         newContentDesc: string;
+        contentUpdatedLabel: string;
+        contentUpdatedDesc: string;
         editTemplateButton: string;
         templateEditorTitle: string;
         templateSubjectLabel: string;
@@ -1110,6 +1112,8 @@ export interface TranslationDict {
       previewLabel: string;
       previewDownloadHint: string;
       previewUnsupported: string;
+      previewPending: string;
+      previewFailed: string;
       videoLabel: string;
       videoCopied: string;
       reserveButton: string;

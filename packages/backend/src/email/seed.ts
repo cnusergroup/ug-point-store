@@ -387,6 +387,73 @@ const newContentTemplates: Record<EmailLocale, { subject: string; body: string }
 };
 
 // ============================================================
+// contentUpdated templates
+// ============================================================
+
+const contentUpdatedTemplates: Record<EmailLocale, { subject: string; body: string }> = {
+  zh: {
+    subject: '📝 您预约的内容有更新，请确认最新版本',
+    body: wrap([
+      '<h2 style="color:#6366f1;">Hi {{userName}}，您预约的内容有更新 📝</h2>',
+      '<p style="font-size:16px;color:#334155;">您预约的内容 <strong style="color:#6366f1;">{{contentTitle}}</strong> 已被编辑更新。</p>',
+      '<p style="color:#64748b;">活动主题：{{activityTopic}}</p>',
+      '<p style="color:#64748b;">活动日期：{{activityDate}}</p>',
+      '<p style="margin-top:24px;">请查看最新版本，确认内容变更～</p>',
+      HR,
+      FOOTER_ZH,
+    ].join('\n  ')),
+  },
+  en: {
+    subject: '📝 Reserved content has been updated, please review the latest version',
+    body: wrap([
+      '<h2 style="color:#6366f1;">Hi {{userName}}, your reserved content has been updated 📝</h2>',
+      '<p style="font-size:16px;color:#334155;">The content <strong style="color:#6366f1;">{{contentTitle}}</strong> you reserved has been edited.</p>',
+      '<p style="color:#64748b;">Activity topic: {{activityTopic}}</p>',
+      '<p style="color:#64748b;">Activity date: {{activityDate}}</p>',
+      '<p style="margin-top:24px;">Please review the latest version to confirm the changes.</p>',
+      HR,
+      FOOTER_EN,
+    ].join('\n  ')),
+  },
+  ja: {
+    subject: '📝 予約したコンテンツが更新されました。最新版をご確認ください',
+    body: wrap([
+      '<h2 style="color:#6366f1;">{{userName}} さん、予約したコンテンツが更新されました 📝</h2>',
+      '<p style="font-size:16px;color:#334155;">予約したコンテンツ <strong style="color:#6366f1;">{{contentTitle}}</strong> が編集されました。</p>',
+      '<p style="color:#64748b;">活動テーマ：{{activityTopic}}</p>',
+      '<p style="color:#64748b;">活動日：{{activityDate}}</p>',
+      '<p style="margin-top:24px;">最新版をご確認ください。</p>',
+      HR,
+      FOOTER_JA,
+    ].join('\n  ')),
+  },
+  ko: {
+    subject: '📝 예약한 콘텐츠가 업데이트되었습니다. 최신 버전을 확인해 주세요',
+    body: wrap([
+      '<h2 style="color:#6366f1;">{{userName}} 님, 예약한 콘텐츠가 업데이트되었습니다 📝</h2>',
+      '<p style="font-size:16px;color:#334155;">예약한 콘텐츠 <strong style="color:#6366f1;">{{contentTitle}}</strong>이(가) 편집되었습니다.</p>',
+      '<p style="color:#64748b;">활동 주제: {{activityTopic}}</p>',
+      '<p style="color:#64748b;">활동 날짜: {{activityDate}}</p>',
+      '<p style="margin-top:24px;">최신 버전을 확인해 주세요.</p>',
+      HR,
+      FOOTER_KO,
+    ].join('\n  ')),
+  },
+  'zh-TW': {
+    subject: '📝 您預約的內容有更新，請確認最新版本',
+    body: wrap([
+      '<h2 style="color:#6366f1;">Hi {{userName}}，您預約的內容有更新 📝</h2>',
+      '<p style="font-size:16px;color:#334155;">您預約的內容 <strong style="color:#6366f1;">{{contentTitle}}</strong> 已被編輯更新。</p>',
+      '<p style="color:#64748b;">活動主題：{{activityTopic}}</p>',
+      '<p style="color:#64748b;">活動日期：{{activityDate}}</p>',
+      '<p style="margin-top:24px;">請查看最新版本，確認內容變更～</p>',
+      HR,
+      FOOTER_ZHTW,
+    ].join('\n  ')),
+  },
+};
+
+// ============================================================
 // Template map by notification type
 // ============================================================
 
@@ -396,17 +463,18 @@ const TEMPLATE_MAP: Record<NotificationType, Record<EmailLocale, { subject: stri
   orderShipped: orderShippedTemplates,
   newProduct: newProductTemplates,
   newContent: newContentTemplates,
+  contentUpdated: contentUpdatedTemplates,
 };
 
 const ALL_LOCALES: EmailLocale[] = ['zh', 'en', 'ja', 'ko', 'zh-TW'];
-const ALL_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent'];
+const ALL_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated'];
 
 // ============================================================
 // Public API
 // ============================================================
 
 /**
- * Return all 25 default email templates (5 notification types × 5 locales).
+ * Return all 30 default email templates (6 notification types × 5 locales).
  */
 export function getDefaultTemplates(): EmailTemplate[] {
   const now = new Date().toISOString();
@@ -429,10 +497,13 @@ export function getDefaultTemplates(): EmailTemplate[] {
   return templates;
 }
 
+/** DynamoDB BatchWriteCommand supports max 25 items per request. */
+const DYNAMO_BATCH_WRITE_LIMIT = 25;
+
 /**
- * Seed all 25 default templates into DynamoDB using BatchWriteCommand.
+ * Seed all 30 default templates into DynamoDB using BatchWriteCommand.
  * DynamoDB BatchWriteCommand supports max 25 items per request,
- * which fits exactly for 5 types × 5 locales.
+ * so we split into batches of 25.
  */
 export async function seedDefaultTemplates(
   dynamoClient: DynamoDBDocumentClient,
@@ -440,17 +511,21 @@ export async function seedDefaultTemplates(
 ): Promise<void> {
   const templates = getDefaultTemplates();
 
-  await dynamoClient.send(
-    new BatchWriteCommand({
-      RequestItems: {
-        [tableName]: templates.map((template) => ({
-          PutRequest: {
-            Item: template,
-          },
-        })),
-      },
-    }),
-  );
+  for (let i = 0; i < templates.length; i += DYNAMO_BATCH_WRITE_LIMIT) {
+    const batch = templates.slice(i, i + DYNAMO_BATCH_WRITE_LIMIT);
+
+    await dynamoClient.send(
+      new BatchWriteCommand({
+        RequestItems: {
+          [tableName]: batch.map((template) => ({
+            PutRequest: {
+              Item: template,
+            },
+          })),
+        },
+      }),
+    );
+  }
 
   console.log(`[EmailSeed] Seeded ${templates.length} default email templates`);
 }

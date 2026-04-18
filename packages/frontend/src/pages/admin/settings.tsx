@@ -49,6 +49,7 @@ interface FeatureToggles {
   emailOrderShippedEnabled: boolean;
   emailNewProductEnabled: boolean;
   emailNewContentEnabled: boolean;
+  emailContentUpdatedEnabled: boolean;
   reservationApprovalPoints: number;
   leaderboardRankingEnabled: boolean;
   leaderboardAnnouncementEnabled: boolean;
@@ -65,7 +66,7 @@ interface PointsRuleConfig {
   speakerRoundtablePoints: number;
 }
 
-type NotificationType = 'pointsEarned' | 'newOrder' | 'orderShipped' | 'newProduct' | 'newContent';
+type NotificationType = 'pointsEarned' | 'newOrder' | 'orderShipped' | 'newProduct' | 'newContent' | 'contentUpdated';
 
 interface EmailToggleConfig {
   key: keyof FeatureToggles;
@@ -105,6 +106,7 @@ const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   orderShipped: 'admin.settings.email.orderShippedLabel',
   newProduct: 'admin.settings.email.newProductLabel',
   newContent: 'admin.settings.email.newContentLabel',
+  contentUpdated: 'admin.settings.email.contentUpdatedLabel',
 };
 
 interface MeetupSyncConfigState {
@@ -456,6 +458,7 @@ export default function AdminSettingsPage() {
     emailOrderShippedEnabled: false,
     emailNewProductEnabled: false,
     emailNewContentEnabled: false,
+    emailContentUpdatedEnabled: false,
     reservationApprovalPoints: 10,
     leaderboardRankingEnabled: false,
     leaderboardAnnouncementEnabled: false,
@@ -1083,6 +1086,7 @@ export default function AdminSettingsPage() {
           emailOrderShippedEnabled: updated.emailOrderShippedEnabled,
           emailNewProductEnabled: updated.emailNewProductEnabled,
           emailNewContentEnabled: updated.emailNewContentEnabled,
+          emailContentUpdatedEnabled: updated.emailContentUpdatedEnabled,
           reservationApprovalPoints: updated.reservationApprovalPoints,
           leaderboardRankingEnabled: updated.leaderboardRankingEnabled,
           leaderboardAnnouncementEnabled: updated.leaderboardAnnouncementEnabled,
@@ -1121,6 +1125,7 @@ export default function AdminSettingsPage() {
           emailOrderShippedEnabled: updated.emailOrderShippedEnabled,
           emailNewProductEnabled: updated.emailNewProductEnabled,
           emailNewContentEnabled: updated.emailNewContentEnabled,
+          emailContentUpdatedEnabled: updated.emailContentUpdatedEnabled,
           reservationApprovalPoints: updated.reservationApprovalPoints,
           leaderboardRankingEnabled: updated.leaderboardRankingEnabled,
           leaderboardAnnouncementEnabled: updated.leaderboardAnnouncementEnabled,
@@ -1344,6 +1349,7 @@ export default function AdminSettingsPage() {
           emailOrderShippedEnabled: settings.emailOrderShippedEnabled,
           emailNewProductEnabled: settings.emailNewProductEnabled,
           emailNewContentEnabled: settings.emailNewContentEnabled,
+          emailContentUpdatedEnabled: settings.emailContentUpdatedEnabled,
           reservationApprovalPoints: settings.reservationApprovalPoints,
           leaderboardRankingEnabled: settings.leaderboardRankingEnabled,
           leaderboardAnnouncementEnabled: settings.leaderboardAnnouncementEnabled,
@@ -1643,6 +1649,12 @@ export default function AdminSettingsPage() {
                         notificationType: 'newContent' as NotificationType,
                         labelKey: 'admin.settings.email.newContentLabel',
                         descKey: 'admin.settings.email.newContentDesc',
+                      },
+                      {
+                        key: 'emailContentUpdatedEnabled' as keyof FeatureToggles,
+                        notificationType: 'contentUpdated' as NotificationType,
+                        labelKey: 'admin.settings.email.contentUpdatedLabel',
+                        descKey: 'admin.settings.email.contentUpdatedDesc',
                       },
                     ] as { key: keyof FeatureToggles; notificationType: NotificationType; labelKey: string; descKey: string }[]).map((item) => (
                       <View key={item.key} className='email-toggle-item'>

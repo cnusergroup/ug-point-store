@@ -9,7 +9,8 @@ export type NotificationType =
   | 'newOrder'
   | 'orderShipped'
   | 'newProduct'
-  | 'newContent';
+  | 'newContent'
+  | 'contentUpdated';
 
 export type EmailLocale = 'zh' | 'en' | 'ja' | 'ko' | 'zh-TW';
 

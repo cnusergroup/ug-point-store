@@ -38,6 +38,7 @@ const TOGGLE_MAP: Record<NotificationType, string> = {
   orderShipped: 'emailOrderShippedEnabled',
   newProduct: 'emailNewProductEnabled',
   newContent: 'emailNewContentEnabled',
+  contentUpdated: 'emailContentUpdatedEnabled',
 };
 
 const ADMIN_ROLES = ['Admin', 'SuperAdmin', 'OrderAdmin'];
@@ -488,5 +489,54 @@ export async function sendNewContentNotification(
   } catch (err) {
     console.error('[Notification] Failed to send newContent notifications:', err);
     return emptyResult;
+  }
+}
+
+// ============================================================
+// Content Updated notification
+// ============================================================
+
+/**
+ * Send a "content updated" email to a single reservation user.
+ * Checks toggle, loads user locale, loads template, replaces variables, sends.
+ */
+export async function sendContentUpdatedEmail(
+  ctx: NotificationContext,
+  userId: string,
+  contentTitle: string,
+  activityTopic: string,
+  activityDate: string,
+): Promise<void> {
+  try {
+    if (!(await isEmailEnabled(ctx, 'contentUpdated'))) {
+      return;
+    }
+
+    const user = await loadUser(ctx, userId);
+    if (!user) {
+      console.warn(`[Notification] Skipping contentUpdated: user ${userId} not found or no email`);
+      return;
+    }
+
+    const template = await loadTemplateWithFallback(ctx, 'contentUpdated', user.locale);
+    if (!template) {
+      console.error('[Notification] contentUpdated template not found');
+      return;
+    }
+
+    const variables: Record<string, string> = {
+      contentTitle,
+      userName: user.nickname,
+      activityTopic,
+      activityDate,
+    };
+
+    const subject = replaceVariables(template.subject, variables);
+    const htmlBody = replaceVariables(template.body, variables);
+
+    await sendEmail(ctx.sesClient, { to: user.email, subject, htmlBody }, ctx.senderEmail);
+    console.log(`[Notification] contentUpdated email sent to ${user.email}`);
+  } catch (err) {
+    console.error('[Notification] Failed to send contentUpdated email:', err);
   }
 }

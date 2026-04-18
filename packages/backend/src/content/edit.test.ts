@@ -134,16 +134,18 @@ describe('editContentItem', () => {
     expect(result.item!.status).toBe('pending');
   });
 
-  // 4b. Editing content with reservations is rejected (CONTENT_NOT_EDITABLE)
-  it('should reject editing content with reservations', async () => {
+  // 4b. Editing content with reservations is now allowed (reservationCount check removed)
+  it('should allow editing content with reservations', async () => {
     const item = makePendingItem({ reservationCount: 3 });
     const dynamo = createMockDynamoClient(item);
     const s3 = createMockS3Client();
 
     const result = await editContentItem(baseInput, dynamo, s3, tables, bucket);
 
-    expect(result.success).toBe(false);
-    expect(result.error!.code).toBe(ErrorCodes.CONTENT_NOT_EDITABLE);
+    expect(result.success).toBe(true);
+    expect(result.item!.status).toBe('pending');
+    // reservationCount should be preserved
+    expect(result.item!.reservationCount).toBe(3);
   });
 
   // 4c. Editing content with zero reservations is allowed

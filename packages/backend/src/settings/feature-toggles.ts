@@ -62,6 +62,8 @@ export interface FeatureToggles {
   emailNewProductEnabled: boolean;
   /** Whether newContent email notifications are enabled */
   emailNewContentEnabled: boolean;
+  /** Whether contentUpdated email notifications are enabled */
+  emailContentUpdatedEnabled: boolean;
   /** Whether Admin (non-SuperAdmin) can trigger new product email notifications */
   adminEmailProductsEnabled: boolean;
   /** Whether Admin (non-SuperAdmin) can trigger new content email notifications */
@@ -90,6 +92,7 @@ export interface UpdateFeatureTogglesInput {
   emailOrderShippedEnabled: boolean;
   emailNewProductEnabled: boolean;
   emailNewContentEnabled: boolean;
+  emailContentUpdatedEnabled: boolean;
   adminEmailProductsEnabled: boolean;
   adminEmailContentEnabled: boolean;
   reservationApprovalPoints: number;
@@ -158,6 +161,7 @@ const DEFAULT_TOGGLES: FeatureToggles = {
   emailOrderShippedEnabled: false,
   emailNewProductEnabled: false,
   emailNewContentEnabled: false,
+  emailContentUpdatedEnabled: false,         // default: contentUpdated email notifications disabled
   adminEmailProductsEnabled: false,          // default: Admin cannot trigger product email notifications
   adminEmailContentEnabled: false,           // default: Admin cannot trigger content email notifications
   reservationApprovalPoints: 10,             // default: 10 points for reservation approval
@@ -219,6 +223,7 @@ export async function getFeatureToggles(
       emailOrderShippedEnabled: result.Item.emailOrderShippedEnabled === true,    // default false
       emailNewProductEnabled:   result.Item.emailNewProductEnabled === true,      // default false
       emailNewContentEnabled:   result.Item.emailNewContentEnabled === true,      // default false
+      emailContentUpdatedEnabled: result.Item.emailContentUpdatedEnabled === true, // default false
       adminEmailProductsEnabled: result.Item.adminEmailProductsEnabled === true,  // default false
       adminEmailContentEnabled:  result.Item.adminEmailContentEnabled === true,   // default false
       reservationApprovalPoints: typeof result.Item.reservationApprovalPoints === 'number' && result.Item.reservationApprovalPoints > 0
@@ -279,6 +284,7 @@ export async function updateFeatureToggles(
     typeof input.emailOrderShippedEnabled !== 'boolean' ||
     typeof input.emailNewProductEnabled !== 'boolean' ||
     typeof input.emailNewContentEnabled !== 'boolean' ||
+    typeof input.emailContentUpdatedEnabled !== 'boolean' ||
     typeof input.adminEmailProductsEnabled !== 'boolean' ||
     typeof input.adminEmailContentEnabled !== 'boolean' ||
     typeof input.reservationApprovalPoints !== 'number' ||
@@ -335,6 +341,7 @@ export async function updateFeatureToggles(
         emailOrderShippedEnabled = :eos,
         emailNewProductEnabled = :enp,
         emailNewContentEnabled = :enc,
+        emailContentUpdatedEnabled = :ecu,
         adminEmailProductsEnabled = :aepe,
         adminEmailContentEnabled = :aece,
         reservationApprovalPoints = :rap,
@@ -356,6 +363,7 @@ export async function updateFeatureToggles(
         ':eos': input.emailOrderShippedEnabled,
         ':enp': input.emailNewProductEnabled,
         ':enc': input.emailNewContentEnabled,
+        ':ecu': input.emailContentUpdatedEnabled,
         ':aepe': input.adminEmailProductsEnabled,
         ':aece': input.adminEmailContentEnabled,
         ':rap': input.reservationApprovalPoints,
@@ -419,6 +427,7 @@ export async function updateFeatureToggles(
       emailOrderShippedEnabled: input.emailOrderShippedEnabled,
       emailNewProductEnabled: input.emailNewProductEnabled,
       emailNewContentEnabled: input.emailNewContentEnabled,
+      emailContentUpdatedEnabled: input.emailContentUpdatedEnabled,
       adminEmailProductsEnabled: input.adminEmailProductsEnabled,
       adminEmailContentEnabled: input.adminEmailContentEnabled,
       reservationApprovalPoints: input.reservationApprovalPoints,

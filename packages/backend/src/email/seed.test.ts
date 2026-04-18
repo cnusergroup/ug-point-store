@@ -2,23 +2,23 @@ import { describe, it, expect, vi } from 'vitest';
 import { getDefaultTemplates, seedDefaultTemplates } from './seed';
 
 describe('getDefaultTemplates', () => {
-  it('should return exactly 25 templates (5 types × 5 locales)', () => {
+  it('should return exactly 30 templates (6 types × 5 locales)', () => {
     const templates = getDefaultTemplates();
-    expect(templates).toHaveLength(25);
+    expect(templates).toHaveLength(30);
   });
 
-  it('should cover all 5 notification types', () => {
+  it('should cover all 6 notification types', () => {
     const templates = getDefaultTemplates();
     const types = new Set(templates.map((t) => t.templateId));
     expect(types).toEqual(
-      new Set(['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent']),
+      new Set(['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated']),
     );
   });
 
   it('should cover all 5 locales for each type', () => {
     const templates = getDefaultTemplates();
     const expectedLocales = ['zh', 'en', 'ja', 'ko', 'zh-TW'];
-    const types = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent'];
+    const types = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated'];
 
     for (const type of types) {
       const locales = templates.filter((t) => t.templateId === type).map((t) => t.locale);
@@ -34,6 +34,7 @@ describe('getDefaultTemplates', () => {
       orderShipped: ['nickname', 'orderId', 'trackingNumber'],
       newProduct: ['productList'],
       newContent: ['contentList'],
+      contentUpdated: ['contentTitle', 'userName', 'activityTopic', 'activityDate'],
     };
 
     for (const template of templates) {
@@ -103,24 +104,33 @@ describe('getDefaultTemplates', () => {
 });
 
 describe('seedDefaultTemplates', () => {
-  it('should call BatchWriteCommand with all 25 templates', async () => {
+  it('should call BatchWriteCommand in batches of 25 for all 30 templates', async () => {
     const mockSend = vi.fn().mockResolvedValue({});
     const mockClient = { send: mockSend } as any;
 
     await seedDefaultTemplates(mockClient, 'TestTable');
 
-    expect(mockSend).toHaveBeenCalledTimes(1);
-    const command = mockSend.mock.calls[0][0];
-    expect(command.constructor.name).toBe('BatchWriteCommand');
-    expect(command.input.RequestItems['TestTable']).toHaveLength(25);
+    expect(mockSend).toHaveBeenCalledTimes(2);
 
-    // Verify each item is a PutRequest
-    for (const item of command.input.RequestItems['TestTable']) {
-      expect(item.PutRequest).toBeDefined();
-      expect(item.PutRequest.Item.templateId).toBeDefined();
-      expect(item.PutRequest.Item.locale).toBeDefined();
-      expect(item.PutRequest.Item.subject).toBeDefined();
-      expect(item.PutRequest.Item.body).toBeDefined();
+    // First batch: 25 templates
+    const command1 = mockSend.mock.calls[0][0];
+    expect(command1.constructor.name).toBe('BatchWriteCommand');
+    expect(command1.input.RequestItems['TestTable']).toHaveLength(25);
+
+    // Second batch: 5 templates
+    const command2 = mockSend.mock.calls[1][0];
+    expect(command2.constructor.name).toBe('BatchWriteCommand');
+    expect(command2.input.RequestItems['TestTable']).toHaveLength(5);
+
+    // Verify each item in both batches is a PutRequest
+    for (const call of mockSend.mock.calls) {
+      for (const item of call[0].input.RequestItems['TestTable']) {
+        expect(item.PutRequest).toBeDefined();
+        expect(item.PutRequest.Item.templateId).toBeDefined();
+        expect(item.PutRequest.Item.locale).toBeDefined();
+        expect(item.PutRequest.Item.subject).toBeDefined();
+        expect(item.PutRequest.Item.body).toBeDefined();
+      }
     }
   });
 });

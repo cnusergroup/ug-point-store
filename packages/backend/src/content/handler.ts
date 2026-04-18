@@ -2,12 +2,13 @@ import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { S3Client } from '@aws-sdk/client-s3';
+import { SESClient } from '@aws-sdk/client-ses';
 import { ErrorHttpStatus } from '@points-mall/shared';
 import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware';
 import { getFeatureToggles } from '../settings/feature-toggles';
 import { checkContentPermission } from './content-permission';
 import { getContentUploadUrl, createContentItem } from './upload';
-import { editContentItem } from './edit';
+import { editContentItem, type EditNotificationContext } from './edit';
 import { listContentItems, getContentDetail } from './list';
 import { addComment, listComments } from './comment';
 import { toggleLike } from './like';
@@ -20,6 +21,7 @@ import { listReservationActivities } from './reservation-activities';
 // Create clients outside handler for Lambda container reuse
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const s3Client = new S3Client({});
+const sesClient = new SESClient({});
 
 const CONTENT_ITEMS_TABLE = process.env.CONTENT_ITEMS_TABLE ?? '';
 const CONTENT_TAGS_TABLE = process.env.CONTENT_TAGS_TABLE ?? '';
@@ -33,6 +35,8 @@ const IMAGES_BUCKET = process.env.IMAGES_BUCKET ?? '';
 const ACTIVITIES_TABLE = process.env.ACTIVITIES_TABLE ?? '';
 const UGS_TABLE = process.env.UGS_TABLE ?? '';
 const CONTENT_REWARD_POINTS = parseInt(process.env.CONTENT_REWARD_POINTS ?? '10', 10);
+const EMAIL_TEMPLATES_TABLE = process.env.EMAIL_TEMPLATES_TABLE ?? '';
+const SENDER_EMAIL = process.env.SENDER_EMAIL ?? '';
 
 const CORS_HEADERS = {
   'Content-Type': 'application/json',
@@ -429,6 +433,9 @@ async function handleGetDownloadUrl(contentId: string, event: AuthenticatedEvent
     return errorResponse('PERMISSION_DENIED', '您没有下载内容的权限', 403);
   }
 
+  // SuperAdmin can download without a reservation
+  const isSuperAdmin = event.user.roles.includes('SuperAdmin');
+
   const result = await getDownloadUrl(
     contentId,
     event.user.userId,
@@ -436,6 +443,7 @@ async function handleGetDownloadUrl(contentId: string, event: AuthenticatedEvent
     s3Client,
     { contentItemsTable: CONTENT_ITEMS_TABLE, reservationsTable: CONTENT_RESERVATIONS_TABLE },
     IMAGES_BUCKET,
+    isSuperAdmin,
   );
 
   if (!result.success) {
@@ -454,6 +462,15 @@ async function handleEditContentItem(contentId: string, event: AuthenticatedEven
 
   const userInfo = await getUserInfo(event.user.userId);
 
+  const notificationCtx: EditNotificationContext = {
+    dynamoClient,
+    sesClient,
+    reservationsTable: CONTENT_RESERVATIONS_TABLE,
+    usersTable: USERS_TABLE,
+    emailTemplatesTable: EMAIL_TEMPLATES_TABLE,
+    senderEmail: SENDER_EMAIL,
+  };
+
   const result = await editContentItem(
     {
       contentId,
@@ -471,6 +488,7 @@ async function handleEditContentItem(contentId: string, event: AuthenticatedEven
     s3Client,
     { contentItemsTable: CONTENT_ITEMS_TABLE, categoriesTable: CONTENT_CATEGORIES_TABLE, contentTagsTable: CONTENT_TAGS_TABLE },
     IMAGES_BUCKET,
+    notificationCtx,
   );
 
   if (!result.success) {
