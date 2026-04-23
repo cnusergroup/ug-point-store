@@ -184,7 +184,7 @@ export default function AdminUsersPage() {
 
   /** Determine which roles the current admin can assign */
   const isSuperAdmin = adminRoles.includes('SuperAdmin');
-  const assignableRoles = isSuperAdmin ? [...REGULAR_ROLES, 'Admin'] : REGULAR_ROLES;
+  const assignableRoles = isSuperAdmin ? [...REGULAR_ROLES, 'Admin', 'OrderAdmin'] : REGULAR_ROLES;
 
   /** Visible roles in the edit modal — includes locked admin roles the target already has */
   const getVisibleRoles = (): string[] => {
@@ -194,6 +194,7 @@ export default function AdminUsersPage() {
     const lockedRoles = editingUser.roles.filter((r) => {
       if (r === 'SuperAdmin') return true; // Always locked
       if (r === 'Admin' && !isSuperAdmin) return true; // Locked for non-SuperAdmin
+      if (r === 'OrderAdmin' && !isSuperAdmin) return true; // Locked for non-SuperAdmin
       return false;
     });
     return [...new Set([...lockedRoles, ...assignableRoles])];
@@ -449,10 +450,10 @@ export default function AdminUsersPage() {
               <View className='role-edit-list'>
                 <Text className='role-edit-list__label'>{t('admin.users.assignableRolesLabel')}</Text>
                 {/* Admin roles section (locked for non-SuperAdmin) */}
-                {getVisibleRoles().filter((r) => ['Admin', 'SuperAdmin'].includes(r)).length > 0 && (
+                {getVisibleRoles().filter((r) => ['Admin', 'SuperAdmin', 'OrderAdmin'].includes(r)).length > 0 && (
                   <>
                     {getVisibleRoles()
-                      .filter((r) => ['Admin', 'SuperAdmin'].includes(r))
+                      .filter((r) => ['Admin', 'SuperAdmin', 'OrderAdmin'].includes(r))
                       .sort((a, b) => (ROLE_PRIORITY[a] ?? 99) - (ROLE_PRIORITY[b] ?? 99))
                       .map((role) => {
                         const isSelected = selectedRoles.includes(role);
