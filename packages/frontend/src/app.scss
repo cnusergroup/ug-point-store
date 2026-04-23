@@ -222,6 +222,12 @@ page {
     color: var(--accent-primary);
     border: 1px solid rgba(124, 109, 240, 0.3);
   }
+
+  &--brand {
+    background: rgba(124, 109, 240, 0.1);
+    color: var(--accent-primary);
+    border: 1px solid rgba(124, 109, 240, 0.3);
+  }
 }
 
 /* --- 按钮系统 --- */
@@ -376,6 +382,37 @@ page {
 @keyframes tabIndicator {
   from { width: 0; opacity: 0; }
   to { width: 60%; opacity: 1; }
+}
+
+/* --- Password visibility toggle --- */
+.password-field {
+  position: relative;
+  width: 100%;
+
+  &__toggle {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: pointer;
+    user-select: none;
+    opacity: 0.4;
+    transition: opacity var(--transition-fast);
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-1);
+    color: var(--text-secondary);
+
+    &:hover {
+      opacity: 0.8;
+    }
+
+    svg {
+      display: block;
+    }
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

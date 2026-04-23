@@ -37,6 +37,7 @@ export interface PointsDetailRecord {
   activityId: string;
   targetRole: string;
   distributorNickname: string;
+  isEmployee?: boolean;
 }
 
 /** 积分明细查询结果 */
@@ -84,6 +85,7 @@ export interface UserRankingRecord {
   nickname: string;
   totalEarnPoints: number;
   targetRole: string;
+  isEmployee?: boolean;
 }
 
 /** 用户积分排行查询结果 */
@@ -454,8 +456,8 @@ async function batchGetUserDetails(
   dynamoClient: DynamoDBDocumentClient,
   usersTable: string,
   userIds: string[],
-): Promise<Map<string, { nickname: string; roles: string[] }>> {
-  const map = new Map<string, { nickname: string; roles: string[] }>();
+): Promise<Map<string, { nickname: string; roles: string[]; isEmployee?: boolean }>> {
+  const map = new Map<string, { nickname: string; roles: string[]; isEmployee?: boolean }>();
   if (userIds.length === 0) return map;
 
   const chunks = chunkArray(userIds, 100);
@@ -465,7 +467,7 @@ async function batchGetUserDetails(
         RequestItems: {
           [usersTable]: {
             Keys: chunk.map(userId => ({ userId })),
-            ProjectionExpression: 'userId, nickname, #r',
+            ProjectionExpression: 'userId, nickname, #r, isEmployee',
             ExpressionAttributeNames: { '#r': 'roles' },
           },
         },
@@ -476,6 +478,7 @@ async function batchGetUserDetails(
       map.set(item.userId as string, {
         nickname: (item.nickname as string) ?? '',
         roles: (item.roles as string[]) ?? [],
+        isEmployee: item.isEmployee as boolean | undefined,
       });
     }
   }
@@ -584,41 +587,83 @@ export async function queryPointsDetail(
     let nextLastKey: Record<string, unknown> | undefined;
 
     if (type === 'all') {
+      // For type=all, decode separate cursors for earn and spend
+      let earnStartKey: Record<string, unknown> | undefined;
+      let spendStartKey: Record<string, unknown> | undefined;
+      if (exclusiveStartKey) {
+        earnStartKey = (exclusiveStartKey as any).earnKey;
+        spendStartKey = (exclusiveStartKey as any).spendKey;
+      }
+
       // Query earn and spend separately, merge and sort
       const [earnResult, spendResult] = await Promise.all([
-        queryByTypeAndDateRange(
+        earnStartKey !== null ? queryByTypeAndDateRange(
           dynamoClient, tables.pointsRecordsTable, 'earn', startDate, endDate,
           filterExpressions.length > 0 ? filterExpressions : undefined,
           Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
           Object.keys(expressionAttributeNames).length > 0 ? expressionAttributeNames : undefined,
-          { limit: pageSize, exclusiveStartKey },
-        ),
-        queryByTypeAndDateRange(
+          { limit: pageSize, exclusiveStartKey: earnStartKey },
+        ) : Promise.resolve({ items: [] as Record<string, unknown>[], lastEvaluatedKey: undefined }),
+        spendStartKey !== null ? queryByTypeAndDateRange(
           dynamoClient, tables.pointsRecordsTable, 'spend', startDate, endDate,
           filterExpressions.length > 0 ? filterExpressions : undefined,
           Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
           Object.keys(expressionAttributeNames).length > 0 ? expressionAttributeNames : undefined,
-          { limit: pageSize, exclusiveStartKey },
-        ),
+          { limit: pageSize, exclusiveStartKey: spendStartKey },
+        ) : Promise.resolve({ items: [] as Record<string, unknown>[], lastEvaluatedKey: undefined }),
       ]);
 
       // Merge and sort by createdAt desc
-      allRecords = [...earnResult.items, ...spendResult.items]
+      const merged = [...earnResult.items, ...spendResult.items]
         .sort((a, b) => {
           const aDate = a.createdAt as string;
           const bDate = b.createdAt as string;
           return bDate.localeCompare(aDate);
-        })
-        .slice(0, pageSize);
+        });
+      allRecords = merged.slice(0, pageSize);
 
-      // For type=all pagination, we use the createdAt of the last record as cursor
-      if (allRecords.length === pageSize && (earnResult.lastEvaluatedKey || spendResult.lastEvaluatedKey)) {
-        const lastRecord = allRecords[allRecords.length - 1];
-        nextLastKey = {
-          type: lastRecord.type as string,
-          createdAt: lastRecord.createdAt as string,
-          recordId: lastRecord.recordId as string,
-        };
+      // Build separate cursors for earn and spend based on which records were consumed
+      const hasMore = merged.length > pageSize || earnResult.lastEvaluatedKey || spendResult.lastEvaluatedKey;
+      if (allRecords.length === pageSize && hasMore) {
+        // Find the last consumed earn and spend records to build per-type cursors
+        const consumedEarn = allRecords.filter(r => r.type === 'earn');
+        const consumedSpend = allRecords.filter(r => r.type === 'spend');
+
+        // For earn: if we consumed all fetched earn items and there's more, use DynamoDB's key;
+        // otherwise use the last consumed earn record as cursor
+        let nextEarnKey: Record<string, unknown> | null | undefined;
+        if (consumedEarn.length < earnResult.items.length) {
+          // Not all earn items were consumed — use the last consumed earn record as cursor
+          const lastEarn = consumedEarn[consumedEarn.length - 1];
+          if (lastEarn) {
+            nextEarnKey = { type: 'earn', createdAt: lastEarn.createdAt as string, recordId: lastEarn.recordId as string };
+          }
+        } else if (earnResult.lastEvaluatedKey) {
+          nextEarnKey = earnResult.lastEvaluatedKey;
+        } else if (consumedEarn.length > 0) {
+          // All earn items consumed and no more pages — mark earn as exhausted
+          nextEarnKey = null;
+        }
+
+        let nextSpendKey: Record<string, unknown> | null | undefined;
+        if (consumedSpend.length < spendResult.items.length) {
+          const lastSpend = consumedSpend[consumedSpend.length - 1];
+          if (lastSpend) {
+            nextSpendKey = { type: 'spend', createdAt: lastSpend.createdAt as string, recordId: lastSpend.recordId as string };
+          }
+        } else if (spendResult.lastEvaluatedKey) {
+          nextSpendKey = spendResult.lastEvaluatedKey;
+        } else if (consumedSpend.length > 0) {
+          nextSpendKey = null;
+        }
+
+        // Only set nextLastKey if at least one type has more data
+        if (nextEarnKey !== undefined || nextSpendKey !== undefined) {
+          nextLastKey = {
+            earnKey: nextEarnKey ?? null,
+            spendKey: nextSpendKey ?? null,
+          };
+        }
       }
     } else {
       // Query single type
@@ -633,9 +678,9 @@ export async function queryPointsDetail(
       nextLastKey = result.lastEvaluatedKey;
     }
 
-    // BatchGet user nicknames
+    // BatchGet user details (nickname + isEmployee)
     const uniqueUserIds = [...new Set(allRecords.map(r => r.userId as string))];
-    const nicknameMap = await batchGetUserNicknames(dynamoClient, tables.usersTable, uniqueUserIds);
+    const userDetailsMap = await batchGetUserDetails(dynamoClient, tables.usersTable, uniqueUserIds);
 
     // Get distributor nicknames
     const uniqueActivityIds = [...new Set(allRecords.map(r => r.activityId as string).filter(Boolean))];
@@ -647,11 +692,12 @@ export async function queryPointsDetail(
     const records: PointsDetailRecord[] = allRecords.map(r => {
       const activityId = (r.activityId as string) ?? '';
       const targetRole = (r.targetRole as string) ?? '';
+      const userInfo = userDetailsMap.get(r.userId as string);
       return {
         recordId: (r.recordId as string) ?? '',
         createdAt: (r.createdAt as string) ?? '',
         userId: (r.userId as string) ?? '',
-        nickname: nicknameMap.get(r.userId as string) ?? '',
+        nickname: userInfo?.nickname ?? '',
         amount: (r.amount as number) ?? 0,
         type: (r.type as 'earn' | 'spend') ?? 'earn',
         source: (r.source as string) ?? '',
@@ -660,6 +706,7 @@ export async function queryPointsDetail(
         activityId,
         targetRole,
         distributorNickname: distributorMap.get(`${activityId}#${targetRole}`) ?? distributorMap.get(activityId) ?? '',
+        isEmployee: userInfo?.isEmployee ?? false,
       };
     });
 
@@ -772,6 +819,7 @@ export async function queryUserPointsRanking(
       targetRole: isAllRoles
         ? (userDetailsMap.get(r.userId)?.roles?.filter(role => role !== 'Admin' && role !== 'SuperAdmin').join(', ') || r.targetRole)
         : r.targetRole,
+      isEmployee: userDetailsMap.get(r.userId)?.isEmployee ?? false,
     }));
 
     // Encode next offset as lastKey

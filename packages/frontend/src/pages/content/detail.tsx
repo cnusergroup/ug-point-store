@@ -578,14 +578,14 @@ export default function ContentDetailPage() {
           </View>
           <View className='detail-stats__item'>
             <View className='detail-stats__icon'>
-              <CommentIcon size={16} color="currentColor" />
+              <CommentIcon size={16} color="var(--accent-primary)" />
             </View>
             <Text className='detail-stats__value'>{item.commentCount}</Text>
             <Text className='detail-stats__label'>{t('contentHub.detail.statComments')}</Text>
           </View>
           <View className='detail-stats__item'>
             <View className='detail-stats__icon'>
-              <ClipboardIcon size={16} color="currentColor" />
+              <ClipboardIcon size={16} color="var(--accent-primary)" />
             </View>
             <Text className='detail-stats__value'>{item.reservationCount}</Text>
             <Text className='detail-stats__label'>{t('contentHub.detail.statReservations')}</Text>

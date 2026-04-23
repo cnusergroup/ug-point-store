@@ -197,6 +197,8 @@ export const ErrorCodes = {
   RESERVATION_ALREADY_REVIEWED: 'RESERVATION_ALREADY_REVIEWED',
   /** 关联活动不存在 (404) - 需求 12.5 */
   ACTIVITY_NOT_FOUND: 'ACTIVITY_NOT_FOUND',
+  /** brand 值无效 (400) */
+  INVALID_BRAND: 'INVALID_BRAND',
 } as const;
 
 /** 错误码类型 */
@@ -301,6 +303,7 @@ export const ErrorHttpStatus: Record<ErrorCode, number> = {
   [ErrorCodes.DUPLICATE_ACTIVITY_RESERVATION]: 409,
   [ErrorCodes.RESERVATION_ALREADY_REVIEWED]: 409,
   [ErrorCodes.ACTIVITY_NOT_FOUND]: 404,
+  [ErrorCodes.INVALID_BRAND]: 400,
 };
 
 /** 错误码对应的默认错误消息 */
@@ -402,4 +405,5 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.DUPLICATE_ACTIVITY_RESERVATION]: '您已预约过该活动',
   [ErrorCodes.RESERVATION_ALREADY_REVIEWED]: '该预约已被审批',
   [ErrorCodes.ACTIVITY_NOT_FOUND]: '关联活动不存在',
+  [ErrorCodes.INVALID_BRAND]: 'brand 值无效，仅允许 aws、ug、awscloud',
 };

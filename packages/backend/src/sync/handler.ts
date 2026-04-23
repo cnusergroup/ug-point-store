@@ -15,6 +15,7 @@ import {
   GetCommand,
   PutCommand,
   QueryCommand,
+  UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { ulid } from 'ulid';
 import { scrapeFeishuBitable } from './feishu-scraper';
@@ -73,6 +74,7 @@ interface RawActivity {
   ugName: string;
   topic: string;
   activityDate: string;
+  feishuRecordId?: string;  // feishu bitable record_id, used for deduplication
 }
 
 // ============================================================
@@ -331,11 +333,62 @@ export async function syncActivities(
   const now = new Date().toISOString();
 
   for (const activity of activities) {
-    const dedupeKey = `${activity.topic}#${activity.activityDate}#${activity.ugName}`;
+    // Use feishu record_id when available for stable deduplication;
+    // fall back to old format for scraper-sourced activities.
+    const dedupeKey = activity.feishuRecordId
+      ? `feishu#${activity.feishuRecordId}`
+      : `${activity.topic}#${activity.activityDate}#${activity.ugName}`;
 
     try {
       // Check if already exists via dedupeKey-index GSI
       const exists = await checkDedupeKeyExists(dedupeKey, dynamo, activitiesTable);
+
+      // For feishu record_id based keys, update existing record if fields changed
+      if (exists && activity.feishuRecordId) {
+        const existingResult = await dynamo.send(
+          new QueryCommand({
+            TableName: activitiesTable,
+            IndexName: 'dedupeKey-index',
+            KeyConditionExpression: '#dk = :dk',
+            ExpressionAttributeNames: { '#dk': 'dedupeKey' },
+            ExpressionAttributeValues: { ':dk': dedupeKey },
+            Limit: 1,
+          }),
+        );
+
+        if (existingResult.Items && existingResult.Items.length > 0) {
+          const existingItem = existingResult.Items[0];
+          // Update if topic, date, ugName, or activityType changed
+          if (
+            existingItem.topic !== activity.topic ||
+            existingItem.activityDate !== activity.activityDate ||
+            existingItem.ugName !== activity.ugName ||
+            existingItem.activityType !== activity.activityType
+          ) {
+            await dynamo.send(
+              new UpdateCommand({
+                TableName: activitiesTable,
+                Key: { activityId: existingItem.activityId },
+                UpdateExpression:
+                  'SET topic = :topic, activityDate = :date, ugName = :ug, activityType = :type, syncedAt = :syncedAt',
+                ExpressionAttributeValues: {
+                  ':topic': activity.topic,
+                  ':date': activity.activityDate,
+                  ':ug': activity.ugName,
+                  ':type': activity.activityType,
+                  ':syncedAt': now,
+                },
+              }),
+            );
+            syncedCount++; // Count as synced (updated)
+          } else {
+            skippedCount++; // No changes, skip
+          }
+        } else {
+          skippedCount++;
+        }
+        continue;
+      }
 
       if (exists) {
         skippedCount++;
@@ -441,8 +494,46 @@ export async function syncMeetupActivities(
         try {
           const exists = await checkDedupeKeyExists(event.dedupeKey, dynamo, activitiesTable);
 
+          // Update existing record if fields changed (date may have been adjusted)
           if (exists) {
-            totalSkipped++;
+            const existingResult = await dynamo.send(
+              new QueryCommand({
+                TableName: activitiesTable,
+                IndexName: 'dedupeKey-index',
+                KeyConditionExpression: '#dk = :dk',
+                ExpressionAttributeNames: { '#dk': 'dedupeKey' },
+                ExpressionAttributeValues: { ':dk': event.dedupeKey },
+                Limit: 1,
+              }),
+            );
+
+            if (existingResult.Items && existingResult.Items.length > 0) {
+              const existing = existingResult.Items[0];
+              if (
+                existing.topic !== event.topic ||
+                existing.activityDate !== event.activityDate ||
+                existing.ugName !== event.ugName
+              ) {
+                await dynamo.send(
+                  new UpdateCommand({
+                    TableName: activitiesTable,
+                    Key: { activityId: existing.activityId },
+                    UpdateExpression: 'SET topic = :topic, activityDate = :date, ugName = :ug, syncedAt = :syncedAt',
+                    ExpressionAttributeValues: {
+                      ':topic': event.topic,
+                      ':date': event.activityDate,
+                      ':ug': event.ugName,
+                      ':syncedAt': now,
+                    },
+                  }),
+                );
+                totalSynced++;
+              } else {
+                totalSkipped++;
+              }
+            } else {
+              totalSkipped++;
+            }
             continue;
           }
 

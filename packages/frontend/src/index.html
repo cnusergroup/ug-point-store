@@ -4,7 +4,36 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#0a0b0f">
-  <title>福利广场 - Benefits Plaza</title>
+  <title>积分兑换广场 - Builder Store</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <script src="https://unpkg.com/twemoji@14.0.2/dist/twemoji.min.js" crossorigin="anonymous"></script>
+  <script>
+    // Render emoji flags as Twemoji SVGs for Windows compatibility
+    window.addEventListener('load', function() {
+      if (window.twemoji) {
+        twemoji.parse(document.body, { folder: 'svg', ext: '.svg' });
+        // Re-parse on DOM changes (SPA navigation)
+        var observer = new MutationObserver(function() {
+          twemoji.parse(document.body, { folder: 'svg', ext: '.svg' });
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+      }
+    });
+  </script>
+  <style>
+    /* Twemoji: make emoji flags render as inline images at correct size */
+    img.emoji {
+      height: 1.2em;
+      width: 1.2em;
+      margin: 0 0.05em;
+      vertical-align: -0.15em;
+      display: inline-block;
+    }
+  </style>
 </head>
 <body>
   <div id="app"></div>

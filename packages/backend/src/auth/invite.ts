@@ -29,11 +29,11 @@ export type CreateInviteResult =
   | { success: false; error: { code: string; message: string } };
 
 export type BatchCreateInvitesResult =
-  | { success: true; invites: Array<{ token: string; link: string; roles: UserRole[]; expiresAt: string }> }
+  | { success: true; invites: Array<{ token: string; link: string; roles: UserRole[]; expiresAt: string; isEmployee: boolean }> }
   | { success: false; error: { code: string; message: string } };
 
 export type ValidateInviteResult =
-  | { success: true; roles: UserRole[] }
+  | { success: true; roles: UserRole[]; isEmployee: boolean }
   | { success: false; error: { code: string; message: string } };
 
 export type ConsumeInviteResult =
@@ -54,6 +54,7 @@ export async function createInviteRecord(
   invitesTable: string,
   registerBaseUrl: string,
   expiryMs?: number,
+  isEmployee?: boolean,
 ): Promise<CreateInviteResult> {
   const token = generateInviteToken();
   const now = new Date();
@@ -67,6 +68,7 @@ export async function createInviteRecord(
     status: 'pending',
     createdAt,
     expiresAt,
+    isEmployee: isEmployee ?? false,
   };
 
   await dynamoClient.send(
@@ -91,6 +93,7 @@ export async function batchCreateInvites(
   invitesTable: string,
   registerBaseUrl: string,
   expiryMs?: number,
+  isEmployee?: boolean,
 ): Promise<BatchCreateInvitesResult> {
   if (count < 1 || count > 100) {
     return {
@@ -141,10 +144,18 @@ export async function batchCreateInvites(
     }
   }
 
-  const results: Array<{ token: string; link: string; roles: UserRole[]; expiresAt: string }> = [];
+  // 员工邀请仅限 Speaker 身份
+  if (isEmployee && !(uniqueRoles.length === 1 && uniqueRoles[0] === 'Speaker')) {
+    return {
+      success: false,
+      error: { code: 'EMPLOYEE_SPEAKER_ONLY', message: '员工邀请仅限 Speaker 身份' },
+    };
+  }
+
+  const results: Array<{ token: string; link: string; roles: UserRole[]; expiresAt: string; isEmployee: boolean }> = [];
 
   for (let i = 0; i < count; i++) {
-    const result = await createInviteRecord(uniqueRoles, dynamoClient, invitesTable, registerBaseUrl, expiryMs);
+    const result = await createInviteRecord(uniqueRoles, dynamoClient, invitesTable, registerBaseUrl, expiryMs, isEmployee);
     if (!result.success) {
       return result;
     }
@@ -153,6 +164,7 @@ export async function batchCreateInvites(
       link: result.link,
       roles: result.record.roles ?? [result.record.role],
       expiresAt: result.record.expiresAt,
+      isEmployee: result.record.isEmployee ?? false,
     });
   }
 
@@ -223,7 +235,7 @@ export async function validateInviteToken(
     };
   }
 
-  return { success: true, roles: getInviteRoles(record) };
+  return { success: true, roles: getInviteRoles(record), isEmployee: record.isEmployee ?? false };
 }
 
 /**

@@ -36,7 +36,7 @@ describe('batchGenerateInvites', () => {
     if (!result.success) {
       expect(result.error.code).toBe(ErrorCodes.INVALID_ROLES);
     }
-    expect(mockBatchCreateInvites).toHaveBeenCalledWith(5, [], mockDynamoClient, INVITES_TABLE, REGISTER_BASE_URL, undefined);
+    expect(mockBatchCreateInvites).toHaveBeenCalledWith(5, [], mockDynamoClient, INVITES_TABLE, REGISTER_BASE_URL, undefined, undefined);
   });
 
   /**
@@ -74,6 +74,7 @@ describe('batchGenerateInvites', () => {
       INVITES_TABLE,
       REGISTER_BASE_URL,
       undefined,
+      undefined,
     );
   });
 
@@ -107,6 +108,7 @@ describe('batchGenerateInvites', () => {
       INVITES_TABLE,
       REGISTER_BASE_URL,
       undefined,
+      undefined,
     );
   });
 
@@ -126,6 +128,7 @@ describe('batchGenerateInvites', () => {
       mockDynamoClient,
       INVITES_TABLE,
       REGISTER_BASE_URL,
+      undefined,
       undefined,
     );
   });
@@ -165,6 +168,7 @@ describe('batchGenerateInvites', () => {
       INVITES_TABLE,
       REGISTER_BASE_URL,
       undefined,
+      undefined,
     );
   });
 
@@ -190,5 +194,88 @@ describe('batchGenerateInvites', () => {
     if (!result.success) {
       expect(result.error.code).toBe('EXCLUSIVE_ROLE_CONFLICT');
     }
+  });
+
+  /**
+   * Validates: Requirements 4.1, 4.2, 4.3, 4.4
+   * isEmployee parameter is passed through to batchCreateInvites and included in results
+   */
+  it('passes isEmployee=true through to batchCreateInvites', async () => {
+    const mockInvites = [
+      {
+        token: 'token-emp1',
+        link: 'https://example.com/register?token=token-emp1',
+        roles: ['Speaker'] as UserRole[],
+        expiresAt: '2025-01-02T00:00:00.000Z',
+        isEmployee: true,
+      },
+    ];
+    mockBatchCreateInvites.mockResolvedValue({ success: true, invites: mockInvites });
+
+    const result = await batchGenerateInvites(
+      1,
+      ['Speaker'] as UserRole[],
+      mockDynamoClient,
+      INVITES_TABLE,
+      REGISTER_BASE_URL,
+      undefined,
+      true,
+    );
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.invites).toHaveLength(1);
+      expect(result.invites[0].isEmployee).toBe(true);
+    }
+    expect(mockBatchCreateInvites).toHaveBeenCalledWith(
+      1,
+      ['Speaker'],
+      mockDynamoClient,
+      INVITES_TABLE,
+      REGISTER_BASE_URL,
+      undefined,
+      true,
+    );
+  });
+
+  /**
+   * Validates: Requirements 4.3
+   * isEmployee defaults to undefined when not provided, passed through as-is
+   */
+  it('passes isEmployee=false through to batchCreateInvites', async () => {
+    const mockInvites = [
+      {
+        token: 'token-nonemp',
+        link: 'https://example.com/register?token=token-nonemp',
+        roles: ['Volunteer'] as UserRole[],
+        expiresAt: '2025-01-02T00:00:00.000Z',
+        isEmployee: false,
+      },
+    ];
+    mockBatchCreateInvites.mockResolvedValue({ success: true, invites: mockInvites });
+
+    const result = await batchGenerateInvites(
+      1,
+      ['Volunteer'] as UserRole[],
+      mockDynamoClient,
+      INVITES_TABLE,
+      REGISTER_BASE_URL,
+      undefined,
+      false,
+    );
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.invites[0].isEmployee).toBe(false);
+    }
+    expect(mockBatchCreateInvites).toHaveBeenCalledWith(
+      1,
+      ['Volunteer'],
+      mockDynamoClient,
+      INVITES_TABLE,
+      REGISTER_BASE_URL,
+      undefined,
+      false,
+    );
   });
 });

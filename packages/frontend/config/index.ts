@@ -17,7 +17,18 @@ export default defineConfig({
   defineConstants: {
     'process.env.TARO_APP_API_BASE_URL': JSON.stringify(''),
   },
-  copy: { patterns: [], options: {} },
+  copy: {
+    patterns: [
+      { from: 'src/assets/favicon.ico', to: 'dist/h5/favicon.ico' },
+      { from: 'src/assets/favicon.svg', to: 'dist/h5/favicon.svg' },
+      { from: 'src/assets/favicon-96x96.png', to: 'dist/h5/favicon-96x96.png' },
+      { from: 'src/assets/apple-touch-icon.png', to: 'dist/h5/apple-touch-icon.png' },
+      { from: 'src/assets/site.webmanifest', to: 'dist/h5/site.webmanifest' },
+      { from: 'src/assets/web-app-manifest-192x192.png', to: 'dist/h5/web-app-manifest-192x192.png' },
+      { from: 'src/assets/web-app-manifest-512x512.png', to: 'dist/h5/web-app-manifest-512x512.png' },
+    ],
+    options: {},
+  },
   framework: 'react',
   compiler: {
     type: 'webpack5',

@@ -4,6 +4,7 @@ import { compare } from 'bcryptjs';
 
 const MAX_LOGIN_FAILURES = 5;
 const LOCK_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+export const SLIDING_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
 export interface LoginRequest {
   email: string;
@@ -50,9 +51,9 @@ export async function loginUser(
   }
 
   const user = queryResult.Items[0];
-
-  // 2. Check if account is locked
   const now = Date.now();
+
+  // 2. Check if account is actively locked (lockUntil in the future)
   if (user.lockUntil && user.lockUntil > now) {
     const lockRemainingMs = user.lockUntil - now;
     return {
@@ -65,9 +66,29 @@ export async function loginUser(
     };
   }
 
-  // If lock has expired, we'll proceed with login (lock will be cleared on success)
+  // 3. If lock has expired (lockUntil in the past), reset state before credential validation
+  if (user.lockUntil && user.lockUntil <= now) {
+    await dynamoClient.send(
+      new UpdateCommand({
+        TableName: tableName,
+        Key: { userId: user.userId },
+        UpdateExpression: 'SET loginFailCount = :zero, #s = :active, updatedAt = :now REMOVE lockUntil, firstFailAt',
+        ExpressionAttributeNames: { '#s': 'status' },
+        ExpressionAttributeValues: {
+          ':zero': 0,
+          ':active': 'active',
+          ':now': new Date().toISOString(),
+        },
+      }),
+    );
+    // Update local user object to reflect reset state
+    user.loginFailCount = 0;
+    user.status = 'active';
+    delete user.lockUntil;
+    delete user.firstFailAt;
+  }
 
-  // 3. Check if account is disabled
+  // 4. Check if account is disabled
   if (user.status === 'disabled') {
     return {
       success: false,
@@ -78,39 +99,62 @@ export async function loginUser(
     };
   }
 
-  // 4. Compare password with bcryptjs
+  // 5. Compare password with bcryptjs
   const passwordMatch = await compare(request.password, user.passwordHash);
 
   if (!passwordMatch) {
-    // Increment loginFailCount
-    // Increment loginFailCount
-    const newFailCount = (user.loginFailCount || 0) + 1;
+    // Sliding window check for failure counting
+    let newFailCount: number;
+    let newFirstFailAt: number;
+
+    if (!user.firstFailAt || (now - user.firstFailAt) > SLIDING_WINDOW_MS) {
+      // No prior failure or window has expired — start a new window
+      newFirstFailAt = now;
+      newFailCount = 1;
+    } else {
+      // Within the sliding window — increment
+      newFirstFailAt = user.firstFailAt;
+      newFailCount = (user.loginFailCount || 0) + 1;
+    }
 
     if (newFailCount >= MAX_LOGIN_FAILURES) {
-      // Lock the account for 15 minutes
+      // Lock the account
       const lockUntil = now + LOCK_DURATION_MS;
+      const lockRemainingMs = LOCK_DURATION_MS;
       await dynamoClient.send(
         new UpdateCommand({
           TableName: tableName,
           Key: { userId: user.userId },
-          UpdateExpression: 'SET loginFailCount = :count, lockUntil = :lockUntil, #s = :locked, updatedAt = :now',
+          UpdateExpression: 'SET loginFailCount = :count, lockUntil = :lockUntil, #s = :locked, firstFailAt = :firstFailAt, updatedAt = :now',
           ExpressionAttributeNames: { '#s': 'status' },
           ExpressionAttributeValues: {
             ':count': newFailCount,
             ':lockUntil': lockUntil,
             ':locked': 'locked',
+            ':firstFailAt': newFirstFailAt,
             ':now': new Date().toISOString(),
           },
         }),
       );
+
+      return {
+        success: false,
+        error: {
+          code: ErrorCodes.ACCOUNT_LOCKED,
+          message: ErrorMessages.ACCOUNT_LOCKED,
+          lockRemainingMs,
+        },
+      };
     } else {
+      // Not yet at threshold — record failure with sliding window
       await dynamoClient.send(
         new UpdateCommand({
           TableName: tableName,
           Key: { userId: user.userId },
-          UpdateExpression: 'SET loginFailCount = :count, updatedAt = :now',
+          UpdateExpression: 'SET loginFailCount = :count, firstFailAt = :firstFailAt, updatedAt = :now',
           ExpressionAttributeValues: {
             ':count': newFailCount,
+            ':firstFailAt': newFirstFailAt,
             ':now': new Date().toISOString(),
           },
         }),
@@ -126,12 +170,12 @@ export async function loginUser(
     };
   }
 
-  // 5. Password correct — reset loginFailCount and clear lockUntil
+  // 6. Password correct — full reset of lock state
   await dynamoClient.send(
     new UpdateCommand({
       TableName: tableName,
       Key: { userId: user.userId },
-      UpdateExpression: 'SET loginFailCount = :zero, #s = :active, updatedAt = :now REMOVE lockUntil',
+      UpdateExpression: 'SET loginFailCount = :zero, #s = :active, updatedAt = :now REMOVE lockUntil, firstFailAt',
       ExpressionAttributeNames: { '#s': 'status' },
       ExpressionAttributeValues: {
         ':zero': 0,

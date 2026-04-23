@@ -15,6 +15,7 @@ export interface FeishuApiActivity {
   ugName: string;
   topic: string;
   activityDate: string;
+  feishuRecordId?: string;  // feishu bitable record_id, used for deduplication
 }
 
 /** API 获取结果 */
@@ -106,9 +107,15 @@ export async function fetchFeishuBitableApi(
     console.log(`[feishu-api] Fetching records from app=${appToken}, table=${tableId || 'auto'}...`);
     const records = await fetchAllRecords(token, appToken, tableId);
 
-    // 4. Extract activities from records
+    // 4. Extract activities from records, preserving feishu record_id
     const activities = records
-      .map(extractActivityFromRecord)
+      .map((record) => {
+        const activity = extractActivityFromRecord(record);
+        if (activity) {
+          activity.feishuRecordId = record.record_id;
+        }
+        return activity;
+      })
       .filter((a): a is FeishuApiActivity => a !== null);
 
     console.log(`[feishu-api] Extracted ${activities.length} activities from ${records.length} records`);

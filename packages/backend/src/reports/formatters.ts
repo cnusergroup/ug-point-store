@@ -15,6 +15,7 @@ import type {
   InventoryAlertRecord,
   TravelStatisticsRecord,
   InviteConversionRecord,
+  EmployeeEngagementRecord,
 } from './insight-query';
 
 // ============================================================
@@ -35,7 +36,8 @@ export type ReportType =
   | 'content-contributors'
   | 'inventory-alert'
   | 'travel-statistics'
-  | 'invite-conversion';
+  | 'invite-conversion'
+  | 'employee-engagement';
 
 /** 列定义 */
 export interface ColumnDef {
@@ -57,6 +59,7 @@ const POINTS_DETAIL_COLUMNS: ColumnDef[] = [
   { key: 'activityTopic', label: '活动主题' },
   { key: 'targetRole', label: '目标身份' },
   { key: 'distributorNickname', label: '发放者昵称' },
+  { key: 'isEmployee', label: '是否AWS员工' },
 ];
 
 const UG_SUMMARY_COLUMNS: ColumnDef[] = [
@@ -72,6 +75,7 @@ const USER_RANKING_COLUMNS: ColumnDef[] = [
   { key: 'userId', label: '用户ID' },
   { key: 'totalEarnPoints', label: '获取积分总额' },
   { key: 'targetRole', label: '身份' },
+  { key: 'isEmployee', label: '是否AWS员工' },
 ];
 
 const ACTIVITY_SUMMARY_COLUMNS: ColumnDef[] = [
@@ -138,6 +142,16 @@ const INVITE_CONVERSION_COLUMNS: ColumnDef[] = [
   { key: 'conversionRate', label: '转化率' },
 ];
 
+const EMPLOYEE_ENGAGEMENT_COLUMNS: ColumnDef[] = [
+  { key: 'rank', label: '排名' },
+  { key: 'nickname', label: '用户昵称' },
+  { key: 'totalPoints', label: '积分总额' },
+  { key: 'activityCount', label: '参与活动数' },
+  { key: 'lastActiveTime', label: '最后活跃时间' },
+  { key: 'primaryRoles', label: '主要角色' },
+  { key: 'ugList', label: '参与UG列表' },
+];
+
 /** 获取报表列定义 */
 export function getColumnDefs(reportType: ReportType): ColumnDef[] {
   switch (reportType) {
@@ -161,6 +175,8 @@ export function getColumnDefs(reportType: ReportType): ColumnDef[] {
       return TRAVEL_STATISTICS_COLUMNS;
     case 'invite-conversion':
       return INVITE_CONVERSION_COLUMNS;
+    case 'employee-engagement':
+      return EMPLOYEE_ENGAGEMENT_COLUMNS;
   }
 }
 
@@ -175,8 +191,10 @@ export function getColumnDefs(reportType: ReportType): ColumnDef[] {
 function formatDateTime(isoString: string): string {
   const d = new Date(isoString);
   if (isNaN(d.getTime())) return isoString;
+  // Convert to China time (UTC+8) for export
+  const chinaTime = new Date(d.getTime() + 8 * 60 * 60 * 1000);
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  return `${chinaTime.getUTCFullYear()}-${pad(chinaTime.getUTCMonth() + 1)}-${pad(chinaTime.getUTCDate())} ${pad(chinaTime.getUTCHours())}:${pad(chinaTime.getUTCMinutes())}:${pad(chinaTime.getUTCSeconds())}`;
 }
 
 /**
@@ -191,7 +209,7 @@ function formatType(type: 'earn' | 'spend'): string {
 // ============================================================
 
 /** 将积分明细记录格式化为导出行 */
-export function formatPointsDetailForExport(records: PointsDetailRecord[]): Record<string, unknown>[] {
+export function formatPointsDetailForExport(records: (PointsDetailRecord & { isEmployee?: boolean })[]): Record<string, unknown>[] {
   return records.map(r => ({
     createdAt: formatDateTime(r.createdAt),
     nickname: r.nickname,
@@ -202,6 +220,7 @@ export function formatPointsDetailForExport(records: PointsDetailRecord[]): Reco
     activityTopic: r.activityTopic,
     targetRole: r.targetRole,
     distributorNickname: r.distributorNickname,
+    isEmployee: r.isEmployee === true ? '是' : '否',
   }));
 }
 
@@ -216,13 +235,14 @@ export function formatUGSummaryForExport(records: UGActivitySummaryRecord[]): Re
 }
 
 /** 将用户排行记录格式化为导出行 */
-export function formatUserRankingForExport(records: UserRankingRecord[]): Record<string, unknown>[] {
+export function formatUserRankingForExport(records: (UserRankingRecord & { isEmployee?: boolean })[]): Record<string, unknown>[] {
   return records.map(r => ({
     rank: r.rank,
     nickname: r.nickname,
     userId: r.userId,
     totalEarnPoints: r.totalEarnPoints,
     targetRole: r.targetRole,
+    isEmployee: r.isEmployee === true ? '是' : '否',
   }));
 }
 
@@ -328,6 +348,19 @@ export function formatInviteConversionForExport(records: InviteConversionRecord[
     expiredCount: r.expiredCount,
     pendingCount: r.pendingCount,
     conversionRate: formatPercentage(r.conversionRate),
+  }));
+}
+
+/** 将活跃员工记录格式化为导出行 */
+export function formatEmployeeEngagementForExport(records: EmployeeEngagementRecord[]): Record<string, unknown>[] {
+  return records.map(r => ({
+    rank: r.rank,
+    nickname: r.nickname,
+    totalPoints: r.totalPoints,
+    activityCount: r.activityCount,
+    lastActiveTime: formatDateTime(r.lastActiveTime),
+    primaryRoles: r.primaryRoles,
+    ugList: r.ugList,
   }));
 }
 

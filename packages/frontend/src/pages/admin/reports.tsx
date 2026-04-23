@@ -11,7 +11,7 @@ import './reports.scss';
 /* ─── Types ─────────────────────────────────────────────── */
 
 type ReportTab = 'points-detail' | 'ug-activity' | 'user-ranking' | 'activity-summary'
-  | 'popular-products' | 'hot-content' | 'content-contributors' | 'inventory-alert' | 'travel-statistics' | 'invite-conversion';
+  | 'popular-products' | 'hot-content' | 'content-contributors' | 'inventory-alert' | 'travel-statistics' | 'invite-conversion' | 'employee-engagement';
 
 interface TabFilterState {
   'points-detail': {
@@ -65,6 +65,10 @@ interface TabFilterState {
     startDate: string;
     endDate: string;
   };
+  'employee-engagement': {
+    startDate: string;
+    endDate: string;
+  };
 }
 
 interface PointsDetailRecord {
@@ -80,6 +84,7 @@ interface PointsDetailRecord {
   activityId: string;
   targetRole: string;
   distributorNickname: string;
+  isEmployee?: boolean;
 }
 
 interface UGActivitySummaryRecord {
@@ -95,6 +100,7 @@ interface UserRankingRecord {
   nickname: string;
   totalEarnPoints: number;
   targetRole: string;
+  isEmployee?: boolean;
 }
 
 interface ActivitySummaryRecord {
@@ -167,6 +173,25 @@ interface InviteConversionRecord {
   conversionRate: number;
 }
 
+interface EmployeeEngagementSummary {
+  totalEmployees: number;
+  activeEmployees: number;
+  engagementRate: number;
+  totalPoints: number;
+  totalActivities: number;
+}
+
+interface EmployeeEngagementRecord {
+  rank: number;
+  userId: string;
+  nickname: string;
+  totalPoints: number;
+  activityCount: number;
+  lastActiveTime: string;
+  primaryRoles: string;
+  ugList: string;
+}
+
 interface UGOption {
   ugId: string;
   ugName: string;
@@ -195,6 +220,7 @@ const REPORT_TABS: { key: ReportTab; labelKey: string }[] = [
   { key: 'inventory-alert', labelKey: 'admin.reports.tabInventoryAlert' },
   { key: 'travel-statistics', labelKey: 'admin.reports.tabTravelStatistics' },
   { key: 'invite-conversion', labelKey: 'admin.reports.tabInviteConversion' },
+  { key: 'employee-engagement', labelKey: 'admin.reports.tabEmployeeEngagement' },
 ];
 
 const ROLE_OPTIONS = ['UserGroupLeader', 'Speaker', 'Volunteer'];
@@ -239,6 +265,7 @@ function getDefaultFilters(): TabFilterState {
     'inventory-alert': { stockThreshold: '5', productType: 'all', productStatus: 'all' },
     'travel-statistics': { startDate: '', endDate: '', periodType: 'month', category: 'all' },
     'invite-conversion': { startDate: '', endDate: '' },
+    'employee-engagement': { startDate: '', endDate: '' },
   };
 }
 
@@ -255,6 +282,7 @@ function tabToReportType(tab: ReportTab): string {
     'inventory-alert': 'inventory-alert',
     'travel-statistics': 'travel-statistics',
     'invite-conversion': 'invite-conversion',
+    'employee-engagement': 'employee-engagement',
   };
   return map[tab];
 }
@@ -272,6 +300,7 @@ function tabToEndpoint(tab: ReportTab): string {
     'inventory-alert': '/api/admin/reports/inventory-alert',
     'travel-statistics': '/api/admin/reports/travel-statistics',
     'invite-conversion': '/api/admin/reports/invite-conversion',
+    'employee-engagement': '/api/admin/reports/employee-engagement',
   };
   return map[tab];
 }
@@ -668,6 +697,7 @@ function getColumns(tab: ReportTab, t: (key: string) => string): ColumnDef[] {
         { key: 'activityTopic', labelKey: 'admin.reports.colTopic', width: '140px' },
         { key: 'targetRole', labelKey: 'admin.reports.colTargetRole', width: '100px' },
         { key: 'distributorNickname', labelKey: 'admin.reports.colDistributor', width: '100px' },
+        { key: 'isEmployee', labelKey: 'admin.reports.colIsEmployee', width: '80px', render: (r: PointsDetailRecord) => <Text className={r.isEmployee ? 'employee-badge' : ''}>{r.isEmployee ? '是' : '否'}</Text> },
       ];
     case 'ug-activity':
       return [
@@ -682,6 +712,7 @@ function getColumns(tab: ReportTab, t: (key: string) => string): ColumnDef[] {
         { key: 'nickname', labelKey: 'admin.reports.colNickname', width: '160px' },
         { key: 'totalEarnPoints', labelKey: 'admin.reports.colTotalEarnPoints', width: '140px', render: (r: UserRankingRecord) => <Text style={{ fontFamily: 'var(--font-display)', fontWeight: '600' }}>{r.totalEarnPoints}</Text> },
         { key: 'targetRole', labelKey: 'admin.reports.colRole', width: '140px' },
+        { key: 'isEmployee', labelKey: 'admin.reports.colIsEmployee', width: '80px', render: (r: UserRankingRecord) => <Text className={r.isEmployee ? 'employee-badge' : ''}>{r.isEmployee ? '是' : '否'}</Text> },
       ];
     case 'activity-summary':
       return [
@@ -751,6 +782,16 @@ function getColumns(tab: ReportTab, t: (key: string) => string): ColumnDef[] {
         { key: 'pendingCount', labelKey: 'admin.reports.colPendingCount', width: '100px' },
         { key: 'approvalRate', labelKey: 'admin.reports.colApprovalRate', width: '110px', render: (r: TravelStatisticsRecord) => <Text style={{ fontFamily: 'var(--font-display)', fontWeight: '600' }}>{(r.approvalRate ?? 0).toFixed(1)}%</Text> },
         { key: 'totalSponsoredAmount', labelKey: 'admin.reports.colTotalSponsoredAmount', width: '120px', render: (r: TravelStatisticsRecord) => <Text style={{ fontFamily: 'var(--font-display)', fontWeight: '600' }}>{r.totalSponsoredAmount}</Text> },
+      ];
+    case 'employee-engagement':
+      return [
+        { key: 'rank', labelKey: 'admin.reports.colRank', width: '60px', render: (r: EmployeeEngagementRecord) => <Text style={{ fontFamily: 'var(--font-display)', fontWeight: '700', color: 'var(--accent-primary)' }}>{r.rank}</Text> },
+        { key: 'nickname', labelKey: 'admin.reports.colNickname', width: '120px' },
+        { key: 'totalPoints', labelKey: 'admin.reports.colTotalPoints', width: '120px', render: (r: EmployeeEngagementRecord) => <Text style={{ fontFamily: 'var(--font-display)', fontWeight: '600' }}>{r.totalPoints}</Text> },
+        { key: 'activityCount', labelKey: 'admin.reports.colActivityCount', width: '100px' },
+        { key: 'lastActiveTime', labelKey: 'admin.reports.colLastActiveTime', width: '140px', render: (r: EmployeeEngagementRecord) => <Text>{formatTime(r.lastActiveTime)}</Text> },
+        { key: 'primaryRoles', labelKey: 'admin.reports.colPrimaryRoles', width: '120px' },
+        { key: 'ugList', labelKey: 'admin.reports.colUGList', width: '160px' },
       ];
     default:
       return [];
@@ -868,6 +909,41 @@ function MetricCards({ record }: { record: InviteConversionRecord | null }) {
 }
 
 
+/* ─── EmployeeMetricCards Component ──────────────────────── */
+
+function EmployeeMetricCards({ summary }: { summary: EmployeeEngagementSummary | null }) {
+  const { t } = useTranslation();
+
+  if (!summary) {
+    return (
+      <View className='admin-empty'>
+        <Text className='admin-empty__icon'><ClockIcon size={48} color='var(--text-tertiary)' /></Text>
+        <Text className='admin-empty__text'>{t('admin.reports.noData')}</Text>
+      </View>
+    );
+  }
+
+  const metrics = [
+    { labelKey: 'admin.reports.metricTotalEmployees', value: summary.totalEmployees, highlight: false },
+    { labelKey: 'admin.reports.metricActiveEmployees', value: summary.activeEmployees, highlight: false },
+    { labelKey: 'admin.reports.metricEngagementRate', value: `${(summary.engagementRate ?? 0).toFixed(1)}%`, highlight: true },
+    { labelKey: 'admin.reports.metricEmployeeTotalPoints', value: summary.totalPoints, highlight: false },
+    { labelKey: 'admin.reports.metricTotalActivities', value: summary.totalActivities, highlight: false },
+  ];
+
+  return (
+    <View className='metric-cards'>
+      {metrics.map((m) => (
+        <View key={m.labelKey} className={`metric-card ${m.highlight ? 'metric-card--highlight' : ''}`}>
+          <Text className='metric-card__label'>{t(m.labelKey)}</Text>
+          <Text className='metric-card__value'>{m.value}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+
 /* ─── Main Page Component ───────────────────────────────── */
 
 export default function AdminReportsPage() {
@@ -890,6 +966,9 @@ export default function AdminReportsPage() {
   const [ugOptions, setUGOptions] = useState<UGOption[]>([]);
   const [activityOptions, setActivityOptions] = useState<ActivityOption[]>([]);
   const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>([]);
+
+  // Employee engagement summary state
+  const [employeeEngagementSummary, setEmployeeEngagementSummary] = useState<EmployeeEngagementSummary | null>(null);
 
   // Export state
   const [exporting, setExporting] = useState(false);
@@ -932,7 +1011,7 @@ export default function AdminReportsPage() {
     try {
       const endpoint = tabToEndpoint(tab);
       const qs = buildQueryString(tab, currentFilters, append ? cursor : null);
-      const res = await request<{ success: boolean; records?: any[]; record?: any; lastKey?: string }>({
+      const res = await request<{ success: boolean; records?: any[]; record?: any; summary?: any; lastKey?: string }>({
         url: `${endpoint}${qs}`,
       });
 
@@ -942,6 +1021,11 @@ export default function AdminReportsPage() {
       if (tab === 'invite-conversion') {
         // invite-conversion returns a single record, not an array
         setRecords(res.record ? [res.record] : []);
+        setLastKey(null);
+      } else if (tab === 'employee-engagement') {
+        // employee-engagement returns { summary, records }
+        setEmployeeEngagementSummary(res.summary || null);
+        setRecords(res.records || []);
         setLastKey(null);
       } else if (append) {
         setRecords((prev) => [...prev, ...(res.records || [])]);
@@ -1069,6 +1153,7 @@ export default function AdminReportsPage() {
 
   const hasPagination = activeTab === 'points-detail' || activeTab === 'user-ranking';
   const isInviteConversion = activeTab === 'invite-conversion';
+  const isEmployeeEngagement = activeTab === 'employee-engagement';
 
   return (
     <View className='admin-reports'>
@@ -1106,13 +1191,25 @@ export default function AdminReportsPage() {
         onExport={handleExport}
       />
 
-      {/* Content: MetricCards for invite-conversion, DataTable for others */}
+      {/* Content: MetricCards for invite-conversion, EmployeeMetricCards + DataTable for employee-engagement, DataTable for others */}
       {isInviteConversion ? (
         loading ? (
           <View className='admin-loading'><Text>{t('admin.reports.loading')}</Text></View>
         ) : (
           <MetricCards record={records.length > 0 ? (records[0] as InviteConversionRecord) : null} />
         )
+      ) : isEmployeeEngagement ? (
+        <>
+          {!loading && <EmployeeMetricCards summary={employeeEngagementSummary} />}
+          <DataTable
+            activeTab={activeTab}
+            records={records}
+            loading={loading}
+            hasMore={false}
+            onLoadMore={handleLoadMore}
+            loadingMore={loadingMore}
+          />
+        </>
       ) : (
         <DataTable
           activeTab={activeTab}

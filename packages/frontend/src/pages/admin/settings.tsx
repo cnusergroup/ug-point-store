@@ -50,11 +50,14 @@ interface FeatureToggles {
   emailNewProductEnabled: boolean;
   emailNewContentEnabled: boolean;
   emailContentUpdatedEnabled: boolean;
+  emailWeeklyDigestEnabled: boolean;
   reservationApprovalPoints: number;
   leaderboardRankingEnabled: boolean;
   leaderboardAnnouncementEnabled: boolean;
   leaderboardUpdateFrequency: 'realtime' | 'daily' | 'weekly' | 'monthly';
   pointsRuleConfig?: PointsRuleConfig;
+  brandLogoListEnabled: boolean;
+  brandLogoDetailEnabled: boolean;
 }
 
 interface PointsRuleConfig {
@@ -66,7 +69,7 @@ interface PointsRuleConfig {
   speakerRoundtablePoints: number;
 }
 
-type NotificationType = 'pointsEarned' | 'newOrder' | 'orderShipped' | 'newProduct' | 'newContent' | 'contentUpdated';
+type NotificationType = 'pointsEarned' | 'newOrder' | 'orderShipped' | 'newProduct' | 'newContent' | 'contentUpdated' | 'weeklyDigest';
 
 interface EmailToggleConfig {
   key: keyof FeatureToggles;
@@ -107,6 +110,7 @@ const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   newProduct: 'admin.settings.email.newProductLabel',
   newContent: 'admin.settings.email.newContentLabel',
   contentUpdated: 'admin.settings.email.contentUpdatedLabel',
+  weeklyDigest: 'admin.settings.email.weeklyDigestLabel',
 };
 
 interface MeetupSyncConfigState {
@@ -459,10 +463,13 @@ export default function AdminSettingsPage() {
     emailNewProductEnabled: false,
     emailNewContentEnabled: false,
     emailContentUpdatedEnabled: false,
+    emailWeeklyDigestEnabled: false,
     reservationApprovalPoints: 10,
     leaderboardRankingEnabled: false,
     leaderboardAnnouncementEnabled: false,
     leaderboardUpdateFrequency: 'weekly',
+    brandLogoListEnabled: true,
+    brandLogoDetailEnabled: true,
   });
 
 
@@ -1087,10 +1094,13 @@ export default function AdminSettingsPage() {
           emailNewProductEnabled: updated.emailNewProductEnabled,
           emailNewContentEnabled: updated.emailNewContentEnabled,
           emailContentUpdatedEnabled: updated.emailContentUpdatedEnabled,
+          emailWeeklyDigestEnabled: updated.emailWeeklyDigestEnabled,
           reservationApprovalPoints: updated.reservationApprovalPoints,
           leaderboardRankingEnabled: updated.leaderboardRankingEnabled,
           leaderboardAnnouncementEnabled: updated.leaderboardAnnouncementEnabled,
           leaderboardUpdateFrequency: updated.leaderboardUpdateFrequency,
+          brandLogoListEnabled: updated.brandLogoListEnabled,
+          brandLogoDetailEnabled: updated.brandLogoDetailEnabled,
         },
       });
       Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
@@ -1126,10 +1136,13 @@ export default function AdminSettingsPage() {
           emailNewProductEnabled: updated.emailNewProductEnabled,
           emailNewContentEnabled: updated.emailNewContentEnabled,
           emailContentUpdatedEnabled: updated.emailContentUpdatedEnabled,
+          emailWeeklyDigestEnabled: updated.emailWeeklyDigestEnabled,
           reservationApprovalPoints: updated.reservationApprovalPoints,
           leaderboardRankingEnabled: updated.leaderboardRankingEnabled,
           leaderboardAnnouncementEnabled: updated.leaderboardAnnouncementEnabled,
           leaderboardUpdateFrequency: updated.leaderboardUpdateFrequency,
+          brandLogoListEnabled: updated.brandLogoListEnabled,
+          brandLogoDetailEnabled: updated.brandLogoDetailEnabled,
         },
       });
       Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
@@ -1350,10 +1363,13 @@ export default function AdminSettingsPage() {
           emailNewProductEnabled: settings.emailNewProductEnabled,
           emailNewContentEnabled: settings.emailNewContentEnabled,
           emailContentUpdatedEnabled: settings.emailContentUpdatedEnabled,
+          emailWeeklyDigestEnabled: settings.emailWeeklyDigestEnabled,
           reservationApprovalPoints: settings.reservationApprovalPoints,
           leaderboardRankingEnabled: settings.leaderboardRankingEnabled,
           leaderboardAnnouncementEnabled: settings.leaderboardAnnouncementEnabled,
           leaderboardUpdateFrequency: settings.leaderboardUpdateFrequency,
+          brandLogoListEnabled: settings.brandLogoListEnabled,
+          brandLogoDetailEnabled: settings.brandLogoDetailEnabled,
           pointsRuleConfig,
         },
       });
@@ -1476,6 +1492,38 @@ export default function AdminSettingsPage() {
                             </Text>
                           </View>
                         ))}
+                      </View>
+                    </View>
+                  </View>
+                </CollapsibleSection>
+
+                {/* Brand Logo Display */}
+                <CollapsibleSection title={t('admin.settings.brandLogoSectionTitle' as any)} description={t('admin.settings.brandLogoSectionDesc' as any)}>
+                  <View className='toggle-list'>
+                    <View className='toggle-item'>
+                      <View className='toggle-item__info'>
+                        <Text className='toggle-item__label'>{t('admin.settings.brandLogoDetailLabel' as any)}</Text>
+                        <Text className='toggle-item__desc'>{t('admin.settings.brandLogoDetailDesc' as any)}</Text>
+                      </View>
+                      <View className='toggle-item__switch'>
+                        <Switch
+                          checked={settings.brandLogoDetailEnabled}
+                          onChange={(e) => handleToggle('brandLogoDetailEnabled', e.detail.value)}
+                          color='var(--accent-primary)'
+                        />
+                      </View>
+                    </View>
+                    <View className='toggle-item'>
+                      <View className='toggle-item__info'>
+                        <Text className='toggle-item__label'>{t('admin.settings.brandLogoListLabel' as any)}</Text>
+                        <Text className='toggle-item__desc'>{t('admin.settings.brandLogoListDesc' as any)}</Text>
+                      </View>
+                      <View className='toggle-item__switch'>
+                        <Switch
+                          checked={settings.brandLogoListEnabled}
+                          onChange={(e) => handleToggle('brandLogoListEnabled', e.detail.value)}
+                          color='var(--accent-primary)'
+                        />
                       </View>
                     </View>
                   </View>
@@ -1655,6 +1703,12 @@ export default function AdminSettingsPage() {
                         notificationType: 'contentUpdated' as NotificationType,
                         labelKey: 'admin.settings.email.contentUpdatedLabel',
                         descKey: 'admin.settings.email.contentUpdatedDesc',
+                      },
+                      {
+                        key: 'emailWeeklyDigestEnabled' as keyof FeatureToggles,
+                        notificationType: 'weeklyDigest' as NotificationType,
+                        labelKey: 'admin.settings.email.weeklyDigestLabel',
+                        descKey: 'admin.settings.email.weeklyDigestDesc',
                       },
                     ] as { key: keyof FeatureToggles; notificationType: NotificationType; labelKey: string; descKey: string }[]).map((item) => (
                       <View key={item.key} className='email-toggle-item'>
@@ -1934,7 +1988,7 @@ export default function AdminSettingsPage() {
                     <View className='ug-delete-dialog' onClick={(e) => e.stopPropagation()}>
                       <Text className='ug-delete-dialog__title'>{t('ugManagement.deleteTitle' as any)}</Text>
                       <Text className='ug-delete-dialog__message'>
-                        {t('ugManagement.deleteMessage' as any)}
+                        {t('ugManagement.deleteMessage' as any, { name: ugList.find(u => u.ugId === ugDeleteTarget)?.name || '' })}
                       </Text>
                       <View className='ug-delete-dialog__actions'>
                         <View

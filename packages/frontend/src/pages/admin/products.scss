@@ -768,3 +768,40 @@
     background: rgba(255, 255, 255, 0.25);
   }
 }
+
+/* ---- Brand Selector (Task 4.1) ---- */
+.brand-selector {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+
+  &__item {
+    padding: var(--space-2) var(--space-4);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    user-select: none;
+
+    &:hover {
+      border-color: var(--card-border-hover);
+      color: var(--text-primary);
+      background: var(--bg-hover);
+    }
+
+    &--active {
+      border-color: var(--accent-primary);
+      color: var(--accent-primary);
+      background: rgba(124, 109, 240, 0.08);
+
+      &:hover {
+        border-color: var(--accent-primary);
+        color: var(--accent-primary);
+        background: rgba(124, 109, 240, 0.12);
+      }
+    }
+  }
+}

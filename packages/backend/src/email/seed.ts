@@ -9,16 +9,16 @@ import type { EmailTemplate } from './templates';
 // Default template content
 // ============================================================
 
-const FOOTER_ZH = '<p style="font-size:12px;color:#94a3b8;">此邮件由 User Group 福利广场自动发送</p>';
-const FOOTER_UNSUB_ZH = '<p style="font-size:12px;color:#94a3b8;">此邮件由 User Group 福利广场自动发送。如不想收到此类邮件，请在设置中关闭订阅。</p>';
-const FOOTER_EN = '<p style="font-size:12px;color:#94a3b8;">This email was sent automatically by User Group Benefits Plaza</p>';
-const FOOTER_UNSUB_EN = '<p style="font-size:12px;color:#94a3b8;">This email was sent automatically by User Group Benefits Plaza. To unsubscribe, update your settings.</p>';
-const FOOTER_JA = '<p style="font-size:12px;color:#94a3b8;">このメールは User Group 福利広場から自動送信されました</p>';
-const FOOTER_UNSUB_JA = '<p style="font-size:12px;color:#94a3b8;">このメールは User Group 福利広場から自動送信されました。配信停止は設定から変更できます。</p>';
-const FOOTER_KO = '<p style="font-size:12px;color:#94a3b8;">이 이메일은 User Group 복지광장에서 자동 발송되었습니다</p>';
-const FOOTER_UNSUB_KO = '<p style="font-size:12px;color:#94a3b8;">이 이메일은 User Group 복지광장에서 자동 발송되었습니다. 수신 거부는 설정에서 변경할 수 있습니다.</p>';
-const FOOTER_ZHTW = '<p style="font-size:12px;color:#94a3b8;">此郵件由 User Group 福利廣場自動發送</p>';
-const FOOTER_UNSUB_ZHTW = '<p style="font-size:12px;color:#94a3b8;">此郵件由 User Group 福利廣場自動發送。如不想收到此類郵件，請在設定中關閉訂閱。</p>';
+const FOOTER_ZH = '<p style="font-size:12px;color:#94a3b8;">此邮件由 User Group 积分兑换广场自动发送</p>';
+const FOOTER_UNSUB_ZH = '<p style="font-size:12px;color:#94a3b8;">此邮件由 User Group 积分兑换广场自动发送。如不想收到此类邮件，请在设置中关闭订阅。</p>';
+const FOOTER_EN = '<p style="font-size:12px;color:#94a3b8;">This email was sent automatically by User Group Builder Store</p>';
+const FOOTER_UNSUB_EN = '<p style="font-size:12px;color:#94a3b8;">This email was sent automatically by User Group Builder Store. To unsubscribe, update your settings.</p>';
+const FOOTER_JA = '<p style="font-size:12px;color:#94a3b8;">このメールは User Group ポイント交換広場から自動送信されました</p>';
+const FOOTER_UNSUB_JA = '<p style="font-size:12px;color:#94a3b8;">このメールは User Group ポイント交換広場から自動送信されました。配信停止は設定から変更できます。</p>';
+const FOOTER_KO = '<p style="font-size:12px;color:#94a3b8;">이 이메일은 User Group 포인트 교환 광장에서 자동 발송되었습니다</p>';
+const FOOTER_UNSUB_KO = '<p style="font-size:12px;color:#94a3b8;">이 이메일은 User Group 포인트 교환 광장에서 자동 발송되었습니다. 수신 거부는 설정에서 변경할 수 있습니다.</p>';
+const FOOTER_ZHTW = '<p style="font-size:12px;color:#94a3b8;">此郵件由 User Group 積分兌換廣場自動發送</p>';
+const FOOTER_UNSUB_ZHTW = '<p style="font-size:12px;color:#94a3b8;">此郵件由 User Group 積分兌換廣場自動發送。如不想收到此類郵件，請在設定中關閉訂閱。</p>';
 
 const HR = '<hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />';
 
@@ -32,13 +32,13 @@ function wrap(inner: string, fontFamily = "'Noto Sans SC',sans-serif"): string {
 
 const pointsEarnedTemplates: Record<EmailLocale, { subject: string; body: string }> = {
   zh: {
-    subject: '🎉 积分到账啦，快来福利广场逛逛吧！',
+    subject: '🎉 积分到账啦，快来积分兑换广场逛逛吧！',
     body: wrap([
       '<h2 style="color:#6366f1;">Hi {{nickname}}，你的积分到账啦！</h2>',
       '<p style="font-size:16px;color:#334155;">恭喜你获得了 <strong style="color:#6366f1;">{{points}} 积分</strong>！</p>',
       '<p style="color:#64748b;">来源：{{source}}</p>',
       '<p style="color:#64748b;">当前余额：<strong>{{balance}} 积分</strong></p>',
-      '<p style="margin-top:24px;">快去福利广场看看有什么好东西可以兑换吧～ 🛍️</p>',
+      '<p style="margin-top:24px;">快去积分兑换广场看看有什么好东西可以兑换吧～ 🛍️</p>',
       HR,
       FOOTER_ZH,
     ].join('\n  ')),
@@ -62,7 +62,7 @@ const pointsEarnedTemplates: Record<EmailLocale, { subject: string; body: string
       '<p style="font-size:16px;color:#334155;"><strong style="color:#6366f1;">{{points}} ポイント</strong>を獲得しました！</p>',
       '<p style="color:#64748b;">獲得元：{{source}}</p>',
       '<p style="color:#64748b;">現在の残高：<strong>{{balance}} ポイント</strong></p>',
-      '<p style="margin-top:24px;">福利広場で交換できるアイテムをチェックしましょう！ 🛍️</p>',
+      '<p style="margin-top:24px;">ポイント交換広場で交換できるアイテムをチェックしましょう！ 🛍️</p>',
       HR,
       FOOTER_JA,
     ].join('\n  ')),
@@ -80,13 +80,13 @@ const pointsEarnedTemplates: Record<EmailLocale, { subject: string; body: string
     ].join('\n  ')),
   },
   'zh-TW': {
-    subject: '🎉 積分到帳啦，快來福利廣場逛逛吧！',
+    subject: '🎉 積分到帳啦，快來積分兌換廣場逛逛吧！',
     body: wrap([
       '<h2 style="color:#6366f1;">Hi {{nickname}}，你的積分到帳啦！</h2>',
       '<p style="font-size:16px;color:#334155;">恭喜你獲得了 <strong style="color:#6366f1;">{{points}} 積分</strong>！</p>',
       '<p style="color:#64748b;">來源：{{source}}</p>',
       '<p style="color:#64748b;">目前餘額：<strong>{{balance}} 積分</strong></p>',
-      '<p style="margin-top:24px;">快去福利廣場看看有什麼好東西可以兌換吧～ 🛍️</p>',
+      '<p style="margin-top:24px;">快去積分兌換廣場看看有什麼好東西可以兌換吧～ 🛍️</p>',
       HR,
       FOOTER_ZHTW,
     ].join('\n  ')),
@@ -268,12 +268,12 @@ const orderShippedTemplates: Record<EmailLocale, { subject: string; body: string
 
 const newProductTemplates: Record<EmailLocale, { subject: string; body: string }> = {
   zh: {
-    subject: '🆕 福利广场上新啦，快来看看有什么好东西！',
+    subject: '🆕 积分兑换广场上新啦，快来看看有什么好东西！',
     body: wrap([
-      '<h2 style="color:#6366f1;">福利广场上新提醒 ✨</h2>',
+      '<h2 style="color:#6366f1;">积分兑换广场上新提醒 ✨</h2>',
       '<p style="font-size:16px;color:#334155;">以下新周边已上架：</p>',
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:16px 0;">{{productList}}</div>',
-      '<p style="margin-top:24px;">快去福利广场逛逛吧～ 🛒</p>',
+      '<p style="margin-top:24px;">快去积分兑换广场逛逛吧～ 🛒</p>',
       HR,
       FOOTER_UNSUB_ZH,
     ].join('\n  ')),
@@ -295,7 +295,7 @@ const newProductTemplates: Record<EmailLocale, { subject: string; body: string }
       '<h2 style="color:#6366f1;">新グッズのお知らせ ✨</h2>',
       '<p style="font-size:16px;color:#334155;">以下の新グッズが入荷しました：</p>',
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:16px 0;">{{productList}}</div>',
-      '<p style="margin-top:24px;">福利広場でチェックしましょう！ 🛒</p>',
+      '<p style="margin-top:24px;">ポイント交換広場でチェックしましょう！ 🛒</p>',
       HR,
       FOOTER_UNSUB_JA,
     ].join('\n  ')),
@@ -312,12 +312,12 @@ const newProductTemplates: Record<EmailLocale, { subject: string; body: string }
     ].join('\n  ')),
   },
   'zh-TW': {
-    subject: '🆕 福利廣場上新啦，快來看看！',
+    subject: '🆕 積分兌換廣場上新啦，快來看看！',
     body: wrap([
-      '<h2 style="color:#6366f1;">福利廣場上新提醒 ✨</h2>',
+      '<h2 style="color:#6366f1;">積分兌換廣場上新提醒 ✨</h2>',
       '<p style="font-size:16px;color:#334155;">以下新周邊已上架：</p>',
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:16px 0;">{{productList}}</div>',
-      '<p style="margin-top:24px;">快去福利廣場逛逛吧～ 🛒</p>',
+      '<p style="margin-top:24px;">快去積分兌換廣場逛逛吧～ 🛒</p>',
       HR,
       FOOTER_UNSUB_ZHTW,
     ].join('\n  ')),
@@ -454,6 +454,83 @@ const contentUpdatedTemplates: Record<EmailLocale, { subject: string; body: stri
 };
 
 // ============================================================
+// weeklyDigest templates
+// ============================================================
+
+const weeklyDigestTemplates: Record<EmailLocale, { subject: string; body: string }> = {
+  zh: {
+    subject: '📬 本周积分兑换广场新鲜事，快来看看！',
+    body: wrap([
+      '<h2 style="color:#6366f1;">Hi {{nickname}}，本周积分兑换广场精选来啦！</h2>',
+      '<p style="font-size:14px;color:#64748b;">{{weekStart}} ~ {{weekEnd}}</p>',
+      '<h3 style="color:#334155;margin-top:24px;">🛍️ 新上架商品</h3>',
+      '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;">{{productList}}</div>',
+      '<h3 style="color:#334155;margin-top:24px;">📖 新发布内容</h3>',
+      '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;">{{contentList}}</div>',
+      '<p style="margin-top:24px;">快去积分兑换广场逛逛吧～ 🎉</p>',
+      HR,
+      FOOTER_UNSUB_ZH,
+    ].join('\n  ')),
+  },
+  en: {
+    subject: '📬 Your Weekly Builder Store Digest',
+    body: wrap([
+      '<h2 style="color:#6366f1;">Hi {{nickname}}, here\'s your weekly digest!</h2>',
+      '<p style="font-size:14px;color:#64748b;">{{weekStart}} ~ {{weekEnd}}</p>',
+      '<h3 style="color:#334155;margin-top:24px;">🛍️ New Products</h3>',
+      '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;">{{productList}}</div>',
+      '<h3 style="color:#334155;margin-top:24px;">📖 New Content</h3>',
+      '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;">{{contentList}}</div>',
+      '<p style="margin-top:24px;">Head to the Builder Store and check it out! 🎉</p>',
+      HR,
+      FOOTER_UNSUB_EN,
+    ].join('\n  ')),
+  },
+  ja: {
+    subject: '📬 今週のポイント交換広場ダイジェスト',
+    body: wrap([
+      '<h2 style="color:#6366f1;">{{nickname}} さん、今週のダイジェストです！</h2>',
+      '<p style="font-size:14px;color:#64748b;">{{weekStart}} ~ {{weekEnd}}</p>',
+      '<h3 style="color:#334155;margin-top:24px;">🛍️ 新着グッズ</h3>',
+      '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;">{{productList}}</div>',
+      '<h3 style="color:#334155;margin-top:24px;">📖 新着コンテンツ</h3>',
+      '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;">{{contentList}}</div>',
+      '<p style="margin-top:24px;">ポイント交換広場でチェックしましょう！ 🎉</p>',
+      HR,
+      FOOTER_UNSUB_JA,
+    ].join('\n  ')),
+  },
+  ko: {
+    subject: '📬 이번 주 포인트 교환 광장 다이제스트',
+    body: wrap([
+      '<h2 style="color:#6366f1;">{{nickname}} 님, 이번 주 다이제스트입니다!</h2>',
+      '<p style="font-size:14px;color:#64748b;">{{weekStart}} ~ {{weekEnd}}</p>',
+      '<h3 style="color:#334155;margin-top:24px;">🛍️ 새 굿즈</h3>',
+      '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;">{{productList}}</div>',
+      '<h3 style="color:#334155;margin-top:24px;">📖 새 콘텐츠</h3>',
+      '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;">{{contentList}}</div>',
+      '<p style="margin-top:24px;">포인트 교환 광장에서 확인해 보세요! 🎉</p>',
+      HR,
+      FOOTER_UNSUB_KO,
+    ].join('\n  ')),
+  },
+  'zh-TW': {
+    subject: '📬 本週積分兌換廣場新鮮事，快來看看！',
+    body: wrap([
+      '<h2 style="color:#6366f1;">Hi {{nickname}}，本週積分兌換廣場精選來啦！</h2>',
+      '<p style="font-size:14px;color:#64748b;">{{weekStart}} ~ {{weekEnd}}</p>',
+      '<h3 style="color:#334155;margin-top:24px;">🛍️ 新上架商品</h3>',
+      '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;">{{productList}}</div>',
+      '<h3 style="color:#334155;margin-top:24px;">📖 新發佈內容</h3>',
+      '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;">{{contentList}}</div>',
+      '<p style="margin-top:24px;">快去積分兌換廣場逛逛吧～ 🎉</p>',
+      HR,
+      FOOTER_UNSUB_ZHTW,
+    ].join('\n  ')),
+  },
+};
+
+// ============================================================
 // Template map by notification type
 // ============================================================
 
@@ -464,17 +541,18 @@ const TEMPLATE_MAP: Record<NotificationType, Record<EmailLocale, { subject: stri
   newProduct: newProductTemplates,
   newContent: newContentTemplates,
   contentUpdated: contentUpdatedTemplates,
+  weeklyDigest: weeklyDigestTemplates,
 };
 
 const ALL_LOCALES: EmailLocale[] = ['zh', 'en', 'ja', 'ko', 'zh-TW'];
-const ALL_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated'];
+const ALL_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest'];
 
 // ============================================================
 // Public API
 // ============================================================
 
 /**
- * Return all 30 default email templates (6 notification types × 5 locales).
+ * Return all 35 default email templates (7 notification types × 5 locales).
  */
 export function getDefaultTemplates(): EmailTemplate[] {
   const now = new Date().toISOString();
@@ -501,7 +579,7 @@ export function getDefaultTemplates(): EmailTemplate[] {
 const DYNAMO_BATCH_WRITE_LIMIT = 25;
 
 /**
- * Seed all 30 default templates into DynamoDB using BatchWriteCommand.
+ * Seed all 35 default templates into DynamoDB using BatchWriteCommand.
  * DynamoDB BatchWriteCommand supports max 25 items per request,
  * so we split into batches of 25.
  */

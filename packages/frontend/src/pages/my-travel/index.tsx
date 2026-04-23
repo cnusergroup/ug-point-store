@@ -135,7 +135,7 @@ export default function MyTravelPage() {
             <Text className='travel-points-detail__label'>{t('travel.myTravel.speakerEarnTotal')}</Text>
             <Text className='travel-points-detail__value travel-points-detail__value--earn'>
               {quota ? quota.speakerEarnTotal : '-'}
-              <Text className='travel-points-detail__unit'> 分</Text>
+              <Text className='travel-points-detail__unit'> {t('travel.myTravel.pointsUnit')}</Text>
             </Text>
           </View>
         </View>
@@ -143,7 +143,9 @@ export default function MyTravelPage() {
         {thresholds && (
           <View className='travel-points-detail__threshold-info'>
             <Text className='travel-points-detail__threshold-text'>
-              兑换标准：国内 {thresholds.domesticThreshold.toLocaleString()} 分 / 国际 {thresholds.internationalThreshold.toLocaleString()} 分
+              {t('travel.myTravel.thresholdInfo')
+                .replace('{domestic}', thresholds.domesticThreshold.toLocaleString())
+                .replace('{international}', thresholds.internationalThreshold.toLocaleString())}
             </Text>
           </View>
         )}

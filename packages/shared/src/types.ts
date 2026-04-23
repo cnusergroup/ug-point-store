@@ -3,7 +3,7 @@
 // ============================================================
 
 /** 用户账号状态 */
-export type UserStatus = 'active' | 'disabled';
+export type UserStatus = 'active' | 'disabled' | 'locked';
 
 /** 用户角色类型（扩展后） */
 export type UserRole = 'UserGroupLeader' | 'Speaker' | 'Volunteer' | 'Admin' | 'SuperAdmin' | 'OrderAdmin';
@@ -65,6 +65,12 @@ export interface UserProfile {
   createdAt: string;
 }
 
+/** 商品品牌 */
+export type ProductBrand = 'aws' | 'ug' | 'awscloud';
+
+/** 有效品牌列表 */
+export const VALID_BRANDS: ProductBrand[] = ['aws', 'ug', 'awscloud'];
+
 /** 商品类型 */
 export type ProductType = 'points' | 'code_exclusive';
 
@@ -99,6 +105,7 @@ export interface Product {
   sizeOptions?: SizeOption[];
   purchaseLimitEnabled?: boolean;
   purchaseLimitCount?: number;
+  brand?: ProductBrand;
 }
 
 /** 积分商品 */
@@ -349,6 +356,7 @@ export interface InviteRecord {
   expiresAt: string;
   usedAt?: string;
   usedBy?: string; // userId
+  isEmployee?: boolean;  // 员工邀请标记
 }
 
 /** 从 InviteRecord 安全获取 roles 数组（兼容旧数据） */
@@ -356,6 +364,11 @@ export function getInviteRoles(record: { role?: UserRole; roles?: UserRole[] }):
   if (record.roles && record.roles.length > 0) return record.roles;
   if (record.role) return [record.role];
   return [];
+}
+
+/** 安全获取 isEmployee 标记（兼容旧数据，缺失时默认 false） */
+export function getInviteIsEmployee(record: { isEmployee?: boolean }): boolean {
+  return record.isEmployee ?? false;
 }
 
 // ============================================================
@@ -412,6 +425,9 @@ export function maskPhone(phone: string): string {
 /** 内容状态 */
 export type ContentStatus = 'pending' | 'approved' | 'rejected';
 
+/** 预览转换状态 */
+export type PreviewStatus = 'pending' | 'completed' | 'failed';
+
 /** 内容记录 */
 export interface ContentItem {
   contentId: string;
@@ -436,6 +452,8 @@ export interface ContentItem {
   createdAt: string;
   updatedAt: string;
   tags?: string[];
+  previewFileKey?: string;
+  previewStatus?: PreviewStatus;
 }
 
 /** 内容列表摘要 */
@@ -567,6 +585,12 @@ export function validateTagsArray(tags: string[]): {
 // ============================================================
 // 内容中心校验辅助函数
 // ============================================================
+
+/** 判断文件是否为 Office 文件（PPT/PPTX/DOC/DOCX） */
+export function isOfficeFile(fileName: string): boolean {
+  const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
+  return ['ppt', 'pptx', 'doc', 'docx'].includes(ext);
+}
 
 /** 允许的文档 MIME 类型 */
 const ALLOWED_CONTENT_MIME_TYPES = [

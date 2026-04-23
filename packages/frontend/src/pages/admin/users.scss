@@ -219,6 +219,15 @@
       }
     }
 
+    &--unlock {
+      border: 1px solid rgba(245, 166, 35, 0.3);
+      color: var(--warning);
+
+      &:hover {
+        background: rgba(245, 166, 35, 0.1);
+      }
+    }
+
     &--danger {
       border: 1px solid rgba(239, 68, 68, 0.3);
       color: var(--error);
@@ -244,6 +253,11 @@
   &--disabled {
     background: rgba(239, 68, 68, 0.12);
     color: var(--error);
+  }
+
+  &--locked {
+    background: rgba(245, 166, 35, 0.12);
+    color: var(--warning);
   }
 }
 

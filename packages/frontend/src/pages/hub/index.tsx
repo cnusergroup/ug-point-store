@@ -4,6 +4,7 @@ import Taro from '@tarojs/taro';
 import { useAppStore, UserRole } from '../../store';
 import { useTranslation } from '../../i18n';
 import { GiftIcon, GlobeIcon, ProfileIcon, SettingsIcon, AdminIcon, OrderIcon } from '../../components/icons';
+import kiroImg from '../../assets/kiro.png';
 import './index.scss';
 
 /** Trophy icon (inline — no separate file) */
@@ -158,7 +159,11 @@ export default function HubPage() {
           <Text className='hub-footer__line1'>🎨 Design by <Text className='hub-footer__accent'>Amazon Web Services User Group China</Text></Text>
           <Text className='hub-footer__line1'>Built with ❤️ by <Text className='hub-footer__accent'>Kiro</Text></Text>
           <Text className='hub-footer__line2'>Powered by Amazon Web Services</Text>
-          <Text className='hub-footer__privacy' onClick={() => Taro.navigateTo({ url: '/pages/privacy/index' })}>{t('hub.privacyPolicy')}</Text>
+          <View className='hub-footer__links'>
+            <Text className='hub-footer__privacy' onClick={() => Taro.navigateTo({ url: '/pages/privacy/index' })}>{t('hub.privacyPolicy')}</Text>
+            <View className='hub-footer__links-divider' />
+            <Text className='hub-footer__privacy' onClick={() => Taro.navigateTo({ url: '/pages/code-of-conduct/index' })}>{t('hub.codeOfConduct')}</Text>
+          </View>
         </View>
       </View>
     );
@@ -264,9 +269,26 @@ export default function HubPage() {
       <View className='hub-footer'>
         <View className='hub-footer__divider' />
         <Text className='hub-footer__line1'>🎨 Design by <Text className='hub-footer__accent'>Amazon Web Services User Group China</Text></Text>
-        <Text className='hub-footer__line1'>Built with ❤️ by <Text className='hub-footer__accent'>Kiro</Text></Text>
+        <View className='hub-footer__kiro-row'>
+          <Text className='hub-footer__line1'>Built with ❤️ by <Text className='hub-footer__accent'>Kiro</Text></Text>
+          <View className='kiro-ghost'>
+            <View className='kiro-ghost__glow' />
+            <img className='kiro-ghost__mascot' src={kiroImg} alt='Kiro' />
+            <View className='kiro-ghost__particles'>
+              <View className='kiro-ghost__particle' style={{ left: '79%', top: '28%' }} />
+              <View className='kiro-ghost__particle' style={{ left: '21%', top: '40%' }} />
+              <View className='kiro-ghost__particle' style={{ left: '0%', top: '64%' }} />
+              <View className='kiro-ghost__particle' style={{ left: '6%', top: '45%' }} />
+              <View className='kiro-ghost__particle' style={{ left: '37%', top: '89%' }} />
+            </View>
+          </View>
+        </View>
         <Text className='hub-footer__line2'>Powered by Amazon Web Services</Text>
-        <Text className='hub-footer__privacy' onClick={() => Taro.navigateTo({ url: '/pages/privacy/index' })}>{t('hub.privacyPolicy')}</Text>
+        <View className='hub-footer__links'>
+          <Text className='hub-footer__privacy' onClick={() => Taro.navigateTo({ url: '/pages/privacy/index' })}>{t('hub.privacyPolicy')}</Text>
+          <View className='hub-footer__links-divider' />
+          <Text className='hub-footer__privacy' onClick={() => Taro.navigateTo({ url: '/pages/code-of-conduct/index' })}>{t('hub.codeOfConduct')}</Text>
+        </View>
       </View>
     </View>
   );

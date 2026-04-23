@@ -29,7 +29,7 @@ export interface MeetupEvent {
   ugName: string;          // From group displayName
   topic: string;           // Event title
   activityDate: string;    // YYYY-MM-DD from dateTime
-  dedupeKey: string;       // {topic}#{activityDate}#{ugName}
+  dedupeKey: string;       // meetup#{meetupEventId}
   // Meetup-specific extra fields
   meetupEventId: string;
   meetupEventUrl: string;
@@ -137,7 +137,7 @@ export function mapMeetupEvent(
     ugName,
     topic,
     activityDate,
-    dedupeKey: `${topic}#${activityDate}#${ugName}`,
+    dedupeKey: `meetup#${node.id}`,
     meetupEventId: node.id,
     meetupEventUrl: node.eventUrl ?? '',
     meetupGoingCount: node.going?.totalCount ?? 0,

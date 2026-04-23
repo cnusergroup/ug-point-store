@@ -20,6 +20,7 @@ import {
   formatInventoryAlertForExport,
   formatTravelStatisticsForExport,
   formatInviteConversionForExport,
+  formatEmployeeEngagementForExport,
 } from './formatters';
 import type {
   PointsDetailRecord,
@@ -42,6 +43,7 @@ import {
   queryInventoryAlert,
   queryTravelStatistics,
   queryInviteConversion,
+  queryEmployeeEngagement,
 } from './insight-query';
 
 // ============================================================
@@ -64,6 +66,7 @@ const VALID_REPORT_TYPES: ReportType[] = [
   'inventory-alert',
   'travel-statistics',
   'invite-conversion',
+  'employee-engagement',
 ];
 
 const VALID_FORMATS: ExportFormat[] = ['csv', 'xlsx'];
@@ -211,15 +214,15 @@ async function queryAllRecordsForExport(
 }
 
 /**
- * BatchGet user nicknames from Users table for export.
+ * BatchGet user nicknames and isEmployee flag from Users table for export.
  */
 async function batchGetNicknamesForExport(
   dynamoClient: DynamoDBDocumentClient,
   usersTable: string,
   userIds: string[],
-): Promise<Map<string, string>> {
+): Promise<Map<string, { nickname: string; isEmployee: boolean }>> {
   const { BatchGetCommand } = await import('@aws-sdk/lib-dynamodb');
-  const nicknameMap = new Map<string, string>();
+  const nicknameMap = new Map<string, { nickname: string; isEmployee: boolean }>();
   if (userIds.length === 0) return nicknameMap;
 
   const chunks: string[][] = [];
@@ -233,14 +236,17 @@ async function batchGetNicknamesForExport(
         RequestItems: {
           [usersTable]: {
             Keys: chunk.map(userId => ({ userId })),
-            ProjectionExpression: 'userId, nickname',
+            ProjectionExpression: 'userId, nickname, isEmployee',
           },
         },
       }),
     );
     const items = result.Responses?.[usersTable] ?? [];
     for (const item of items) {
-      nicknameMap.set(item.userId as string, (item.nickname as string) ?? '');
+      nicknameMap.set(item.userId as string, {
+        nickname: (item.nickname as string) ?? '',
+        isEmployee: (item.isEmployee as boolean) ?? false,
+      });
     }
   }
   return nicknameMap;
@@ -372,15 +378,16 @@ export async function executeExport(
         lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
       } while (lastKey);
 
-      // Map to PointsDetailRecord
-      const records: PointsDetailRecord[] = allRawItems.map(r => {
+      // Map to PointsDetailRecord (with isEmployee)
+      const records: (PointsDetailRecord & { isEmployee?: boolean })[] = allRawItems.map(r => {
         const activityId = (r.activityId as string) ?? '';
         const targetRole = (r.targetRole as string) ?? '';
+        const userInfo = nicknameMap.get(r.userId as string);
         return {
           recordId: (r.recordId as string) ?? '',
           createdAt: (r.createdAt as string) ?? '',
           userId: (r.userId as string) ?? '',
-          nickname: nicknameMap.get(r.userId as string) ?? '',
+          nickname: userInfo?.nickname ?? '',
           amount: (r.amount as number) ?? 0,
           type: (r.type as 'earn' | 'spend') ?? 'earn',
           source: (r.source as string) ?? '',
@@ -389,10 +396,20 @@ export async function executeExport(
           activityId,
           targetRole,
           distributorNickname: distributorMap.get(`${activityId}#${targetRole}`) ?? distributorMap.get(activityId) ?? '',
+          isEmployee: userInfo?.isEmployee ?? false,
         };
       });
 
-      const formatted = formatPointsDetailForExport(records);
+      // Apply isEmployee filter if specified
+      const isEmployeeFilter = filters.isEmployee;
+      let filteredRecords = records;
+      if (isEmployeeFilter === 'true') {
+        filteredRecords = records.filter(r => r.isEmployee === true);
+      } else if (isEmployeeFilter === 'false') {
+        filteredRecords = records.filter(r => !r.isEmployee);
+      }
+
+      const formatted = formatPointsDetailForExport(filteredRecords);
       fileBuffer = format === 'csv' ? generateCSV(formatted, columns) : generateExcel(formatted, columns);
 
     } else if (reportType === 'ug-activity-summary') {
@@ -432,15 +449,28 @@ export async function executeExport(
       const uniqueUserIds = sorted.map(r => r.userId);
       const nicknameMap = await batchGetNicknamesForExport(dynamoClient, tables.usersTable, uniqueUserIds);
 
-      const records: UserRankingRecord[] = sorted.map((r, i) => ({
+      const records: (UserRankingRecord & { isEmployee?: boolean })[] = sorted.map((r, i) => ({
         rank: i + 1,
         userId: r.userId,
-        nickname: nicknameMap.get(r.userId) ?? '',
+        nickname: nicknameMap.get(r.userId)?.nickname ?? '',
         totalEarnPoints: r.totalEarnPoints,
         targetRole: r.targetRole,
+        isEmployee: nicknameMap.get(r.userId)?.isEmployee ?? false,
       }));
 
-      const formatted = formatUserRankingForExport(records);
+      // Apply isEmployee filter if specified
+      const isEmployeeFilter = filters.isEmployee;
+      let filteredRecords = records;
+      if (isEmployeeFilter === 'true') {
+        filteredRecords = records.filter(r => r.isEmployee === true);
+      } else if (isEmployeeFilter === 'false') {
+        filteredRecords = records.filter(r => !r.isEmployee);
+      }
+
+      // Re-assign ranks after filtering
+      const rerankedRecords = filteredRecords.map((r, i) => ({ ...r, rank: i + 1 }));
+
+      const formatted = formatUserRankingForExport(rerankedRecords);
       fileBuffer = format === 'csv' ? generateCSV(formatted, columns) : generateExcel(formatted, columns);
 
     } else if (reportType === 'activity-points-summary') {
@@ -523,6 +553,18 @@ export async function executeExport(
         return { success: false, error: queryResult.error ?? { code: 'INTERNAL_ERROR', message: 'Internal server error' } };
       }
       const formatted = formatTravelStatisticsForExport(queryResult.records);
+      fileBuffer = format === 'csv' ? generateCSV(formatted, columns) : generateExcel(formatted, columns);
+
+    } else if (reportType === 'employee-engagement') {
+      const queryResult = await queryEmployeeEngagement(
+        { startDate, endDate },
+        dynamoClient,
+        { usersTable: tables.usersTable, pointsRecordsTable: tables.pointsRecordsTable },
+      );
+      if (!queryResult.success || !queryResult.records) {
+        return { success: false, error: queryResult.error ?? { code: 'INTERNAL_ERROR', message: 'Internal server error' } };
+      }
+      const formatted = formatEmployeeEngagementForExport(queryResult.records);
       fileBuffer = format === 'csv' ? generateCSV(formatted, columns) : generateExcel(formatted, columns);
 
     } else {

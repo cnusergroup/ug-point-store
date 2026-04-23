@@ -39,6 +39,7 @@ const TOGGLE_MAP: Record<NotificationType, string> = {
   newProduct: 'emailNewProductEnabled',
   newContent: 'emailNewContentEnabled',
   contentUpdated: 'emailContentUpdatedEnabled',
+  weeklyDigest: 'emailWeeklyDigestEnabled',
 };
 
 const ADMIN_ROLES = ['Admin', 'SuperAdmin', 'OrderAdmin'];

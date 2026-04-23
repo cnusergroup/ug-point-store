@@ -37,7 +37,7 @@ export interface MappedActivity {
   ugName: string;          // From source displayName
   topic: string;           // Event title
   activityDate: string;    // YYYY-MM-DD
-  dedupeKey: string;       // {topic}#{activityDate}#{ugName}
+  dedupeKey: string;       // {topic}#{ugName}
   sourceUrl: string;       // Source website URL
 }
 
@@ -279,7 +279,7 @@ export function mapAndFilterEvents(
       ugName,
       topic,
       activityDate,
-      dedupeKey: `${topic}#${activityDate}#${ugName}`,
+      dedupeKey: `${topic}#${ugName}`,
       sourceUrl: event.sourceUrl,
     });
   }

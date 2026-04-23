@@ -25,7 +25,7 @@ describe('mapMeetupEvent', () => {
     expect(result!.ugName).toBe('AWS UGHK');
     expect(result!.topic).toBe('AWS re:Invent Recap');
     expect(result!.activityDate).toBe('2024-03-15');
-    expect(result!.dedupeKey).toBe('AWS re:Invent Recap#2024-03-15#AWS UGHK');
+    expect(result!.dedupeKey).toBe('meetup#evt-1');
     expect(result!.meetupEventId).toBe('evt-1');
     expect(result!.meetupEventUrl).toBe('https://www.meetup.com/aws-ughk/events/evt-1/');
     expect(result!.meetupGoingCount).toBe(42);

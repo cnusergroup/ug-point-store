@@ -50,6 +50,32 @@ function HomeIcon({ size = 20, color = 'currentColor' }: { size?: number; color?
   );
 }
 
+function HeartIcon({ size = 14, color = 'currentColor' }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    </svg>
+  );
+}
+
+function CommentIcon({ size = 14, color = 'currentColor' }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+
+function DownloadIcon({ size = 14, color = 'currentColor' }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+
 interface ContentListResponse {
   success: boolean;
   items: ContentItemSummary[];
@@ -238,7 +264,7 @@ export default function ContentListPage() {
 
       {/* Content container — centered, aligns filter + tags + list */}
       <View className='content-container'>
-        {/* Category Filter — underline tabs */}
+        {/* Category Filter — pill tabs */}
         <ScrollView className='content-filter' scrollX enableFlex>
           <View className='content-filter__inner'>
             <View
@@ -246,7 +272,6 @@ export default function ContentListPage() {
               onClick={() => handleCategoryChange('')}
             >
               <Text className='content-filter__tab-text'>{t('contentHub.list.filterAll')}</Text>
-              {selectedCategory === '' && <View className='content-filter__indicator' />}
             </View>
             {categories.map((cat) => (
               <View
@@ -255,7 +280,6 @@ export default function ContentListPage() {
                 onClick={() => handleCategoryChange(cat.categoryId)}
               >
                 <Text className='content-filter__tab-text'>{cat.name}</Text>
-                {selectedCategory === cat.categoryId && <View className='content-filter__indicator' />}
               </View>
             ))}
           </View>
@@ -292,9 +316,14 @@ export default function ContentListPage() {
                   className='content-card'
                   onClick={() => handleItemClick(item.contentId)}
                 >
-                  {isNew && <View className='content-card__new-badge'><Text className='content-card__new-badge-text'>NEW</Text></View>}
                   <View className='content-card__body'>
-                    <Text className='content-card__title'>{item.title}</Text>
+                    <View className='content-card__title-row'>
+                      <Text className='content-card__title'>{item.title}</Text>
+                      {isNew && <Text className='content-card__new-indicator'>NEW</Text>}
+                    </View>
+                    {item.description && (
+                      <Text className='content-card__desc'>{item.description}</Text>
+                    )}
                     <View className='content-card__meta'>
                       <Text className='content-card__category'>{item.categoryName}</Text>
                       {item.tags && item.tags.length > 0 && item.tags.slice(0, 3).map((tag) => (
@@ -302,20 +331,27 @@ export default function ContentListPage() {
                       ))}
                     </View>
                     <View className='content-card__footer'>
-                      <Text className='content-card__uploader'>{item.uploaderNickname}</Text>
+                      <View className='content-card__author'>
+                        <View className='content-card__avatar'>
+                          <Text className='content-card__avatar-text'>
+                            {(item.uploaderNickname || '?')[0]?.toUpperCase()}
+                          </Text>
+                        </View>
+                        <Text className='content-card__uploader'>{item.uploaderNickname}</Text>
+                      </View>
                       <Text className='content-card__dot'>·</Text>
                       <Text className='content-card__time'>{formatTime(item.createdAt)}</Text>
                       <View className='content-card__stats'>
                         <View className='content-card__stat'>
-                          <Text className='content-card__stat-icon'>♡</Text>
+                          <HeartIcon size={14} color='var(--text-tertiary)' />
                           <Text className='content-card__stat-value'>{item.likeCount}</Text>
                         </View>
                         <View className='content-card__stat'>
-                          <Text className='content-card__stat-icon'>✎</Text>
+                          <CommentIcon size={14} color='var(--text-tertiary)' />
                           <Text className='content-card__stat-value'>{item.commentCount}</Text>
                         </View>
                         <View className='content-card__stat'>
-                          <Text className='content-card__stat-icon'>⊞</Text>
+                          <DownloadIcon size={14} color='var(--text-tertiary)' />
                           <Text className='content-card__stat-value'>{item.reservationCount}</Text>
                         </View>
                       </View>

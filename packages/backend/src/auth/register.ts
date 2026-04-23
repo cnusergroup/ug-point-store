@@ -32,7 +32,7 @@ export async function registerUser(
   if (!inviteValidation.success) {
     return { success: false, error: inviteValidation.error };
   }
-  const { roles } = inviteValidation;
+  const { roles, isEmployee } = inviteValidation;
 
   // 2. Validate password format
   const passwordCheck = validatePassword(request.password);
@@ -106,6 +106,7 @@ export async function registerUser(
     createdAt: now,
     updatedAt: now,
     ...leaderboardFields,
+    ...(isEmployee === true ? { isEmployee: true } : {}),
   };
 
   await dynamoClient.send(

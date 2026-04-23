@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, Input } from '@tarojs/components';
+import { View, Text, Input, Switch } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useAppStore } from '../../store';
 import { request, RequestError } from '../../utils/request';
@@ -17,6 +17,7 @@ interface InviteRecord {
   createdAt: string;
   expiresAt: string;
   usedAt?: string;
+  isEmployee?: boolean;
 }
 
 interface NewInvite {
@@ -24,6 +25,7 @@ interface NewInvite {
   link: string;
   roles: string[];
   expiresAt: string;
+  isEmployee?: boolean;
 }
 
 type StatusFilter = 'all' | 'pending' | 'used' | 'expired';
@@ -72,6 +74,7 @@ export default function AdminInvitesPage() {
   const [showForm, setShowForm] = useState(false);
   const [formRoles, setFormRoles] = useState<string[]>([]);
   const [formCount, setFormCount] = useState('');
+  const [formIsEmployee, setFormIsEmployee] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
 
@@ -109,6 +112,10 @@ export default function AdminInvitesPage() {
   ];
 
   const toggleRole = (role: string) => {
+    // In employee mode, roles are locked to Speaker only
+    if (formIsEmployee) {
+      return;
+    }
     if (EXCLUSIVE_ROLES.includes(role as any)) {
       // Selecting an exclusive role: clear all others, toggle this one
       setFormRoles((prev) => prev.includes(role) ? [] : [role]);
@@ -126,6 +133,7 @@ export default function AdminInvitesPage() {
   const openForm = () => {
     setFormRoles([]);
     setFormCount('');
+    setFormIsEmployee(false);
     setFormError('');
     setNewInvites([]);
     setShowForm(true);
@@ -153,7 +161,7 @@ export default function AdminInvitesPage() {
       const res = await request<{ invites: NewInvite[] }>({
         url: '/api/admin/invites/batch',
         method: 'POST',
-        data: { count, roles: formRoles },
+        data: { count, roles: formRoles, isEmployee: formIsEmployee },
       });
       setNewInvites(res.invites || []);
       fetchInvites(statusFilter);
@@ -251,7 +259,7 @@ export default function AdminInvitesPage() {
                   {roleOptions.map((opt) => (
                     <View
                       key={opt.value}
-                      className={`invite-role-select__item ${formRoles.includes(opt.value) ? 'invite-role-select__item--active' : ''}`}
+                      className={`invite-role-select__item ${formRoles.includes(opt.value) ? 'invite-role-select__item--active' : ''} ${formIsEmployee ? 'invite-role-select__item--disabled' : ''}`}
                       onClick={() => toggleRole(opt.value)}
                     >
                       <Text className={`role-badge ${opt.className}`}>{opt.label}</Text>
@@ -269,12 +277,41 @@ export default function AdminInvitesPage() {
                   placeholder={t('admin.invites.countPlaceholder')}
                 />
               </View>
+              <View className='form-field form-field--toggle'>
+                <Text className='form-field__label'>是否AWS员工</Text>
+                <Switch
+                  checked={formIsEmployee}
+                  onChange={(e) => {
+                    const checked = e.detail.value;
+                    setFormIsEmployee(checked);
+                    if (checked) {
+                      setFormRoles(['Speaker']);
+                    }
+                  }}
+                  color='var(--accent-primary)'
+                />
+              </View>
+              {formIsEmployee && (
+                <View className='form-field__hint'>
+                  <Text>AWS员工仅限 Speaker 身份</Text>
+                </View>
+              )}
             </View>
 
             {/* New invites result list */}
             {newInvites.length > 0 && (
               <View className='new-invites-list'>
-                <Text className='new-invites-list__title'>{t('admin.invites.generatedCount', { count: newInvites.length })}</Text>
+                <View className='new-invites-list__header'>
+                  <Text className='new-invites-list__title'>{t('admin.invites.generatedCount', { count: newInvites.length })}</Text>
+                  {newInvites.length > 1 && (
+                    <View className='new-invites-list__copy-all' onClick={() => {
+                      const allLinks = newInvites.map((inv) => buildInviteLink(inv.token)).join('\n');
+                      copyLink(allLinks);
+                    }}>
+                      <Text>复制全部链接</Text>
+                    </View>
+                  )}
+                </View>
                 {newInvites.map((inv) => (
                   <View key={inv.token} className='new-invite-row'>
                     <View className='new-invite-row__info'>
@@ -334,6 +371,9 @@ export default function AdminInvitesPage() {
                         {getRoleLabel(role)}
                       </Text>
                     ))}
+                    {inv.isEmployee === true && (
+                      <Text className='employee-badge'>AWS员工</Text>
+                    )}
                     <Text className={`invite-status invite-status--${inv.status}`}>
                       {inv.status === 'pending' ? t('admin.invites.statusPending') : inv.status === 'used' ? t('admin.invites.statusUsed') : t('admin.invites.statusExpired')}
                     </Text>

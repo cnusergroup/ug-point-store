@@ -12,7 +12,7 @@ import { batchGeneratePointsCodes, generateProductCodes, listCodes, disableCode,
 import { createPointsProduct, createCodeExclusiveProduct, updateProduct, setProductStatus } from './products';
 import { getUploadUrl, getTempUploadUrl, deleteImage } from './images';
 import { batchGenerateInvites, listInvites, revokeInvite } from './invites';
-import { listUsers, setUserStatus, deleteUser } from './users';
+import { listUsers, setUserStatus, deleteUser, unlockUser } from './users';
 import { executeBatchDistribution, validateBatchDistributionInput, listDistributionHistory, getDistributionDetail, getAwardedUserIds } from './batch-points';
 import { reviewClaim, listAllClaims } from '../claims/review';
 import { reviewContent, listAllContent, deleteContent, createCategory, updateCategory, deleteCategory } from '../content/admin';
@@ -43,6 +43,7 @@ import {
   queryInventoryAlert,
   queryTravelStatistics,
   queryInviteConversion,
+  queryEmployeeEngagement,
 } from '../reports/insight-query';
 
 // Create client outside handler for Lambda container reuse
@@ -113,6 +114,7 @@ const PRODUCTS_UPLOAD_URL_REGEX = /^\/api\/admin\/products\/([^/]+)\/upload-url$
 const PRODUCTS_DELETE_IMAGE_REGEX = /^\/api\/admin\/products\/([^/]+)\/images\/(.+)$/;
 const INVITES_REVOKE_REGEX = /^\/api\/admin\/invites\/([^/]+)\/revoke$/;
 const USERS_STATUS_REGEX = /^\/api\/admin\/users\/([^/]+)\/status$/;
+const USERS_UNLOCK_REGEX = /^\/api\/admin\/users\/([^/]+)\/unlock$/;
 const USERS_DELETE_REGEX = /^\/api\/admin\/users\/([^/]+)$/;
 const CLAIMS_REVIEW_REGEX = /^\/api\/admin\/claims\/([^/]+)\/review$/;
 const CONTENT_REVIEW_REGEX = /^\/api\/admin\/content\/([^/]+)\/review$/;
@@ -268,6 +270,15 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
 
   // POST routes
   if (method === 'POST') {
+    // POST /api/admin/users/{id}/unlock — SuperAdmin only
+    const usersUnlockMatch = path.match(USERS_UNLOCK_REGEX);
+    if (usersUnlockMatch) {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleUnlockUser(usersUnlockMatch[1]);
+    }
+
     // POST /api/admin/images/upload-url — temp upload for product creation (no productId needed)
     if (path === '/api/admin/images/upload-url') {
       if (!isSuperAdmin(event.user.roles as UserRole[])) {
@@ -572,6 +583,14 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     return await handleInviteConversionReport(event);
   }
 
+  // GET /api/admin/reports/employee-engagement — SuperAdmin only
+  if (method === 'GET' && path === '/api/admin/reports/employee-engagement') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handleEmployeeEngagementReport(event);
+  }
+
   // PATCH routes
   if (method === 'PATCH') {
     const codesMatch = path.match(CODES_DISABLE_REGEX);
@@ -816,6 +835,7 @@ async function handleCreateProduct(event: AuthenticatedEvent): Promise<APIGatewa
         sizeOptions: body.sizeOptions as any,
         purchaseLimitEnabled: body.purchaseLimitEnabled as boolean | undefined,
         purchaseLimitCount: body.purchaseLimitCount as number | undefined,
+        brand: body.brand as string | undefined,
       },
       dynamoClient,
       PRODUCTS_TABLE,
@@ -842,6 +862,7 @@ async function handleCreateProduct(event: AuthenticatedEvent): Promise<APIGatewa
         sizeOptions: body.sizeOptions as any,
         purchaseLimitEnabled: body.purchaseLimitEnabled as boolean | undefined,
         purchaseLimitCount: body.purchaseLimitCount as number | undefined,
+        brand: body.brand as string | undefined,
       },
       dynamoClient,
       PRODUCTS_TABLE,
@@ -995,7 +1016,14 @@ async function handleListUsers(event: AuthenticatedEvent): Promise<APIGatewayPro
 
   const result = await listUsers({ role, pageSize, lastKey }, dynamoClient, USERS_TABLE);
 
-  return jsonResponse(200, { users: result.users, lastKey: result.lastKey });
+  // Hide SuperAdmin users from non-SuperAdmin callers
+  const callerRoles = (event.user.roles as string[]) ?? [];
+  const isSuperAdminCaller = callerRoles.includes('SuperAdmin');
+  const filteredUsers = isSuperAdminCaller
+    ? result.users
+    : result.users.filter(u => !u.roles.includes('SuperAdmin'));
+
+  return jsonResponse(200, { users: filteredUsers, lastKey: result.lastKey });
 }
 
 async function handleSetUserStatus(userId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
@@ -1038,6 +1066,17 @@ async function handleDeleteUser(userId: string, event: AuthenticatedEvent): Prom
   return jsonResponse(200, { message: '用户删除成功' });
 }
 
+async function handleUnlockUser(userId: string): Promise<APIGatewayProxyResult> {
+  const result = await unlockUser(userId, dynamoClient, USERS_TABLE);
+
+  if (!result.success) {
+    const statusCode = (ErrorHttpStatus as Record<string, number>)[result.error!.code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { message: '用户解锁成功' });
+}
+
 async function handleBatchGenerateInvites(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
   const body = parseBody(event);
   if (!body || body.count === undefined || !Array.isArray(body.roles)) {
@@ -1054,6 +1093,8 @@ async function handleBatchGenerateInvites(event: AuthenticatedEvent): Promise<AP
   const inviteSettings = await getInviteSettings(dynamoClient, USERS_TABLE);
   const expiryMs = inviteSettings.inviteExpiryDays * 86400000;
 
+  const isEmployee = typeof body.isEmployee === 'boolean' ? body.isEmployee : undefined;
+
   const result = await batchGenerateInvites(
     body.count as number,
     body.roles as UserRole[],
@@ -1061,6 +1102,7 @@ async function handleBatchGenerateInvites(event: AuthenticatedEvent): Promise<AP
     INVITES_TABLE,
     REGISTER_BASE_URL,
     expiryMs,
+    isEmployee,
   );
 
   if (!result.success) {
@@ -1584,6 +1626,7 @@ async function handleUpdateFeatureToggles(event: AuthenticatedEvent): Promise<AP
       emailNewProductEnabled: body.emailNewProductEnabled === true,        // default false
       emailNewContentEnabled: body.emailNewContentEnabled === true,        // default false
       emailContentUpdatedEnabled: body.emailContentUpdatedEnabled === true, // default false
+      emailWeeklyDigestEnabled: body.emailWeeklyDigestEnabled === true,     // default false
       adminEmailProductsEnabled: body.adminEmailProductsEnabled === true,  // default false
       adminEmailContentEnabled: body.adminEmailContentEnabled === true,    // default false
       reservationApprovalPoints: typeof body.reservationApprovalPoints === 'number' && Number.isInteger(body.reservationApprovalPoints) && body.reservationApprovalPoints >= 1
@@ -1593,6 +1636,8 @@ async function handleUpdateFeatureToggles(event: AuthenticatedEvent): Promise<AP
       leaderboardAnnouncementEnabled: body.leaderboardAnnouncementEnabled === true, // default false
       leaderboardUpdateFrequency: (body.leaderboardUpdateFrequency || 'weekly') as 'daily' | 'weekly' | 'monthly',     // default 'weekly', validated in updateFeatureToggles
       pointsRuleConfig: body.pointsRuleConfig as PointsRuleConfig | undefined,
+      brandLogoListEnabled: body.brandLogoListEnabled !== false,     // default true
+      brandLogoDetailEnabled: body.brandLogoDetailEnabled !== false, // default true
       updatedBy: event.user.userId,
     },
     dynamoClient,
@@ -1991,7 +2036,7 @@ async function handleSendContentNotification(event: AuthenticatedEvent): Promise
 
 // ---- Email Template Route Handlers ----
 
-const VALID_NOTIFICATION_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent'];
+const VALID_NOTIFICATION_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest'];
 const VALID_LOCALES: EmailLocale[] = ['zh', 'en', 'ja', 'ko', 'zh-TW'];
 
 async function handleListEmailTemplates(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
@@ -2200,12 +2245,18 @@ async function handleGetMyUGs(event: AuthenticatedEvent): Promise<APIGatewayProx
 async function handleListActivities(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
   const ugName = event.queryStringParameters?.ugName;
   const startDate = event.queryStringParameters?.startDate;
-  const endDate = event.queryStringParameters?.endDate;
   const keyword = event.queryStringParameters?.keyword;
   const pageSize = event.queryStringParameters?.pageSize
     ? parseInt(event.queryStringParameters.pageSize, 10)
     : undefined;
   const lastKey = event.queryStringParameters?.lastKey;
+
+  // Default endDate to today (China time, UTC+8) so future activities are hidden
+  let endDate = event.queryStringParameters?.endDate;
+  if (!endDate) {
+    const chinaOffset = 8 * 60 * 60 * 1000;
+    endDate = new Date(Date.now() + chinaOffset).toISOString().split('T')[0];
+  }
 
   const result = await listActivities(
     { ugName, startDate, endDate, keyword, pageSize, lastKey },
@@ -2882,6 +2933,24 @@ async function handleInviteConversionReport(event: AuthenticatedEvent): Promise<
   }
 
   return jsonResponse(200, { record: result.record });
+}
+
+async function handleEmployeeEngagementReport(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const qs = event.queryStringParameters ?? {};
+  const result = await queryEmployeeEngagement(
+    {
+      startDate: qs.startDate,
+      endDate: qs.endDate,
+    },
+    dynamoClient,
+    { usersTable: USERS_TABLE, pointsRecordsTable: POINTS_RECORDS_TABLE },
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 400);
+  }
+
+  return jsonResponse(200, { summary: result.summary, records: result.records });
 }
 
 // ---- Website Sync Config Route Handlers ----

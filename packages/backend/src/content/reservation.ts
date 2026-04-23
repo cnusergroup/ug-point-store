@@ -179,22 +179,25 @@ export async function getDownloadUrl(
   s3Client: S3Client,
   tables: { contentItemsTable: string; reservationsTable: string },
   bucket: string,
+  skipReservationCheck = false,
 ): Promise<GetDownloadUrlResult> {
   const pk = `${userId}#${contentId}`;
 
-  // 1. Check reservation exists
-  const reservationResult = await dynamoClient.send(
-    new GetCommand({
-      TableName: tables.reservationsTable,
-      Key: { pk },
-    }),
-  );
+  // 1. Check reservation exists (skip for SuperAdmin)
+  if (!skipReservationCheck) {
+    const reservationResult = await dynamoClient.send(
+      new GetCommand({
+        TableName: tables.reservationsTable,
+        Key: { pk },
+      }),
+    );
 
-  if (!reservationResult.Item) {
-    return {
-      success: false,
-      error: { code: ErrorCodes.RESERVATION_REQUIRED, message: ErrorMessages[ErrorCodes.RESERVATION_REQUIRED] },
-    };
+    if (!reservationResult.Item) {
+      return {
+        success: false,
+        error: { code: ErrorCodes.RESERVATION_REQUIRED, message: ErrorMessages[ErrorCodes.RESERVATION_REQUIRED] },
+      };
+    }
   }
 
   // 2. Get content item's fileKey
@@ -213,10 +216,11 @@ export async function getDownloadUrl(
     };
   }
 
-  // 3. Generate presigned download URL
+  // 3. Generate presigned download URL with original fileName for browser download naming
   const command = new GetObjectCommand({
     Bucket: bucket,
     Key: contentItem.fileKey,
+    ResponseContentDisposition: `attachment; filename="${encodeURIComponent(contentItem.fileName)}"`,
   });
 
   const downloadUrl = await getSignedUrl(s3Client, command, { expiresIn: DOWNLOAD_URL_EXPIRES_IN });

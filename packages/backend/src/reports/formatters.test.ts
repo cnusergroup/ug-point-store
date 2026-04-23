@@ -40,10 +40,11 @@ describe('getColumnDefs', () => {
     const keys = cols.map(c => c.key);
     expect(keys).toEqual([
       'createdAt', 'nickname', 'amount', 'type', 'source',
-      'activityUG', 'activityTopic', 'targetRole', 'distributorNickname',
+      'activityUG', 'activityTopic', 'targetRole', 'distributorNickname', 'isEmployee',
     ]);
     expect(cols.find(c => c.key === 'createdAt')!.label).toBe('时间');
     expect(cols.find(c => c.key === 'type')!.label).toBe('类型');
+    expect(cols.find(c => c.key === 'isEmployee')!.label).toBe('是否AWS员工');
   });
 
   it('returns correct columns for ug-activity-summary', () => {
@@ -56,8 +57,9 @@ describe('getColumnDefs', () => {
   it('returns correct columns for user-points-ranking', () => {
     const cols = getColumnDefs('user-points-ranking');
     const keys = cols.map(c => c.key);
-    expect(keys).toEqual(['rank', 'nickname', 'userId', 'totalEarnPoints', 'targetRole']);
+    expect(keys).toEqual(['rank', 'nickname', 'userId', 'totalEarnPoints', 'targetRole', 'isEmployee']);
     expect(cols.find(c => c.key === 'rank')!.label).toBe('排名');
+    expect(cols.find(c => c.key === 'isEmployee')!.label).toBe('是否AWS员工');
   });
 
   it('returns correct columns for activity-points-summary', () => {
@@ -157,7 +159,7 @@ describe('getColumnDefs', () => {
 
 describe('formatPointsDetailForExport', () => {
   it('formats createdAt to YYYY-MM-DD HH:mm:ss', () => {
-    const records: PointsDetailRecord[] = [{
+    const records: (PointsDetailRecord & { isEmployee?: boolean })[] = [{
       recordId: 'r1',
       createdAt: '2024-03-15T10:30:45.000Z',
       userId: 'u1',
@@ -178,12 +180,12 @@ describe('formatPointsDetailForExport', () => {
   });
 
   it('maps type "earn" to "获取" and "spend" to "消费"', () => {
-    const earnRecord: PointsDetailRecord = {
+    const earnRecord: PointsDetailRecord & { isEmployee?: boolean } = {
       recordId: 'r1', createdAt: '2024-01-01T00:00:00Z', userId: 'u1',
       nickname: 'A', amount: 10, type: 'earn', source: 's', activityUG: 'UG',
       activityTopic: 'T', activityId: 'a1', targetRole: 'Speaker', distributorNickname: 'D',
     };
-    const spendRecord: PointsDetailRecord = {
+    const spendRecord: PointsDetailRecord & { isEmployee?: boolean } = {
       ...earnRecord, recordId: 'r2', type: 'spend',
     };
     const rows = formatPointsDetailForExport([earnRecord, spendRecord]);
@@ -192,7 +194,7 @@ describe('formatPointsDetailForExport', () => {
   });
 
   it('preserves all other fields correctly', () => {
-    const record: PointsDetailRecord = {
+    const record: PointsDetailRecord & { isEmployee?: boolean } = {
       recordId: 'r1', createdAt: '2024-06-01T12:00:00Z', userId: 'u1',
       nickname: 'Bob', amount: 50, type: 'earn', source: 'activity',
       activityUG: 'UG-Test', activityTopic: 'Test Topic', activityId: 'a1',
@@ -206,6 +208,38 @@ describe('formatPointsDetailForExport', () => {
     expect(rows[0].activityTopic).toBe('Test Topic');
     expect(rows[0].targetRole).toBe('Volunteer');
     expect(rows[0].distributorNickname).toBe('Admin2');
+  });
+
+  it('maps isEmployee true to "是"', () => {
+    const record: PointsDetailRecord & { isEmployee?: boolean } = {
+      recordId: 'r1', createdAt: '2024-01-01T00:00:00Z', userId: 'u1',
+      nickname: 'A', amount: 10, type: 'earn', source: 's', activityUG: 'UG',
+      activityTopic: 'T', activityId: 'a1', targetRole: 'Speaker', distributorNickname: 'D',
+      isEmployee: true,
+    };
+    const rows = formatPointsDetailForExport([record]);
+    expect(rows[0].isEmployee).toBe('是');
+  });
+
+  it('maps isEmployee false to "否"', () => {
+    const record: PointsDetailRecord & { isEmployee?: boolean } = {
+      recordId: 'r1', createdAt: '2024-01-01T00:00:00Z', userId: 'u1',
+      nickname: 'A', amount: 10, type: 'earn', source: 's', activityUG: 'UG',
+      activityTopic: 'T', activityId: 'a1', targetRole: 'Speaker', distributorNickname: 'D',
+      isEmployee: false,
+    };
+    const rows = formatPointsDetailForExport([record]);
+    expect(rows[0].isEmployee).toBe('否');
+  });
+
+  it('maps undefined isEmployee to "否"', () => {
+    const record: PointsDetailRecord & { isEmployee?: boolean } = {
+      recordId: 'r1', createdAt: '2024-01-01T00:00:00Z', userId: 'u1',
+      nickname: 'A', amount: 10, type: 'earn', source: 's', activityUG: 'UG',
+      activityTopic: 'T', activityId: 'a1', targetRole: 'Speaker', distributorNickname: 'D',
+    };
+    const rows = formatPointsDetailForExport([record]);
+    expect(rows[0].isEmployee).toBe('否');
   });
 });
 
@@ -223,15 +257,39 @@ describe('formatUGSummaryForExport', () => {
 });
 
 describe('formatUserRankingForExport', () => {
-  it('maps all fields correctly', () => {
-    const records: UserRankingRecord[] = [{
+  it('maps all fields correctly (non-employee)', () => {
+    const records: (UserRankingRecord & { isEmployee?: boolean })[] = [{
       rank: 1, userId: 'u1', nickname: 'TopUser', totalEarnPoints: 999, targetRole: 'Speaker',
     }];
     const rows = formatUserRankingForExport(records);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toEqual({
-      rank: 1, nickname: 'TopUser', userId: 'u1', totalEarnPoints: 999, targetRole: 'Speaker',
+      rank: 1, nickname: 'TopUser', userId: 'u1', totalEarnPoints: 999, targetRole: 'Speaker', isEmployee: '否',
     });
+  });
+
+  it('maps isEmployee true to "是"', () => {
+    const records: (UserRankingRecord & { isEmployee?: boolean })[] = [{
+      rank: 1, userId: 'u1', nickname: 'Employee', totalEarnPoints: 500, targetRole: 'Speaker', isEmployee: true,
+    }];
+    const rows = formatUserRankingForExport(records);
+    expect(rows[0].isEmployee).toBe('是');
+  });
+
+  it('maps isEmployee false to "否"', () => {
+    const records: (UserRankingRecord & { isEmployee?: boolean })[] = [{
+      rank: 1, userId: 'u1', nickname: 'Community', totalEarnPoints: 500, targetRole: 'Speaker', isEmployee: false,
+    }];
+    const rows = formatUserRankingForExport(records);
+    expect(rows[0].isEmployee).toBe('否');
+  });
+
+  it('maps undefined isEmployee to "否"', () => {
+    const records: (UserRankingRecord & { isEmployee?: boolean })[] = [{
+      rank: 1, userId: 'u1', nickname: 'OldUser', totalEarnPoints: 500, targetRole: 'Speaker',
+    }];
+    const rows = formatUserRankingForExport(records);
+    expect(rows[0].isEmployee).toBe('否');
   });
 });
 

@@ -250,6 +250,17 @@ export async function deleteContent(
     // Log but don't block deletion
   }
 
+  // 2b. Delete preview PDF from S3 if present (best-effort)
+  if (item.previewFileKey) {
+    try {
+      await s3Client.send(
+        new DeleteObjectCommand({ Bucket: bucket, Key: item.previewFileKey }),
+      );
+    } catch (err) {
+      console.error('Failed to delete preview PDF:', item.previewFileKey, err);
+    }
+  }
+
   // 3. Batch delete associated Comments (query by contentId-createdAt-index)
   await batchDeleteByGSI(
     dynamoClient,

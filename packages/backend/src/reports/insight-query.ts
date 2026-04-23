@@ -7,6 +7,7 @@ import {
   QueryCommand,
   BatchGetCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { applyDefaultDateRange } from './query';
 
 // ============================================================
 // 人气商品排行（Popular Products Ranking）
@@ -990,6 +991,255 @@ export async function queryInviteConversion(
     return { success: true, record };
   } catch (err) {
     console.error('queryInviteConversion error:', err);
+    return { success: false, error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } };
+  }
+}
+
+// ============================================================
+// 活跃员工报表（Employee Engagement Report）
+// ============================================================
+
+/** 活跃员工报表筛选条件 */
+export interface EmployeeEngagementFilter {
+  startDate?: string;   // ISO 8601
+  endDate?: string;     // ISO 8601
+}
+
+/** 活跃员工明细记录 */
+export interface EmployeeEngagementRecord {
+  rank: number;
+  userId: string;
+  nickname: string;
+  totalPoints: number;        // earn 类型积分总额
+  activityCount: number;      // 不同 activityId 数量
+  lastActiveTime: string;     // 最近一条记录的 createdAt
+  primaryRoles: string;       // targetRole 集合，逗号分隔
+  ugList: string;             // 不同 activityUG 集合，顿号分隔
+}
+
+/** 活跃员工汇总指标 */
+export interface EmployeeEngagementSummary {
+  totalEmployees: number;     // 员工总数
+  activeEmployees: number;    // 活跃员工数
+  engagementRate: number;     // 活跃率（百分比，一位小数）
+  totalPoints: number;        // 员工积分总额
+  totalActivities: number;    // 参与活动数（所有员工的不同 activityId 总数）
+}
+
+/** 活跃员工报表查询结果 */
+export interface EmployeeEngagementResult {
+  success: boolean;
+  summary?: EmployeeEngagementSummary;
+  records?: EmployeeEngagementRecord[];
+  error?: { code: string; message: string };
+}
+
+/**
+ * 按 userId 聚合员工积分记录。
+ * 返回每位员工的聚合数据（未排序、未赋排名）。
+ */
+export function aggregateEmployeeEngagement(
+  records: { userId: string; amount: number; activityId?: string; createdAt: string; targetRole?: string; activityUG?: string }[],
+): {
+  userId: string;
+  totalPoints: number;
+  activityCount: number;
+  lastActiveTime: string;
+  primaryRoles: Set<string>;
+  ugSet: Set<string>;
+}[] {
+  const map = new Map<string, {
+    totalPoints: number;
+    activityIds: Set<string>;
+    lastActiveTime: string;
+    primaryRoles: Set<string>;
+    ugSet: Set<string>;
+  }>();
+
+  for (const record of records) {
+    const existing = map.get(record.userId);
+    if (existing) {
+      existing.totalPoints += record.amount;
+      if (record.activityId) {
+        existing.activityIds.add(record.activityId);
+      }
+      if (record.createdAt > existing.lastActiveTime) {
+        existing.lastActiveTime = record.createdAt;
+      }
+      if (record.targetRole) {
+        existing.primaryRoles.add(record.targetRole);
+      }
+      if (record.activityUG) {
+        existing.ugSet.add(record.activityUG);
+      }
+    } else {
+      const activityIds = new Set<string>();
+      if (record.activityId) {
+        activityIds.add(record.activityId);
+      }
+      const primaryRoles = new Set<string>();
+      if (record.targetRole) {
+        primaryRoles.add(record.targetRole);
+      }
+      const ugSet = new Set<string>();
+      if (record.activityUG) {
+        ugSet.add(record.activityUG);
+      }
+      map.set(record.userId, {
+        totalPoints: record.amount,
+        activityIds,
+        lastActiveTime: record.createdAt,
+        primaryRoles,
+        ugSet,
+      });
+    }
+  }
+
+  const result: {
+    userId: string;
+    totalPoints: number;
+    activityCount: number;
+    lastActiveTime: string;
+    primaryRoles: Set<string>;
+    ugSet: Set<string>;
+  }[] = [];
+
+  for (const [userId, data] of map) {
+    result.push({
+      userId,
+      totalPoints: data.totalPoints,
+      activityCount: data.activityIds.size,
+      lastActiveTime: data.lastActiveTime,
+      primaryRoles: data.primaryRoles,
+      ugSet: data.ugSet,
+    });
+  }
+
+  return result;
+}
+
+/**
+ * 计算活跃率。
+ * 公式: activeCount / totalCount × 100，保留一位小数。
+ * 当 totalCount 为 0 时返回 0。
+ */
+export function calculateEngagementRate(activeCount: number, totalCount: number): number {
+  if (totalCount === 0) {
+    return 0;
+  }
+  return Math.round((activeCount / totalCount) * 1000) / 10;
+}
+
+/**
+ * 查询活跃员工报表。
+ * 1. Scan Users 表获取所有 isEmployee=true 的用户 ID
+ * 2. Query PointsRecords type-createdAt-index GSI (type=earn, 日期范围)
+ * 3. 内存筛选员工记录 → aggregateEmployeeEngagement() 聚合
+ * 4. BatchGet Users 获取 nickname
+ * 5. 排序（积分降序，同积分按最后活跃时间降序）→ 赋排名
+ * 6. 计算汇总指标
+ */
+export async function queryEmployeeEngagement(
+  filter: EmployeeEngagementFilter,
+  dynamoClient: DynamoDBDocumentClient,
+  tables: { usersTable: string; pointsRecordsTable: string },
+): Promise<EmployeeEngagementResult> {
+  try {
+    // 1. Scan Users table to get all employee userIds
+    const employeeItems = await scanAll(dynamoClient, tables.usersTable, {
+      filterExpression: 'isEmployee = :true',
+      expressionAttributeValues: { ':true': true },
+    });
+
+    const employeeUserIds = new Set<string>(
+      employeeItems.map(item => item.userId as string).filter(Boolean),
+    );
+    const totalEmployees = employeeUserIds.size;
+
+    // 2. Query PointsRecords type-createdAt-index GSI with type=earn and date range
+    const { startDate, endDate } = applyDefaultDateRange(filter.startDate, filter.endDate);
+
+    const earnItems = await queryAll(
+      dynamoClient,
+      tables.pointsRecordsTable,
+      'type-createdAt-index',
+      '#type = :type AND createdAt BETWEEN :start AND :end',
+      {
+        ':type': 'earn',
+        ':start': startDate,
+        ':end': endDate,
+      },
+      {
+        expressionAttributeNames: { '#type': 'type' },
+      },
+    );
+
+    // 3. Filter records in memory to keep only employee userIds
+    const employeeRecords = earnItems.filter(
+      item => employeeUserIds.has(item.userId as string),
+    );
+
+    // 4. Aggregate employee engagement using pure function
+    const inputRecords = employeeRecords.map(item => ({
+      userId: (item.userId as string) ?? '',
+      amount: (item.amount as number) ?? 0,
+      activityId: (item.activityId as string) ?? undefined,
+      createdAt: (item.createdAt as string) ?? '',
+      targetRole: (item.targetRole as string) ?? undefined,
+      activityUG: (item.activityUG as string) ?? undefined,
+    }));
+
+    const aggregated = aggregateEmployeeEngagement(inputRecords);
+
+    // 5. BatchGet Users table for nicknames
+    const activeUserIds = aggregated.map(a => a.userId);
+    const userKeys = activeUserIds.map(id => ({ userId: id }));
+    const userItems = await batchGetItems(dynamoClient, tables.usersTable, userKeys, 'userId, nickname');
+    const nicknameMap = new Map<string, string>();
+    for (const item of userItems) {
+      nicknameMap.set(item.userId as string, (item.nickname as string) ?? '');
+    }
+
+    // 6. Sort by totalPoints desc, tiebreak by lastActiveTime desc
+    aggregated.sort((a, b) => {
+      if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
+      return b.lastActiveTime.localeCompare(a.lastActiveTime);
+    });
+
+    // 7. Assign rank = index + 1 and build final records
+    const records: EmployeeEngagementRecord[] = aggregated.map((item, index) => ({
+      rank: index + 1,
+      userId: item.userId,
+      nickname: nicknameMap.get(item.userId) ?? '',
+      totalPoints: item.totalPoints,
+      activityCount: item.activityCount,
+      lastActiveTime: item.lastActiveTime,
+      primaryRoles: [...item.primaryRoles].join(', '),
+      ugList: [...item.ugSet].join('、'),
+    }));
+
+    // 8. Compute summary
+    const allActivityIds = new Set<string>();
+    for (const record of employeeRecords) {
+      const activityId = record.activityId as string;
+      if (activityId) {
+        allActivityIds.add(activityId);
+      }
+    }
+
+    const summaryTotalPoints = records.reduce((sum, r) => sum + r.totalPoints, 0);
+
+    const summary: EmployeeEngagementSummary = {
+      totalEmployees,
+      activeEmployees: records.length,
+      engagementRate: calculateEngagementRate(records.length, totalEmployees),
+      totalPoints: summaryTotalPoints,
+      totalActivities: allActivityIds.size,
+    };
+
+    return { success: true, summary, records };
+  } catch (err) {
+    console.error('queryEmployeeEngagement error:', err);
     return { success: false, error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } };
   }
 }

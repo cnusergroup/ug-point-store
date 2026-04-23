@@ -111,6 +111,7 @@ export function validateRankingParams(query: Record<string, string | undefined>)
  * Users with only admin roles (Admin, SuperAdmin, OrderAdmin) are excluded from ranking.
  */
 export function isEligibleForRanking(roles: string[]): boolean {
+  if (roles.includes('SuperAdmin')) return false;
   return roles.some(r => (REGULAR_ROLES as string[]).includes(r));
 }
 

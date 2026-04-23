@@ -35,6 +35,9 @@ export default function SettingsPage() {
   const [passwordError, setPasswordError] = useState('');
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Email subscription state
   const [emailSubs, setEmailSubs] = useState<{ newProduct: boolean; newContent: boolean }>({ newProduct: false, newContent: false });
@@ -104,6 +107,9 @@ export default function SettingsPage() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
+      setShowCurrentPassword(false);
+      setShowNewPassword(false);
+      setShowConfirmPassword(false);
     }
   };
 
@@ -179,34 +185,79 @@ export default function SettingsPage() {
         {showPasswordForm && (
           <View className='settings-password-form'>
             <View className='settings-password-form__field'>
-              <Input
-                className='settings-password-form__input'
-                type='text'
-                password
-                placeholder={t('settings.currentPasswordPlaceholder')}
-                value={currentPassword}
-                onInput={(e) => setCurrentPassword(e.detail.value)}
-              />
+              <View className='password-field'>
+                <Input
+                  className='settings-password-form__input'
+                  type='text'
+                  password={!showCurrentPassword}
+                  placeholder={t('settings.currentPasswordPlaceholder')}
+                  value={currentPassword}
+                  onInput={(e) => setCurrentPassword(e.detail.value)}
+                />
+                <Text className='password-field__toggle' onClick={() => setShowCurrentPassword(!showCurrentPassword)}>
+                  {showCurrentPassword ? (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                      <line x1="1" y1="1" x2="23" y2="23" />
+                    </svg>
+                  ) : (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
+                </Text>
+              </View>
             </View>
             <View className='settings-password-form__field'>
-              <Input
-                className='settings-password-form__input'
-                type='text'
-                password
-                placeholder={t('settings.newPasswordPlaceholder')}
-                value={newPassword}
-                onInput={(e) => setNewPassword(e.detail.value)}
-              />
+              <View className='password-field'>
+                <Input
+                  className='settings-password-form__input'
+                  type='text'
+                  password={!showNewPassword}
+                  placeholder={t('settings.newPasswordPlaceholder')}
+                  value={newPassword}
+                  onInput={(e) => setNewPassword(e.detail.value)}
+                />
+                <Text className='password-field__toggle' onClick={() => setShowNewPassword(!showNewPassword)}>
+                  {showNewPassword ? (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                      <line x1="1" y1="1" x2="23" y2="23" />
+                    </svg>
+                  ) : (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
+                </Text>
+              </View>
             </View>
             <View className='settings-password-form__field'>
-              <Input
-                className='settings-password-form__input'
-                type='text'
-                password
-                placeholder={t('settings.confirmPasswordPlaceholder')}
-                value={confirmPassword}
-                onInput={(e) => setConfirmPassword(e.detail.value)}
-              />
+              <View className='password-field'>
+                <Input
+                  className='settings-password-form__input'
+                  type='text'
+                  password={!showConfirmPassword}
+                  placeholder={t('settings.confirmPasswordPlaceholder')}
+                  value={confirmPassword}
+                  onInput={(e) => setConfirmPassword(e.detail.value)}
+                />
+                <Text className='password-field__toggle' onClick={() => setShowConfirmPassword(!showConfirmPassword)}>
+                  {showConfirmPassword ? (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                      <line x1="1" y1="1" x2="23" y2="23" />
+                    </svg>
+                  ) : (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
+                </Text>
+              </View>
             </View>
             {passwordError && (
               <Text className='settings-password-form__error'>{passwordError}</Text>

@@ -45,6 +45,7 @@ vi.mock('./users', () => ({
   listUsers: vi.fn(),
   setUserStatus: vi.fn(),
   deleteUser: vi.fn(),
+  unlockUser: vi.fn(),
 }));
 vi.mock('./invites', () => ({
   batchGenerateInvites: vi.fn(),
@@ -159,7 +160,7 @@ import { assignRoles } from './roles';
 import { batchGeneratePointsCodes, generateProductCodes, listCodes, disableCode } from './codes';
 import { createPointsProduct, createCodeExclusiveProduct, updateProduct, setProductStatus } from './products';
 import { getUploadUrl, deleteImage } from './images';
-import { listUsers, setUserStatus, deleteUser } from './users';
+import { listUsers, setUserStatus, deleteUser, unlockUser } from './users';
 import { batchGenerateInvites } from './invites';
 import { reviewClaim, listAllClaims } from '../claims/review';
 import { reviewContent, listAllContent, deleteContent, createCategory, updateCategory, deleteCategory } from '../content/admin';
@@ -1076,6 +1077,7 @@ describe('Admin Lambda Handler', () => {
         '',
         '',
         86400000,
+        undefined,
       );
     });
 
@@ -1503,6 +1505,8 @@ describe('Admin Lambda Handler', () => {
           emailOrderShippedEnabled: false,
           emailNewProductEnabled: false,
           emailNewContentEnabled: false,
+          emailContentUpdatedEnabled: false,
+          emailWeeklyDigestEnabled: false,
           adminEmailProductsEnabled: false,
           adminEmailContentEnabled: false,
           reservationApprovalPoints: 10,

@@ -43,11 +43,12 @@ export default defineAppConfig({
     'pages/content/mine',
     'pages/leaderboard/index',
     'pages/privacy/index',
+    'pages/code-of-conduct/index',
   ],
   window: {
     backgroundTextStyle: 'dark',
     navigationBarBackgroundColor: '#0a0b0f',
-    navigationBarTitleText: '福利广场',
+    navigationBarTitleText: '积分兑换广场',
     navigationBarTextStyle: 'white',
   },
 });

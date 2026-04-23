@@ -10,7 +10,8 @@ export type NotificationType =
   | 'orderShipped'
   | 'newProduct'
   | 'newContent'
-  | 'contentUpdated';
+  | 'contentUpdated'
+  | 'weeklyDigest';
 
 export type EmailLocale = 'zh' | 'en' | 'ja' | 'ko' | 'zh-TW';
 

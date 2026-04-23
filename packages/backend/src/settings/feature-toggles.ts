@@ -64,6 +64,8 @@ export interface FeatureToggles {
   emailNewContentEnabled: boolean;
   /** Whether contentUpdated email notifications are enabled */
   emailContentUpdatedEnabled: boolean;
+  /** Whether weeklyDigest email notifications are enabled */
+  emailWeeklyDigestEnabled: boolean;
   /** Whether Admin (non-SuperAdmin) can trigger new product email notifications */
   adminEmailProductsEnabled: boolean;
   /** Whether Admin (non-SuperAdmin) can trigger new content email notifications */
@@ -78,6 +80,10 @@ export interface FeatureToggles {
   leaderboardUpdateFrequency: 'realtime' | 'daily' | 'weekly' | 'monthly';
   /** Points rule configuration for batch distribution */
   pointsRuleConfig: PointsRuleConfig;
+  /** Whether brand logos are displayed on the product list page */
+  brandLogoListEnabled: boolean;
+  /** Whether brand logos are displayed on the product detail page */
+  brandLogoDetailEnabled: boolean;
 }
 
 export interface UpdateFeatureTogglesInput {
@@ -93,6 +99,7 @@ export interface UpdateFeatureTogglesInput {
   emailNewProductEnabled: boolean;
   emailNewContentEnabled: boolean;
   emailContentUpdatedEnabled: boolean;
+  emailWeeklyDigestEnabled: boolean;
   adminEmailProductsEnabled: boolean;
   adminEmailContentEnabled: boolean;
   reservationApprovalPoints: number;
@@ -100,6 +107,8 @@ export interface UpdateFeatureTogglesInput {
   leaderboardAnnouncementEnabled: boolean;
   leaderboardUpdateFrequency: 'realtime' | 'daily' | 'weekly' | 'monthly';
   pointsRuleConfig?: PointsRuleConfig;
+  brandLogoListEnabled: boolean;
+  brandLogoDetailEnabled: boolean;
   updatedBy: string;
 }
 
@@ -162,6 +171,7 @@ const DEFAULT_TOGGLES: FeatureToggles = {
   emailNewProductEnabled: false,
   emailNewContentEnabled: false,
   emailContentUpdatedEnabled: false,         // default: contentUpdated email notifications disabled
+  emailWeeklyDigestEnabled: false,           // default: weeklyDigest email notifications disabled
   adminEmailProductsEnabled: false,          // default: Admin cannot trigger product email notifications
   adminEmailContentEnabled: false,           // default: Admin cannot trigger content email notifications
   reservationApprovalPoints: 10,             // default: 10 points for reservation approval
@@ -169,6 +179,8 @@ const DEFAULT_TOGGLES: FeatureToggles = {
   leaderboardAnnouncementEnabled: false,     // default: leaderboard announcement disabled
   leaderboardUpdateFrequency: 'weekly',      // default: weekly update frequency
   pointsRuleConfig: { ...DEFAULT_POINTS_RULE_CONFIG },
+  brandLogoListEnabled: true,                             // default: brand logos on list page enabled
+  brandLogoDetailEnabled: true,                           // default: brand logos on detail page enabled
 };
 
 // ---- Core Functions ----
@@ -224,6 +236,7 @@ export async function getFeatureToggles(
       emailNewProductEnabled:   result.Item.emailNewProductEnabled === true,      // default false
       emailNewContentEnabled:   result.Item.emailNewContentEnabled === true,      // default false
       emailContentUpdatedEnabled: result.Item.emailContentUpdatedEnabled === true, // default false
+      emailWeeklyDigestEnabled: result.Item.emailWeeklyDigestEnabled === true,   // default false
       adminEmailProductsEnabled: result.Item.adminEmailProductsEnabled === true,  // default false
       adminEmailContentEnabled:  result.Item.adminEmailContentEnabled === true,   // default false
       reservationApprovalPoints: typeof result.Item.reservationApprovalPoints === 'number' && result.Item.reservationApprovalPoints > 0
@@ -238,6 +251,8 @@ export async function getFeatureToggles(
         result.Item.leaderboardUpdateFrequency === 'monthly'
           ? result.Item.leaderboardUpdateFrequency
           : 'weekly',  // default 'weekly'
+      brandLogoListEnabled:             result.Item.brandLogoListEnabled !== false,              // default true
+      brandLogoDetailEnabled:           result.Item.brandLogoDetailEnabled !== false,            // default true
       pointsRuleConfig: (() => {
         const raw = result.Item.pointsRuleConfig as Record<string, unknown> | undefined;
         if (!raw || typeof raw !== 'object') return { ...DEFAULT_POINTS_RULE_CONFIG };
@@ -285,13 +300,16 @@ export async function updateFeatureToggles(
     typeof input.emailNewProductEnabled !== 'boolean' ||
     typeof input.emailNewContentEnabled !== 'boolean' ||
     typeof input.emailContentUpdatedEnabled !== 'boolean' ||
+    typeof input.emailWeeklyDigestEnabled !== 'boolean' ||
     typeof input.adminEmailProductsEnabled !== 'boolean' ||
     typeof input.adminEmailContentEnabled !== 'boolean' ||
     typeof input.reservationApprovalPoints !== 'number' ||
     !Number.isInteger(input.reservationApprovalPoints) ||
     input.reservationApprovalPoints < 1 ||
     typeof input.leaderboardRankingEnabled !== 'boolean' ||
-    typeof input.leaderboardAnnouncementEnabled !== 'boolean'
+    typeof input.leaderboardAnnouncementEnabled !== 'boolean' ||
+    typeof input.brandLogoListEnabled !== 'boolean' ||
+    typeof input.brandLogoDetailEnabled !== 'boolean'
   ) {
     return {
       success: false,
@@ -342,12 +360,15 @@ export async function updateFeatureToggles(
         emailNewProductEnabled = :enp,
         emailNewContentEnabled = :enc,
         emailContentUpdatedEnabled = :ecu,
+        emailWeeklyDigestEnabled = :ewde,
         adminEmailProductsEnabled = :aepe,
         adminEmailContentEnabled = :aece,
         reservationApprovalPoints = :rap,
         leaderboardRankingEnabled = :lre,
         leaderboardAnnouncementEnabled = :lae,
         leaderboardUpdateFrequency = :luf,
+        brandLogoListEnabled = :blle,
+        brandLogoDetailEnabled = :blde,
         updatedAt = :ua,
         updatedBy = :ub`;
 
@@ -364,12 +385,15 @@ export async function updateFeatureToggles(
         ':enp': input.emailNewProductEnabled,
         ':enc': input.emailNewContentEnabled,
         ':ecu': input.emailContentUpdatedEnabled,
+        ':ewde': input.emailWeeklyDigestEnabled,
         ':aepe': input.adminEmailProductsEnabled,
         ':aece': input.adminEmailContentEnabled,
         ':rap': input.reservationApprovalPoints,
         ':lre': input.leaderboardRankingEnabled,
         ':lae': input.leaderboardAnnouncementEnabled,
         ':luf': input.leaderboardUpdateFrequency,
+        ':blle': input.brandLogoListEnabled,
+        ':blde': input.brandLogoDetailEnabled,
         ':ua': now,
         ':ub': input.updatedBy,
   };
@@ -428,12 +452,15 @@ export async function updateFeatureToggles(
       emailNewProductEnabled: input.emailNewProductEnabled,
       emailNewContentEnabled: input.emailNewContentEnabled,
       emailContentUpdatedEnabled: input.emailContentUpdatedEnabled,
+      emailWeeklyDigestEnabled: input.emailWeeklyDigestEnabled,
       adminEmailProductsEnabled: input.adminEmailProductsEnabled,
       adminEmailContentEnabled: input.adminEmailContentEnabled,
       reservationApprovalPoints: input.reservationApprovalPoints,
       leaderboardRankingEnabled: input.leaderboardRankingEnabled,
       leaderboardAnnouncementEnabled: input.leaderboardAnnouncementEnabled,
       leaderboardUpdateFrequency: input.leaderboardUpdateFrequency,
+      brandLogoListEnabled: input.brandLogoListEnabled,
+      brandLogoDetailEnabled: input.brandLogoDetailEnabled,
       pointsRuleConfig: input.pointsRuleConfig ?? (item.pointsRuleConfig as PointsRuleConfig | undefined) ?? { ...DEFAULT_POINTS_RULE_CONFIG },
       updatedAt: now,
       updatedBy: input.updatedBy,

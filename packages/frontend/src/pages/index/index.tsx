@@ -26,7 +26,14 @@ interface ProductListItem {
   allowedRoles?: UserRole[] | 'all';
   eventInfo?: string;
   createdAt?: string;
+  brand?: string;
 }
+
+const BRAND_DISPLAY: Record<string, string> = {
+  aws: 'AWS',
+  ug: '亚马逊云科技UG',
+  awscloud: '亚马逊云科技',
+};
 
 interface ProductListResponse {
   items: ProductListItem[];
@@ -65,7 +72,7 @@ export default function IndexPage() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [roleFilter, setRoleFilter] = useState<UserRole | ''>('');
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
-  const [featureToggles, setFeatureToggles] = useState<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean } | null>(null);
+  const [featureToggles, setFeatureToggles] = useState<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; brandLogoListEnabled?: boolean } | null>(null);
   const [travelSettings, setTravelSettings] = useState<TravelSponsorshipSettings | null>(null);
   const [travelQuota, setTravelQuota] = useState<TravelQuota | null>(null);
   const [travelQuotaLoading, setTravelQuotaLoading] = useState(false);
@@ -112,7 +119,7 @@ export default function IndexPage() {
     fetchProducts();
 
     // Fetch feature toggles (public endpoint, no auth needed)
-    request<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean }>({
+    request<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; brandLogoListEnabled?: boolean }>({
       url: '/api/settings/feature-toggles',
       skipAuth: true,
     })
@@ -230,7 +237,22 @@ export default function IndexPage() {
           <Text className='product-card__name'>{product.name}</Text>
           <Text className='product-card__desc'>{product.description}</Text>
 
-          {!isCode && renderRoleBadges(product.allowedRoles)}
+          <View className='product-card__roles'>
+            {!isCode && product.allowedRoles && (
+              product.allowedRoles === 'all' ? (
+                <Text className='role-badge role-badge--all'>{t('mall.everyone')}</Text>
+              ) : (
+                product.allowedRoles.map((role) => (
+                  <Text key={role} className={`role-badge ${ROLE_CONFIG[role]?.className || ''}`}>
+                    {ROLE_CONFIG[role]?.label || role}
+                  </Text>
+                ))
+              )
+            )}
+            {featureToggles?.brandLogoListEnabled !== false && product.brand && BRAND_DISPLAY[product.brand] && (
+              <Text className='brand-tag'>{BRAND_DISPLAY[product.brand]}</Text>
+            )}
+          </View>
 
           <View className='product-card__footer'>
             {isCode ? (

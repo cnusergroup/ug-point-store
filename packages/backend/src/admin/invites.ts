@@ -8,7 +8,7 @@ import { batchCreateInvites } from '../auth/invite';
 // ============================================================
 
 export type BatchGenerateInvitesResult =
-  | { success: true; invites: Array<{ token: string; link: string; roles: UserRole[]; expiresAt: string }> }
+  | { success: true; invites: Array<{ token: string; link: string; roles: UserRole[]; expiresAt: string; isEmployee: boolean }> }
   | { success: false; error: { code: string; message: string } };
 
 export type ListInvitesResult = {
@@ -35,8 +35,9 @@ export async function batchGenerateInvites(
   invitesTable: string,
   registerBaseUrl: string,
   expiryMs?: number,
+  isEmployee?: boolean,
 ): Promise<BatchGenerateInvitesResult> {
-  return batchCreateInvites(count, roles, dynamoClient, invitesTable, registerBaseUrl, expiryMs);
+  return batchCreateInvites(count, roles, dynamoClient, invitesTable, registerBaseUrl, expiryMs, isEmployee);
 }
 
 /**

@@ -2,7 +2,7 @@ import { DynamoDBDocumentClient, PutCommand, UpdateCommand, ScanCommand } from '
 import { S3Client } from '@aws-sdk/client-s3';
 import { ulid } from 'ulid';
 import type { UserRole, Product, PointsProduct, CodeExclusiveProduct, ProductStatus, ProductImage, SizeOption } from '@points-mall/shared';
-import { ErrorCodes, ErrorMessages } from '@points-mall/shared';
+import { ErrorCodes, ErrorMessages, VALID_BRANDS } from '@points-mall/shared';
 import { moveTempImages, isTempImage } from './images';
 
 export interface CreatePointsProductInput {
@@ -16,6 +16,7 @@ export interface CreatePointsProductInput {
   sizeOptions?: SizeOption[];
   purchaseLimitEnabled?: boolean;
   purchaseLimitCount?: number;
+  brand?: string;
 }
 
 export interface CreateCodeExclusiveProductInput {
@@ -28,6 +29,7 @@ export interface CreateCodeExclusiveProductInput {
   sizeOptions?: SizeOption[];
   purchaseLimitEnabled?: boolean;
   purchaseLimitCount?: number;
+  brand?: string;
 }
 
 export interface ProductOperationResult<T = void> {
@@ -72,6 +74,20 @@ export function validatePurchaseLimit(
 }
 
 /**
+ * Validate brand value: accepts undefined, null, empty string, or a valid brand string.
+ * Returns null for valid values, error object for invalid non-empty strings.
+ */
+export function validateBrand(
+  brand: unknown,
+): { code: string; message: string } | null {
+  if (brand === undefined || brand === null || brand === '') return null;
+  if (typeof brand !== 'string' || !VALID_BRANDS.includes(brand as any)) {
+    return { code: ErrorCodes.INVALID_BRAND, message: ErrorMessages.INVALID_BRAND };
+  }
+  return null;
+}
+
+/**
  * Sync imageUrl from images array.
  * When images is non-empty, return images[0].url; otherwise return empty string.
  */
@@ -93,6 +109,10 @@ export async function createPointsProduct(
   s3Client?: S3Client,
   bucketName?: string,
 ): Promise<ProductOperationResult<PointsProduct>> {
+  // Validate brand
+  const brandError = validateBrand(input.brand);
+  if (brandError) return { success: false, error: brandError };
+
   // Validate size options if provided
   if (input.sizeOptions) {
     const sizeError = validateSizeOptions(input.sizeOptions);
@@ -140,6 +160,7 @@ export async function createPointsProduct(
     ...(input.sizeOptions !== undefined && { sizeOptions: input.sizeOptions }),
     ...(input.purchaseLimitEnabled !== undefined && { purchaseLimitEnabled: input.purchaseLimitEnabled }),
     ...(input.purchaseLimitCount !== undefined && { purchaseLimitCount: input.purchaseLimitCount }),
+    ...(input.brand && { brand: input.brand }),
   };
 
   await dynamoClient.send(
@@ -163,6 +184,10 @@ export async function createCodeExclusiveProduct(
   s3Client?: S3Client,
   bucketName?: string,
 ): Promise<ProductOperationResult<CodeExclusiveProduct>> {
+  // Validate brand
+  const brandError = validateBrand(input.brand);
+  if (brandError) return { success: false, error: brandError };
+
   // Validate size options if provided
   if (input.sizeOptions) {
     const sizeError = validateSizeOptions(input.sizeOptions);
@@ -209,6 +234,7 @@ export async function createCodeExclusiveProduct(
     ...(input.sizeOptions !== undefined && { sizeOptions: input.sizeOptions }),
     ...(input.purchaseLimitEnabled !== undefined && { purchaseLimitEnabled: input.purchaseLimitEnabled }),
     ...(input.purchaseLimitCount !== undefined && { purchaseLimitCount: input.purchaseLimitCount }),
+    ...(input.brand && { brand: input.brand }),
   };
 
   await dynamoClient.send(
@@ -231,6 +257,12 @@ export async function updateProduct(
   dynamoClient: DynamoDBDocumentClient,
   tableName: string,
 ): Promise<ProductOperationResult> {
+  // Validate brand if provided in updates
+  if (updates.brand !== undefined) {
+    const brandError = validateBrand(updates.brand);
+    if (brandError) return { success: false, error: brandError };
+  }
+
   // Validate size options if provided in updates
   if (updates.sizeOptions !== undefined) {
     const sizeOptions = updates.sizeOptions as SizeOption[];

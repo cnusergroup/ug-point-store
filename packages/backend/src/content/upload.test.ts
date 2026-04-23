@@ -46,7 +46,7 @@ describe('getContentUploadUrl', () => {
     expect(result.success).toBe(true);
     expect(result.data).toBeDefined();
     expect(result.data!.uploadUrl).toBe('https://s3.amazonaws.com/presigned-upload-url');
-    expect(result.data!.fileKey).toMatch(/^content\/user-1\/[A-Z0-9]+\.pptx$/);
+    expect(result.data!.fileKey).toMatch(/^content\/temp\/user-1\/[A-Z0-9]+\.pptx$/);
   });
 
   it('should accept application/pdf', async () => {
@@ -349,7 +349,7 @@ describe('getContentUploadUrl - CloudFront mode', () => {
 
     expect(result.success).toBe(true);
     expect(result.data!.uploadUrl).toMatch(
-      /^https:\/\/store\.awscommunity\.cn\/content\/user-cf\/[A-Z0-9]+\.pptx\?token=.+$/,
+      /^https:\/\/store\.awscommunity\.cn\/content\/temp\/user-cf\/[A-Z0-9]+\.pptx\?token=.+$/,
     );
   });
 });

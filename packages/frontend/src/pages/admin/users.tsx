@@ -15,7 +15,7 @@ interface UserListItem {
   nickname: string;
   roles: string[];
   points: number;
-  status: 'active' | 'disabled';
+  status: 'active' | 'disabled' | 'locked';
   createdAt: string;
 }
 
@@ -166,6 +166,22 @@ export default function AdminUsersPage() {
     }
   };
 
+  const handleUnlock = async (user: UserListItem) => {
+    try {
+      await request({
+        url: `/api/admin/users/${user.userId}/unlock`,
+        method: 'POST',
+      });
+      Taro.showToast({ title: t('admin.users.unlockSuccess'), icon: 'none' });
+      fetchUsers(roleFilter);
+    } catch (err) {
+      Taro.showToast({
+        title: err instanceof RequestError ? err.message : t('admin.users.unlockFailed'),
+        icon: 'none',
+      });
+    }
+  };
+
   /** Determine which roles the current admin can assign */
   const isSuperAdmin = adminRoles.includes('SuperAdmin');
   const assignableRoles = isSuperAdmin ? [...REGULAR_ROLES, 'Admin'] : REGULAR_ROLES;
@@ -292,7 +308,7 @@ export default function AdminUsersPage() {
                   <View className='user-row__top'>
                     <Text className='user-row__nickname'>{user.nickname}</Text>
                     <Text className={`user-status user-status--${user.status}`}>
-                      {user.status === 'active' ? t('admin.users.statusActive') : t('admin.users.statusDisabled')}
+                      {user.status === 'active' ? t('admin.users.statusActive') : user.status === 'locked' ? t('admin.users.statusLocked') : t('admin.users.statusDisabled')}
                     </Text>
                   </View>
                   <Text className='user-row__email'>{user.email}</Text>
@@ -318,6 +334,14 @@ export default function AdminUsersPage() {
                   <View className='user-row__action-btn user-row__action-btn--edit' onClick={() => openRoleEditor(user)}>
                     <Text>{t('admin.users.editRoles')}</Text>
                   </View>
+                  {isSuperAdmin && user.status === 'locked' && (
+                    <View
+                      className='user-row__action-btn user-row__action-btn--unlock'
+                      onClick={() => handleUnlock(user)}
+                    >
+                      <Text>{t('admin.users.unlockUser')}</Text>
+                    </View>
+                  )}
                   {canManageUserCheck(user.roles) && (user.status === 'active' ? (
                     <View
                       className='user-row__action-btn user-row__action-btn--warn'

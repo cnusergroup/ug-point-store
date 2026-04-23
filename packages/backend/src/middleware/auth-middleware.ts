@@ -66,10 +66,18 @@ export function withAuth(handler: LambdaHandler) {
             new GetCommand({
               TableName: USERS_TABLE,
               Key: { userId: payload.userId },
-              ProjectionExpression: 'rolesVersion, #r',
-              ExpressionAttributeNames: { '#r': 'roles' },
+              ProjectionExpression: 'rolesVersion, #r, #s',
+              ExpressionAttributeNames: { '#r': 'roles', '#s': 'status' },
             }),
           );
+          // User deleted or not found — reject immediately
+          if (!versionRecord.Item) {
+            return errorResponse(401, 'USER_DELETED', '用户已被删除');
+          }
+          // User disabled — reject
+          if (versionRecord.Item.status === 'disabled') {
+            return errorResponse(401, 'USER_DISABLED', '账号已被停用');
+          }
           const dbRolesVersion: number = versionRecord.Item?.rolesVersion ?? 0;
           if (dbRolesVersion > tokenRolesVersion) {
             // Roles were updated after this token was issued — use DB roles
@@ -86,10 +94,18 @@ export function withAuth(handler: LambdaHandler) {
             new GetCommand({
               TableName: USERS_TABLE,
               Key: { userId: payload.userId },
-              ProjectionExpression: '#r',
-              ExpressionAttributeNames: { '#r': 'roles' },
+              ProjectionExpression: '#r, #s',
+              ExpressionAttributeNames: { '#r': 'roles', '#s': 'status' },
             }),
           );
+          // User deleted or not found — reject immediately
+          if (!userRecord.Item) {
+            return errorResponse(401, 'USER_DELETED', '用户已被删除');
+          }
+          // User disabled — reject
+          if (userRecord.Item.status === 'disabled') {
+            return errorResponse(401, 'USER_DISABLED', '账号已被停用');
+          }
           if (userRecord.Item?.roles) {
             roles = userRecord.Item.roles as string[];
           }

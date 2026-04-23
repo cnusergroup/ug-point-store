@@ -285,6 +285,30 @@
     background: var(--bg-elevated);
   }
 
+  /* Transparent overlay covering the entire PDF iframe to block right-click save.
+     pointer-events: auto intercepts right-click; wheel events are forwarded via JS. */
+  &__overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    cursor: default;
+    pointer-events: auto;
+    background: transparent;
+  }
+
+  /* Overlay covering only the top toolbar area of Office Online Viewer */
+  &__toolbar-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 50px;
+    z-index: 5;
+    cursor: default;
+    pointer-events: auto;
+    background: transparent;
+  }
+
   &__unsupported {
     display: flex;
     align-items: center;
@@ -298,6 +322,55 @@
   &__unsupported-text {
     font-size: var(--text-body-sm);
     color: var(--text-tertiary);
+  }
+
+  /* Preview pending state — conversion in progress */
+  &__pending {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    height: 200px;
+    border: 1px dashed var(--card-border);
+    border-radius: var(--radius-md);
+    background: var(--bg-elevated);
+  }
+
+  &__spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid var(--card-border);
+    border-top-color: var(--accent-primary);
+    border-radius: var(--radius-full);
+    animation: previewSpin 0.8s linear infinite;
+  }
+
+  &__pending-text {
+    font-size: var(--text-body-sm);
+    color: var(--text-tertiary);
+  }
+
+  /* Preview failed state — conversion error */
+  &__failed {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 120px;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: var(--radius-md);
+    background: rgba(239, 68, 68, 0.06);
+  }
+
+  &__failed-text {
+    font-size: var(--text-body-sm);
+    color: var(--error);
+  }
+}
+
+@keyframes previewSpin {
+  to {
+    transform: rotate(360deg);
   }
 }
 

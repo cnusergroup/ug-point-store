@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { loginUser } from './login';
+import { loginUser, SLIDING_WINDOW_MS } from './login';
 import { ErrorCodes } from '@points-mall/shared';
 import { hash } from 'bcryptjs';
 
@@ -104,16 +104,20 @@ describe('loginUser', () => {
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe(ErrorCodes.INVALID_CREDENTIALS);
 
-    // Verify loginFailCount was incremented
+    // Verify loginFailCount was set to 1 (new sliding window started)
     const updateCall = dynamoClient.send.mock.calls.find(
       (c: any) => c[0].constructor.name === 'UpdateCommand',
     );
     expect(updateCall).toBeDefined();
     expect(updateCall![0].input.ExpressionAttributeValues[':count']).toBe(1);
+    // firstFailAt should be set
+    expect(updateCall![0].input.ExpressionAttributeValues[':firstFailAt']).toBeDefined();
   });
 
-  it('should lock account after 5 consecutive failed attempts', async () => {
-    const user = await makeUser({ loginFailCount: 4 });
+  it('should lock account after 5 consecutive failed attempts within sliding window', async () => {
+    // User has 4 failures within the sliding window
+    const recentFirstFailAt = Date.now() - 5 * 60 * 1000; // 5 minutes ago (within window)
+    const user = await makeUser({ loginFailCount: 4, firstFailAt: recentFirstFailAt });
     const dynamoClient = createMockDynamoClient([user]);
 
     const result = await loginUser(
@@ -123,7 +127,8 @@ describe('loginUser', () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.error?.code).toBe(ErrorCodes.INVALID_CREDENTIALS);
+    expect(result.error?.code).toBe(ErrorCodes.ACCOUNT_LOCKED);
+    expect(result.error?.lockRemainingMs).toBeGreaterThan(0);
 
     // Verify account was locked
     const updateCall = dynamoClient.send.mock.calls.find(
@@ -148,10 +153,21 @@ describe('loginUser', () => {
 
     expect(result.success).toBe(true);
     expect(result.user).toBeDefined();
+
+    // Verify lock state was reset (there should be 2 UpdateCommands: one for lock reset, one for success)
+    const updateCalls = dynamoClient.send.mock.calls.filter(
+      (c: any) => c[0].constructor.name === 'UpdateCommand',
+    );
+    expect(updateCalls.length).toBe(2);
+    // First update: lock expiry reset
+    const resetInput = updateCalls[0][0].input;
+    expect(resetInput.ExpressionAttributeValues[':zero']).toBe(0);
+    expect(resetInput.ExpressionAttributeValues[':active']).toBe('active');
   });
 
-  it('should not increment fail count beyond lock when already at 4 failures', async () => {
-    const user = await makeUser({ loginFailCount: 3 });
+  it('should not lock when already at 3 failures within sliding window', async () => {
+    const recentFirstFailAt = Date.now() - 5 * 60 * 1000; // 5 minutes ago
+    const user = await makeUser({ loginFailCount: 3, firstFailAt: recentFirstFailAt });
     const dynamoClient = createMockDynamoClient([user]);
 
     const result = await loginUser(
@@ -161,6 +177,7 @@ describe('loginUser', () => {
     );
 
     expect(result.success).toBe(false);
+    expect(result.error?.code).toBe(ErrorCodes.INVALID_CREDENTIALS);
     const updateCall = dynamoClient.send.mock.calls.find(
       (c: any) => c[0].constructor.name === 'UpdateCommand',
     );
@@ -188,5 +205,77 @@ describe('loginUser', () => {
       (c: any) => c[0].constructor.name === 'UpdateCommand',
     );
     expect(updateCall).toBeUndefined();
+  });
+
+  it('should reset sliding window when firstFailAt is stale (older than 15 min)', async () => {
+    const staleFirstFailAt = Date.now() - SLIDING_WINDOW_MS - 1000; // 15+ minutes ago
+    const user = await makeUser({ loginFailCount: 4, firstFailAt: staleFirstFailAt });
+    const dynamoClient = createMockDynamoClient([user]);
+
+    const result = await loginUser(
+      { email: 'test@example.com', password: 'wrongpassword1' },
+      dynamoClient,
+      tableName,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe(ErrorCodes.INVALID_CREDENTIALS);
+
+    // Should reset to count=1 (new window), NOT increment to 5 and lock
+    const updateCall = dynamoClient.send.mock.calls.find(
+      (c: any) => c[0].constructor.name === 'UpdateCommand',
+    );
+    expect(updateCall![0].input.ExpressionAttributeValues[':count']).toBe(1);
+  });
+
+  it('should clear firstFailAt on successful login', async () => {
+    const recentFirstFailAt = Date.now() - 5 * 60 * 1000;
+    const user = await makeUser({ loginFailCount: 2, firstFailAt: recentFirstFailAt });
+    const dynamoClient = createMockDynamoClient([user]);
+
+    const result = await loginUser(
+      { email: 'test@example.com', password: 'password1' },
+      dynamoClient,
+      tableName,
+    );
+
+    expect(result.success).toBe(true);
+
+    // Verify the REMOVE clause includes firstFailAt
+    const updateCall = dynamoClient.send.mock.calls.find(
+      (c: any) => c[0].constructor.name === 'UpdateCommand',
+    );
+    expect(updateCall).toBeDefined();
+    const updateExpr = updateCall![0].input.UpdateExpression as string;
+    expect(updateExpr).toContain('REMOVE');
+    expect(updateExpr).toContain('firstFailAt');
+  });
+
+  it('should clear firstFailAt on lock expiry reset', async () => {
+    const user = await makeUser({
+      lockUntil: Date.now() - 1000,
+      status: 'locked',
+      loginFailCount: 5,
+      firstFailAt: Date.now() - 20 * 60 * 1000,
+    });
+    const dynamoClient = createMockDynamoClient([user]);
+
+    const result = await loginUser(
+      { email: 'test@example.com', password: 'password1' },
+      dynamoClient,
+      tableName,
+    );
+
+    expect(result.success).toBe(true);
+
+    // First UpdateCommand should be the lock expiry reset
+    const updateCalls = dynamoClient.send.mock.calls.filter(
+      (c: any) => c[0].constructor.name === 'UpdateCommand',
+    );
+    expect(updateCalls.length).toBe(2);
+    const resetExpr = updateCalls[0][0].input.UpdateExpression as string;
+    expect(resetExpr).toContain('REMOVE');
+    expect(resetExpr).toContain('firstFailAt');
+    expect(resetExpr).toContain('lockUntil');
   });
 });

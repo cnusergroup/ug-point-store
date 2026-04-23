@@ -109,8 +109,8 @@ describe('Feature: meetup-sync, Property 1: event data mapping preserves all fie
         const expectedDate = node.dateTime!.slice(0, 10);
         expect(result.activityDate).toBe(expectedDate);
 
-        // dedupeKey equals {topic}#{activityDate}#{ugName}
-        const expectedDedupeKey = `${node.title}#${expectedDate}#${group.displayName}`;
+        // dedupeKey equals meetup#{meetupEventId}
+        const expectedDedupeKey = `meetup#${node.id}`;
         expect(result.dedupeKey).toBe(expectedDedupeKey);
 
         // Meetup-specific fields are preserved

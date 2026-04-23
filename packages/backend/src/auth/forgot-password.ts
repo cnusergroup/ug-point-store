@@ -63,7 +63,7 @@ export async function forgotPassword(
         Source: senderEmail,
         Destination: { ToAddresses: [email] },
         Message: {
-          Subject: { Data: '福利广场 - 密码重置' },
+          Subject: { Data: '积分兑换广场 - 密码重置' },
           Body: {
             Html: {
               Data: `<p>您好，</p><p>您请求了密码重置。请点击以下链接设置新密码：</p><p><a href="${resetLink}">${resetLink}</a></p><p>此链接有效期为 1 小时。如果您没有请求密码重置，请忽略此邮件。</p>`,

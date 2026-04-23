@@ -30,11 +30,13 @@ interface RequestOptions {
 export class RequestError extends Error {
   code: string;
   statusCode: number;
+  data?: Record<string, unknown>;
 
-  constructor(code: string, message: string, statusCode: number) {
+  constructor(code: string, message: string, statusCode: number, data?: Record<string, unknown>) {
     super(message);
     this.code = code;
     this.statusCode = statusCode;
+    this.data = data;
     this.name = 'RequestError';
   }
 }
@@ -58,12 +60,14 @@ export function clearToken(): void {
   Taro.removeStorageSync(TOKEN_KEY);
 }
 
-/** Token 过期处理：清除 Token、跳转登录页 */
+/** Token 过期处理：清除 Token、清除用户缓存、跳转登录页 */
 let isHandlingTokenExpiry = false;
 function handleTokenExpired(): void {
   if (isHandlingTokenExpiry) return; // prevent duplicate calls
   isHandlingTokenExpiry = true;
   clearToken();
+  // Also clear cached user info so deleted/disabled users don't see stale data
+  try { Taro.removeStorageSync('user_info'); } catch { /* ignore */ }
   const env = Taro.getEnv();
   if (env === Taro.ENV_TYPE.WEB) {
     window.location.hash = '#/pages/login/index';
@@ -108,16 +112,22 @@ export async function request<T = unknown>(options: RequestOptions): Promise<T> 
       return responseData as T;
     }
 
-    // Token 过期 → 跳转登录
+    // Token 过期 or user deleted/disabled → 跳转登录
     const errorData = responseData as ErrorResponse;
-    if (statusCode === 401 && errorData?.code === 'TOKEN_EXPIRED') {
+    if (statusCode === 401 && (errorData?.code === 'TOKEN_EXPIRED' || errorData?.code === 'USER_DELETED' || errorData?.code === 'USER_DISABLED' || errorData?.code === 'UNAUTHORIZED' || errorData?.code === 'INVALID_TOKEN')) {
       handleTokenExpired();
-      throw new RequestError('TOKEN_EXPIRED', '登录已过期，请重新登录', 401);
+      throw new RequestError(errorData?.code || 'TOKEN_EXPIRED', '登录已过期，请重新登录', 401);
     }
 
     // 其他业务错误
     if (errorData?.code && errorData?.message) {
-      throw new RequestError(errorData.code, errorData.message, statusCode);
+      const { code, message, ...rest } = errorData as Record<string, unknown>;
+      throw new RequestError(
+        code as string,
+        message as string,
+        statusCode,
+        Object.keys(rest).length > 0 ? rest : undefined,
+      );
     }
 
     // 未知错误格式

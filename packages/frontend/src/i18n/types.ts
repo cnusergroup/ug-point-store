@@ -76,6 +76,7 @@ export interface TranslationDict {
     wechatLoginFailed: string;
     errorInvalidCredentials: string;
     errorAccountLocked: string;
+    errorAccountLockedWithTime: string;
     errorDefault: string;
     errorEmailRequired: string;
     errorEmailInvalid: string;
@@ -193,6 +194,7 @@ export interface TranslationDict {
     loading: string;
     notFound: string;
     loadFailed: string;
+    noPermission: string;
     backButton: string;
     everyone: string;
     codeExclusiveLabel: string;
@@ -227,6 +229,7 @@ export interface TranslationDict {
     delisted: string;
     delistedBadge: string;
     delistedHint: string;
+    brandLabel: string;
   };
   redeem: {
     resultTitle: string;
@@ -707,6 +710,10 @@ export interface TranslationDict {
       rolesUpdated: string;
       rolesUpdateFailed: string;
       saving: string;
+      statusLocked: string;
+      unlockUser: string;
+      unlockSuccess: string;
+      unlockFailed: string;
     };
     orders: {
       title: string;
@@ -936,6 +943,8 @@ export interface TranslationDict {
         newContentDesc: string;
         contentUpdatedLabel: string;
         contentUpdatedDesc: string;
+        weeklyDigestLabel: string;
+        weeklyDigestDesc: string;
         editTemplateButton: string;
         templateEditorTitle: string;
         templateSubjectLabel: string;
@@ -984,6 +993,7 @@ export interface TranslationDict {
       colTopic: string;
       colTargetRole: string;
       colDistributor: string;
+      colIsEmployee: string;
       colUGName: string;
       colActivityCount: string;
       colTotalPoints: string;
@@ -1009,6 +1019,7 @@ export interface TranslationDict {
       tabInventoryAlert: string;
       tabTravelStatistics: string;
       tabInviteConversion: string;
+      tabEmployeeEngagement: string;
       // Insight report filter labels
       filterProductType: string;
       filterProductTypeAll: string;
@@ -1063,6 +1074,16 @@ export interface TranslationDict {
       metricExpiredCount: string;
       metricPendingCount: string;
       metricConversionRate: string;
+      // Employee engagement MetricCards
+      metricTotalEmployees: string;
+      metricActiveEmployees: string;
+      metricEngagementRate: string;
+      metricEmployeeTotalPoints: string;
+      metricTotalActivities: string;
+      // Employee engagement columns
+      colLastActiveTime: string;
+      colPrimaryRoles: string;
+      colUGList: string;
       // States
       emptyData: string;
       loadingData: string;
@@ -1309,6 +1330,7 @@ export interface TranslationDict {
     adminAction: string;
     orderManagement: string;
     privacyPolicy: string;
+    codeOfConduct: string;
   };
   featureToggle: {
     featureDisabled: string;
@@ -1370,6 +1392,8 @@ export interface TranslationDict {
       quotaInternational: string;
       quotaUnit: string;
       speakerEarnTotal: string;
+      pointsUnit: string;
+      thresholdInfo: string;
       domesticThresholdLabel: string;
       internationalThresholdLabel: string;
       domesticAvailableLabel: string;
@@ -1775,6 +1799,69 @@ export interface TranslationDict {
     section6Desc: string;
     section7Title: string;
     section7Desc: string;
+    understood: string;
+  };
+  coc: {
+    title: string;
+    lastUpdated: string;
+    aboutTitle: string;
+    aboutDesc: string;
+    integrityTitle: string;
+    integrityDesc: string;
+    integrityItem1: string;
+    integrityItem2: string;
+    integrityItem3: string;
+    integrityItem4: string;
+    respectTitle: string;
+    respectItem1: string;
+    respectItem2: string;
+    respectItem3: string;
+    respectItem4: string;
+    fairnessTitle: string;
+    fairnessItem1: string;
+    fairnessItem2: string;
+    fairnessItem3: string;
+    fairnessItem4: string;
+    pointsTitle: string;
+    pointsItem1: string;
+    pointsItem2: string;
+    pointsItem3: string;
+    pointsItem4: string;
+    contentTitle: string;
+    contentItem1: string;
+    contentItem2: string;
+    contentItem3: string;
+    contentItem4: string;
+    contentItem5: string;
+    travelTitle: string;
+    travelItem1: string;
+    travelItem2: string;
+    travelItem3: string;
+    travelItem4: string;
+    violationTitle: string;
+    violationDesc: string;
+    violationItem1: string;
+    violationItem2: string;
+    violationItem3: string;
+    violationItem4: string;
+    rightsTitle: string;
+    rightsItem1: string;
+    rightsItem2: string;
+    rightsItem3: string;
+    rightsItem4: string;
+    rightsItem5: string;
+    rightsItem6: string;
+    disclaimerTitle: string;
+    disclaimerItem1: string;
+    disclaimerItem2: string;
+    disclaimerItem3: string;
+    disclaimerItem4: string;
+    contactTitle: string;
+    contactDesc: string;
+    effectiveTitle: string;
+    effectiveItem1: string;
+    effectiveItem2: string;
+    effectiveItem3: string;
     understood: string;
   };
 }

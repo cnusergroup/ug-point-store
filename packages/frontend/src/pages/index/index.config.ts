@@ -1,3 +1,3 @@
 export default definePageConfig({
-  navigationBarTitleText: '福利广场',
+  navigationBarTitleText: '积分兑换广场',
 });

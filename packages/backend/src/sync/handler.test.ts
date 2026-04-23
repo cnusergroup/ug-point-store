@@ -17,6 +17,7 @@ vi.mock('@aws-sdk/lib-dynamodb', () => ({
   GetCommand: vi.fn().mockImplementation((input: any) => ({ _type: 'GetCommand', input })),
   PutCommand: vi.fn().mockImplementation((input: any) => ({ _type: 'PutCommand', input })),
   QueryCommand: vi.fn().mockImplementation((input: any) => ({ _type: 'QueryCommand', input })),
+  UpdateCommand: vi.fn().mockImplementation((input: any) => ({ _type: 'UpdateCommand', input })),
 }));
 
 vi.mock('ulid', () => ({
@@ -64,9 +65,12 @@ function mockGetConfig(feishuConfig: Record<string, any> | null, meetupConfig: R
     }
     if (cmd._type === 'QueryCommand') {
       // dedupeKey check — default: not found (new event)
-      return { Count: 0 };
+      return { Count: 0, Items: [] };
     }
     if (cmd._type === 'PutCommand') {
+      return {};
+    }
+    if (cmd._type === 'UpdateCommand') {
       return {};
     }
     return {};
@@ -318,7 +322,7 @@ describe('Sync Lambda Handler', () => {
             ugName: 'G1',
             topic: 'Meetup Event 1',
             activityDate: '2024-03-01',
-            dedupeKey: 'Meetup Event 1#2024-03-01#G1',
+            dedupeKey: 'meetup#e1',
             meetupEventId: 'e1',
             meetupEventUrl: 'https://meetup.com/e1',
             meetupGoingCount: 10,
@@ -333,6 +337,182 @@ describe('Sync Lambda Handler', () => {
       expect(body.success).toBe(true);
       expect(body.syncedCount).toBe(3); // 2 feishu + 1 meetup
       expect(body.skippedCount).toBe(0);
+    });
+  });
+
+  // ── Feishu record_id deduplication ──
+
+  describe('feishu record_id deduplication', () => {
+    it('uses feishu#recordId as dedupeKey when feishuRecordId is present', async () => {
+      mockGetConfig(
+        { feishuTableUrl: 'https://feishu.cn/table/123', feishuAppId: 'app1', feishuAppSecret: 'secret1' },
+        null,
+      );
+
+      mockFetchFeishuApi.mockResolvedValue({
+        success: true,
+        activities: [
+          { activityType: '线下活动', ugName: 'UG1', topic: 'Event A', activityDate: '2024-06-01', feishuRecordId: 'rec_abc123' },
+        ],
+      });
+
+      const result = await handler({ source: 'feishu' });
+      const body = JSON.parse(result.body);
+
+      expect(body.success).toBe(true);
+      expect(body.syncedCount).toBe(1);
+
+      // Verify PutCommand was called with feishu# prefixed dedupeKey
+      const putCalls = mockDynamoSend.mock.calls.filter((c: any) => c[0]._type === 'PutCommand');
+      expect(putCalls.length).toBe(1);
+      expect(putCalls[0][0].input.Item.dedupeKey).toBe('feishu#rec_abc123');
+    });
+
+    it('falls back to old dedupeKey format when feishuRecordId is absent', async () => {
+      mockGetConfig(
+        { feishuTableUrl: 'https://feishu.cn/table/123' },
+        null,
+      );
+
+      mockScrapeFeishu.mockResolvedValue({
+        success: true,
+        activities: [
+          { activityType: '线下活动', ugName: 'UG1', topic: 'Event B', activityDate: '2024-06-02' },
+        ],
+      });
+
+      const result = await handler({ source: 'feishu' });
+      const body = JSON.parse(result.body);
+
+      expect(body.success).toBe(true);
+      expect(body.syncedCount).toBe(1);
+
+      // Verify PutCommand was called with old-format dedupeKey
+      const putCalls = mockDynamoSend.mock.calls.filter((c: any) => c[0]._type === 'PutCommand');
+      expect(putCalls.length).toBe(1);
+      expect(putCalls[0][0].input.Item.dedupeKey).toBe('Event B#2024-06-02#UG1');
+    });
+
+    it('updates existing record when feishu record_id matches but fields changed', async () => {
+      mockGetConfig(
+        { feishuTableUrl: 'https://feishu.cn/table/123', feishuAppId: 'app1', feishuAppSecret: 'secret1' },
+        null,
+      );
+
+      mockFetchFeishuApi.mockResolvedValue({
+        success: true,
+        activities: [
+          { activityType: '线下活动', ugName: 'UG1', topic: 'Updated Topic', activityDate: '2024-07-01', feishuRecordId: 'rec_existing' },
+        ],
+      });
+
+      // Mock: dedupeKey exists, and query returns the existing item with old values
+      mockDynamoSend.mockImplementation(async (cmd: any) => {
+        if (cmd._type === 'GetCommand') {
+          const key = cmd.input?.Key?.userId;
+          if (key === 'activity-sync-config') {
+            return { Item: { feishuTableUrl: 'https://feishu.cn/table/123', feishuAppId: 'app1', feishuAppSecret: 'secret1' } };
+          }
+          return { Item: null };
+        }
+        if (cmd._type === 'QueryCommand') {
+          // First query is checkDedupeKeyExists (Select: COUNT), second is the inline query for update
+          if (cmd.input?.Select === 'COUNT') {
+            return { Count: 1 };
+          }
+          // Inline query returns existing item with old topic
+          return {
+            Count: 1,
+            Items: [{
+              activityId: 'existing-id-123',
+              topic: 'Old Topic',
+              activityDate: '2024-07-01',
+              ugName: 'UG1',
+              activityType: '线下活动',
+              dedupeKey: 'feishu#rec_existing',
+            }],
+          };
+        }
+        if (cmd._type === 'UpdateCommand') {
+          return {};
+        }
+        if (cmd._type === 'PutCommand') {
+          return {};
+        }
+        return {};
+      });
+
+      const result = await handler({ source: 'feishu' });
+      const body = JSON.parse(result.body);
+
+      expect(body.success).toBe(true);
+      expect(body.syncedCount).toBe(1); // Updated counts as synced
+
+      // Verify UpdateCommand was called (not PutCommand)
+      const updateCalls = mockDynamoSend.mock.calls.filter((c: any) => c[0]._type === 'UpdateCommand');
+      const putCalls = mockDynamoSend.mock.calls.filter((c: any) => c[0]._type === 'PutCommand');
+      expect(updateCalls.length).toBe(1);
+      expect(putCalls.length).toBe(0);
+      expect(updateCalls[0][0].input.Key.activityId).toBe('existing-id-123');
+      expect(updateCalls[0][0].input.ExpressionAttributeValues[':topic']).toBe('Updated Topic');
+    });
+
+    it('skips when feishu record_id matches and no fields changed', async () => {
+      mockGetConfig(
+        { feishuTableUrl: 'https://feishu.cn/table/123', feishuAppId: 'app1', feishuAppSecret: 'secret1' },
+        null,
+      );
+
+      mockFetchFeishuApi.mockResolvedValue({
+        success: true,
+        activities: [
+          { activityType: '线下活动', ugName: 'UG1', topic: 'Same Topic', activityDate: '2024-07-01', feishuRecordId: 'rec_unchanged' },
+        ],
+      });
+
+      // Mock: dedupeKey exists, and query returns the existing item with same values
+      mockDynamoSend.mockImplementation(async (cmd: any) => {
+        if (cmd._type === 'GetCommand') {
+          const key = cmd.input?.Key?.userId;
+          if (key === 'activity-sync-config') {
+            return { Item: { feishuTableUrl: 'https://feishu.cn/table/123', feishuAppId: 'app1', feishuAppSecret: 'secret1' } };
+          }
+          return { Item: null };
+        }
+        if (cmd._type === 'QueryCommand') {
+          if (cmd.input?.Select === 'COUNT') {
+            return { Count: 1 };
+          }
+          return {
+            Count: 1,
+            Items: [{
+              activityId: 'existing-id-456',
+              topic: 'Same Topic',
+              activityDate: '2024-07-01',
+              ugName: 'UG1',
+              activityType: '线下活动',
+              dedupeKey: 'feishu#rec_unchanged',
+            }],
+          };
+        }
+        if (cmd._type === 'UpdateCommand') {
+          return {};
+        }
+        return {};
+      });
+
+      const result = await handler({ source: 'feishu' });
+      const body = JSON.parse(result.body);
+
+      expect(body.success).toBe(true);
+      expect(body.syncedCount).toBe(0);
+      expect(body.skippedCount).toBe(1);
+
+      // Verify no UpdateCommand or PutCommand was called
+      const updateCalls = mockDynamoSend.mock.calls.filter((c: any) => c[0]._type === 'UpdateCommand');
+      const putCalls = mockDynamoSend.mock.calls.filter((c: any) => c[0]._type === 'PutCommand');
+      expect(updateCalls.length).toBe(0);
+      expect(putCalls.length).toBe(0);
     });
   });
 });

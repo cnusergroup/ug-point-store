@@ -36,6 +36,7 @@ const TEMPLATE_VARIABLE_MAP: Record<NotificationType, string[]> = {
   newProduct: ['nickname', 'productList'],
   newContent: ['nickname', 'contentList'],
   contentUpdated: ['contentTitle', 'userName', 'activityTopic', 'activityDate'],
+  weeklyDigest: ['nickname', 'productList', 'contentList', 'weekStart', 'weekEnd'],
 };
 
 const SUBJECT_MAX_LENGTH = 200;

@@ -206,7 +206,7 @@ export default function BatchPointsPage() {
       let url = `/api/admin/users?role=${role}&pageSize=20`;
       if (append && cursor) url += `&lastKey=${encodeURIComponent(cursor)}`;
       const res = await request<{ users: UserListItem[]; lastKey?: string }>({ url });
-      const activeUsers = (res.users || []).filter((u) => u.status === 'active');
+      const activeUsers = (res.users || []).filter((u) => u.status === 'active' && !u.roles?.includes('SuperAdmin'));
       if (append) {
         setUsers((prev) => [...prev, ...activeUsers]);
       } else {

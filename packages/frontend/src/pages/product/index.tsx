@@ -38,7 +38,14 @@ interface ProductDetail {
   sizeOptions?: SizeOptionInfo[];
   purchaseLimitEnabled?: boolean;
   purchaseLimitCount?: number;
+  brand?: string;
 }
+
+const BRAND_DISPLAY: Record<string, string> = {
+  aws: 'AWS',
+  ug: '亚马逊云科技UG',
+  awscloud: '亚马逊云科技',
+};
 
 const ROLE_CONFIG: Record<UserRole, { label: string; icon: string; className: string }> = {
   UserGroupLeader: { label: 'UserGroupLeader', icon: '♛', className: 'role-item--leader' },
@@ -63,6 +70,7 @@ export default function ProductDetailPage() {
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [brandLogoEnabled, setBrandLogoEnabled] = useState(true);
 
   useEffect(() => {
     if (!productId) {
@@ -74,6 +82,17 @@ export default function ProductDetailPage() {
       setLoading(true);
       try {
         const res = await request<ProductDetail>({ url: `/api/products/${productId}` });
+        // Check role restriction: if product has allowedRoles and user doesn't have matching role, block access
+        if (res.allowedRoles && res.allowedRoles !== 'all') {
+          const userRoles = user?.roles ?? [];
+          const allowed = Array.isArray(res.allowedRoles) ? res.allowedRoles : [];
+          const hasAccess = userRoles.some((role) => allowed.includes(role));
+          if (!hasAccess) {
+            setError(t('product.noPermission'));
+            setLoading(false);
+            return;
+          }
+        }
         setProduct(res);
       } catch {
         setError(t('product.loadFailed'));
@@ -82,6 +101,21 @@ export default function ProductDetailPage() {
       }
     })();
   }, [productId]);
+
+  // Fetch feature toggles to check brandLogoDetailEnabled
+  useEffect(() => {
+    request<{ brandLogoDetailEnabled?: boolean }>({
+      url: '/api/settings/feature-toggles',
+      skipAuth: true,
+    })
+      .then((res) => {
+        setBrandLogoEnabled(res.brandLogoDetailEnabled !== false);
+      })
+      .catch(() => {
+        // Default to true on failure
+        setBrandLogoEnabled(true);
+      });
+  }, []);
 
   const handleBack = () => {
     goBack('/pages/index/index');
@@ -246,6 +280,7 @@ export default function ProductDetailPage() {
           <View className='detail-header__points'>
             <Text className='detail-header__points-diamond'>◆</Text>
             <Text className='detail-header__points-value'>{user.points.toLocaleString()}</Text>
+            <Text className='detail-header__points-label'>{t('mall.pointsLabel')}</Text>
           </View>
         ) : undefined}
       />
@@ -262,6 +297,8 @@ export default function ProductDetailPage() {
                   className='detail-carousel__swiper'
                   indicatorDots={false}
                   circular
+                  autoplay
+                  interval={3000}
                   onChange={(e) => setCurrentImageIndex(e.detail.current)}
                 >
                   {product.images!.map((img) => (
@@ -303,10 +340,10 @@ export default function ProductDetailPage() {
               <Text className='detail-info__delisted-badge'>{t('product.delistedBadge')}</Text>
             )}
 
-            {/* Role badges for points products */}
-            {!isCode && product.allowedRoles && (
-              <View className='detail-info__roles'>
-                {product.allowedRoles === 'all' ? (
+            {/* Role badges + Brand badge */}
+            <View className='detail-info__roles'>
+              {!isCode && product.allowedRoles && (
+                product.allowedRoles === 'all' ? (
                   <Text className='role-badge role-badge--all'>{t('product.everyone')}</Text>
                 ) : (
                   product.allowedRoles.map((role) => (
@@ -314,9 +351,12 @@ export default function ProductDetailPage() {
                       {ROLE_CONFIG[role]?.label || role}
                     </Text>
                   ))
-                )}
-              </View>
-            )}
+                )
+              )}
+              {brandLogoEnabled && product.brand && BRAND_DISPLAY[product.brand] && (
+                <Text className='role-badge role-badge--brand'>{t('product.brandLabel')}: {BRAND_DISPLAY[product.brand]}</Text>
+              )}
+            </View>
 
             {/* Price */}
             {isCode ? (

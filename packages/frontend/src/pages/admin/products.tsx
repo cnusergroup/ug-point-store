@@ -72,7 +72,14 @@ interface AdminProduct {
   sizeOptions?: SizeOption[];
   purchaseLimitEnabled?: boolean;
   purchaseLimitCount?: number;
+  brand?: string;
 }
+
+const BRAND_OPTIONS = [
+  { value: 'aws', label: 'AWS' },
+  { value: 'ug', label: '亚马逊云科技UG' },
+  { value: 'awscloud', label: '亚马逊云科技' },
+];
 
 const ALL_ROLES: UserRole[] = [
   'UserGroupLeader',
@@ -109,6 +116,7 @@ const EMPTY_FORM = {
   newSizeName: '',
   purchaseLimitEnabled: false,
   purchaseLimitCount: '',
+  brand: '',
 };
 
 export default function AdminProductsPage() {
@@ -203,6 +211,7 @@ export default function AdminProductsPage() {
       newSizeName: '',
       purchaseLimitEnabled: product.purchaseLimitEnabled || false,
       purchaseLimitCount: product.purchaseLimitCount != null ? String(product.purchaseLimitCount) : '',
+      brand: (product as any).brand || '',
     });
     setEditingId(product.productId);
     setFormMode('edit');
@@ -497,6 +506,10 @@ export default function AdminProductsPage() {
         body.purchaseLimitEnabled = false;
       }
 
+      if (form.brand) {
+        body.brand = form.brand;
+      }
+
       if (formMode === 'create') {
         await request({ url: '/api/admin/products', method: 'POST', data: body });
       } else {
@@ -631,6 +644,21 @@ export default function AdminProductsPage() {
                   onChange={(e) => setForm((p) => ({ ...p, description: (e.target as HTMLTextAreaElement).value }))}
                   placeholder={t('admin.products.descriptionPlaceholder')}
                 />
+              </View>
+
+              <View className='form-field'>
+                <Text className='form-field__label'>品牌 Logo</Text>
+                <View className='brand-selector'>
+                  {BRAND_OPTIONS.map((opt) => (
+                    <View
+                      key={opt.value}
+                      className={`brand-selector__item ${form.brand === opt.value ? 'brand-selector__item--active' : ''}`}
+                      onClick={() => setForm({ ...form, brand: form.brand === opt.value ? '' : opt.value })}
+                    >
+                      <Text>{opt.label}</Text>
+                    </View>
+                  ))}
+                </View>
               </View>
 
               <View className='form-field'>

@@ -7,7 +7,8 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import { NodejsFunction, NodejsFunctionProps } from 'aws-cdk-lib/aws-lambda-nodejs';
-import { Runtime } from 'aws-cdk-lib/aws-lambda';
+import { DockerImageFunction, DockerImageCode, Runtime } from 'aws-cdk-lib/aws-lambda';
+import * as ecr from 'aws-cdk-lib/aws-ecr';
 import { Construct } from 'constructs';
 
 export interface ApiStackProps extends cdk.StackProps {
@@ -47,6 +48,7 @@ export class ApiStack extends cdk.Stack {
   private readonly adminFn: NodejsFunction;
   private readonly pointsFn: NodejsFunction;
   private readonly contentFn: NodejsFunction;
+  private readonly conversionFn: DockerImageFunction;
 
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
@@ -187,6 +189,45 @@ export class ApiStack extends cdk.Stack {
     } as NodejsFunctionProps);
     this.contentFn = contentFn;
 
+    // --- Digest Lambda (weekly digest email, triggered by EventBridge) ---
+    const digestFn = new NodejsFunction(this, 'DigestFunction', {
+      ...commonFnProps,
+      functionName: 'PointsMall-Digest',
+      entry: path.join(backendSrcPath, 'digest/handler.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(120),
+      environment: {
+        PRODUCTS_TABLE: productsTable.tableName,
+        CONTENT_ITEMS_TABLE: contentItemsTable.tableName,
+        USERS_TABLE: usersTable.tableName,
+        EMAIL_TEMPLATES_TABLE: emailTemplatesTable.tableName,
+        SENDER_EMAIL: props.senderEmail,
+      },
+    } as NodejsFunctionProps);
+
+    // Digest Lambda: read-only access to Products, ContentItems, Users, EmailTemplates tables
+    productsTable.grantReadData(digestFn);
+    contentItemsTable.grantReadData(digestFn);
+    usersTable.grantReadData(digestFn);
+    emailTemplatesTable.grantReadData(digestFn);
+
+    // Digest Lambda: SES permissions scoped to sender identity
+    digestFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+      resources: [
+        `arn:aws:ses:${this.region}:${this.account}:identity/*`,
+        `arn:aws:ses:${this.region}:${this.account}:configuration-set/*`,
+      ],
+    }));
+
+    // EventBridge rule: trigger Digest Lambda every Sunday at UTC 00:00
+    new events.Rule(this, 'DigestScheduleRule', {
+      ruleName: 'PointsMall-DigestSchedule',
+      description: 'Triggers Digest Lambda to send weekly digest emails every Sunday at UTC 00:00',
+      schedule: events.Schedule.expression('cron(0 0 ? * SUN *)'),
+      targets: [new targets.LambdaFunction(digestFn)],
+    });
+
     // --- Leaderboard Lambda (read-only, decoupled from Admin/Points) ---
     const leaderboardFn = new NodejsFunction(this, 'LeaderboardFunction', {
       ...commonFnProps,
@@ -234,6 +275,31 @@ export class ApiStack extends cdk.Stack {
       schedule: events.Schedule.rate(cdk.Duration.days(1)),
       targets: [new targets.LambdaFunction(syncFn)],
     });
+
+    // --- Conversion Lambda (Docker-based, LibreOffice for Office-to-PDF conversion) ---
+    const conversionRepo = ecr.Repository.fromRepositoryName(this, 'ConversionRepo',
+      'cdk-hnb659fds-container-assets-778409058172-ap-northeast-1',
+    );
+    const conversionFn = new DockerImageFunction(this, 'ConversionFunction', {
+      functionName: 'PointsMall-Conversion',
+      code: DockerImageCode.fromEcr(conversionRepo, {
+        tagOrDigest: 'fe89389d4b9375e0f70e08fe026f1e0c450426d7fa2dcd52a28e1c8bfb9e5fb7',
+      }),
+      timeout: cdk.Duration.seconds(120),
+      memorySize: 3008,
+      environment: {
+        CONTENT_ITEMS_TABLE: contentItemsTable.tableName,
+        HOME: '/tmp',
+      },
+    });
+    this.conversionFn = conversionFn;
+
+    // Conversion Lambda: DynamoDB read/write on ContentItems table (update previewFileKey and previewStatus)
+    contentItemsTable.grantReadWriteData(conversionFn);
+
+    // Content Lambda: env var and permission to invoke Conversion Lambda for async PDF conversion
+    contentFn.addEnvironment('CONVERSION_FUNCTION_NAME', conversionFn.functionName);
+    conversionFn.grantInvoke(contentFn);
 
     // --- IAM Permissions ---
 
@@ -309,7 +375,7 @@ export class ApiStack extends cdk.Stack {
     const sesEmailPolicy = new iam.PolicyStatement({
       actions: ['ses:SendEmail', 'ses:SendRawEmail'],
       resources: [
-        `arn:aws:ses:${this.region}:${this.account}:identity/awscommunity.cn`,
+        `arn:aws:ses:${this.region}:${this.account}:identity/*`,
         `arn:aws:ses:${this.region}:${this.account}:configuration-set/*`,
       ],
     });
@@ -535,6 +601,13 @@ export class ApiStack extends cdk.Stack {
     this.contentFn.addEnvironment('IMAGES_BUCKET', imagesBucketName);
     this.contentFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['s3:PutObject', 's3:GetObject', 's3:DeleteObject'],
+      resources: [`${imagesBucketArn}/content/*`],
+    }));
+
+    // Conversion Lambda: S3 read/write/delete for content files (download originals, upload preview PDFs, delete old previews)
+    this.conversionFn.addEnvironment('IMAGES_BUCKET', imagesBucketName);
+    this.conversionFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
       resources: [`${imagesBucketArn}/content/*`],
     }));
   }

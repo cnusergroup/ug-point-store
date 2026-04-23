@@ -12,7 +12,8 @@ import type {
   ErrorResponse,
   InviteRecord,
 } from './types';
-import { ADMIN_ROLES, REGULAR_ROLES, ALL_ROLES, EXCLUSIVE_ROLES, hasAdminAccess, isSuperAdmin, isAdminRole, isOrderAdmin, isExclusiveRole, validateRoleExclusivity, getInviteRoles, isValidContentFileType, isValidVideoUrl, validateTagsArray, normalizeTagName, validateTagName } from './types';
+import { ADMIN_ROLES, REGULAR_ROLES, ALL_ROLES, EXCLUSIVE_ROLES, hasAdminAccess, isSuperAdmin, isAdminRole, isOrderAdmin, isExclusiveRole, validateRoleExclusivity, getInviteRoles, isValidContentFileType, isValidVideoUrl, validateTagsArray, normalizeTagName, validateTagName, isOfficeFile } from './types';
+import type { ContentItem, PreviewStatus } from './types';
 import { ErrorCodes, ErrorHttpStatus, ErrorMessages } from './errors';
 
 describe('shared types', () => {
@@ -875,6 +876,183 @@ describe('Feature: order-admin-role, Property 1: 角色互斥不变量（Role ex
         },
       ),
       { numRuns: 100 },
+    );
+  });
+});
+
+
+// ============================================================
+// Content Preview PDF Conversion - Task 1.1 Tests
+// ============================================================
+
+describe('ContentItem preview fields', () => {
+  it('accepts ContentItem with previewFileKey and previewStatus', () => {
+    const item: ContentItem = {
+      contentId: 'c1',
+      title: 'Test',
+      description: 'desc',
+      categoryId: 'cat1',
+      categoryName: 'Category',
+      uploaderId: 'u1',
+      uploaderNickname: 'User',
+      uploaderRole: 'Speaker',
+      fileKey: 'content/u1/file.pptx',
+      fileName: 'file.pptx',
+      fileSize: 1024,
+      status: 'approved',
+      likeCount: 0,
+      commentCount: 0,
+      reservationCount: 0,
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+      previewFileKey: 'content/u1/file_preview.pdf',
+      previewStatus: 'completed',
+    };
+    expect(item.previewFileKey).toBe('content/u1/file_preview.pdf');
+    expect(item.previewStatus).toBe('completed');
+  });
+
+  it('accepts ContentItem without preview fields (backward compat)', () => {
+    const item: ContentItem = {
+      contentId: 'c2',
+      title: 'PDF File',
+      description: 'desc',
+      categoryId: 'cat1',
+      categoryName: 'Category',
+      uploaderId: 'u1',
+      uploaderNickname: 'User',
+      uploaderRole: 'Speaker',
+      fileKey: 'content/u1/file.pdf',
+      fileName: 'file.pdf',
+      fileSize: 2048,
+      status: 'approved',
+      likeCount: 0,
+      commentCount: 0,
+      reservationCount: 0,
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+    };
+    expect(item.previewFileKey).toBeUndefined();
+    expect(item.previewStatus).toBeUndefined();
+  });
+
+  it('PreviewStatus type accepts all valid values', () => {
+    const statuses: PreviewStatus[] = ['pending', 'completed', 'failed'];
+    expect(statuses).toHaveLength(3);
+  });
+});
+
+describe('isOfficeFile', () => {
+  it('returns true for .ppt files', () => {
+    expect(isOfficeFile('presentation.ppt')).toBe(true);
+  });
+
+  it('returns true for .pptx files', () => {
+    expect(isOfficeFile('presentation.pptx')).toBe(true);
+  });
+
+  it('returns true for .doc files', () => {
+    expect(isOfficeFile('document.doc')).toBe(true);
+  });
+
+  it('returns true for .docx files', () => {
+    expect(isOfficeFile('document.docx')).toBe(true);
+  });
+
+  it('returns false for .pdf files', () => {
+    expect(isOfficeFile('document.pdf')).toBe(false);
+  });
+
+  it('returns false for other extensions', () => {
+    expect(isOfficeFile('image.png')).toBe(false);
+    expect(isOfficeFile('data.csv')).toBe(false);
+    expect(isOfficeFile('script.js')).toBe(false);
+  });
+
+  it('handles case-insensitive matching', () => {
+    expect(isOfficeFile('file.PPT')).toBe(true);
+    expect(isOfficeFile('file.PPTX')).toBe(true);
+    expect(isOfficeFile('file.DOC')).toBe(true);
+    expect(isOfficeFile('file.DOCX')).toBe(true);
+    expect(isOfficeFile('file.Pptx')).toBe(true);
+  });
+
+  it('returns false for files with no extension', () => {
+    expect(isOfficeFile('noextension')).toBe(false);
+  });
+
+  it('returns false for empty string', () => {
+    expect(isOfficeFile('')).toBe(false);
+  });
+
+  it('handles files with multiple dots', () => {
+    expect(isOfficeFile('my.file.name.pptx')).toBe(true);
+    expect(isOfficeFile('my.file.name.pdf')).toBe(false);
+  });
+});
+
+// Feature: content-preview-pdf-conversion, Property 1: Office file detection correctly triggers conversion
+// **Validates: Requirements 1.1, 1.6, 2.3, 2.4**
+describe('Feature: content-preview-pdf-conversion, Property 1: Office file detection correctly triggers conversion', () => {
+  const OFFICE_EXTENSIONS = ['ppt', 'pptx', 'doc', 'docx'];
+
+  it('isOfficeFile returns true iff extension is one of ppt, pptx, doc, docx (case-insensitive)', () => {
+    // Generator: random file names with random extensions
+    const fileNameArb = fc.tuple(
+      fc.string({ minLength: 1, maxLength: 20 }).filter(s => !s.includes('.') && !s.includes('/') && !s.includes('\\')),
+      fc.string({ minLength: 1, maxLength: 10 }).filter(s => !s.includes('.')),
+    ).map(([name, ext]) => `${name}.${ext}`);
+
+    fc.assert(
+      fc.property(
+        fileNameArb,
+        (fileName) => {
+          const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
+          const expected = OFFICE_EXTENSIONS.includes(ext);
+          expect(isOfficeFile(fileName)).toBe(expected);
+        },
+      ),
+      { numRuns: 200 },
+    );
+  });
+
+  it('isOfficeFile always returns true for known Office extensions regardless of case', () => {
+    const caseVariantArb = fc.constantFrom(...OFFICE_EXTENSIONS).chain(ext =>
+      fc.tuple(
+        fc.string({ minLength: 1, maxLength: 15 }).filter(s => !s.includes('.') && !s.includes('/') && !s.includes('\\')),
+        fc.constant(ext),
+        fc.boolean(),
+      ).map(([name, e, upper]) => `${name}.${upper ? e.toUpperCase() : e}`)
+    );
+
+    fc.assert(
+      fc.property(
+        caseVariantArb,
+        (fileName) => {
+          expect(isOfficeFile(fileName)).toBe(true);
+        },
+      ),
+      { numRuns: 200 },
+    );
+  });
+
+  it('isOfficeFile returns false for non-Office extensions', () => {
+    const nonOfficeExtArb = fc.string({ minLength: 1, maxLength: 10 })
+      .filter(s => !s.includes('.') && !OFFICE_EXTENSIONS.includes(s.toLowerCase()));
+
+    const fileNameArb = fc.tuple(
+      fc.string({ minLength: 1, maxLength: 15 }).filter(s => !s.includes('.') && !s.includes('/') && !s.includes('\\')),
+      nonOfficeExtArb,
+    ).map(([name, ext]) => `${name}.${ext}`);
+
+    fc.assert(
+      fc.property(
+        fileNameArb,
+        (fileName) => {
+          expect(isOfficeFile(fileName)).toBe(false);
+        },
+      ),
+      { numRuns: 200 },
     );
   });
 });

@@ -180,17 +180,29 @@ export async function setUserStatus(
     };
   }
 
-  // Update status
+  // Update status — when activating, also clear any lock state
   const now = new Date().toISOString();
-  await dynamoClient.send(
-    new UpdateCommand({
-      TableName: tableName,
-      Key: { userId },
-      UpdateExpression: 'SET #status = :status, updatedAt = :now',
-      ExpressionAttributeNames: { '#status': 'status' },
-      ExpressionAttributeValues: { ':status': status, ':now': now },
-    }),
-  );
+  if (status === 'active') {
+    await dynamoClient.send(
+      new UpdateCommand({
+        TableName: tableName,
+        Key: { userId },
+        UpdateExpression: 'SET #status = :status, loginFailCount = :zero, updatedAt = :now REMOVE lockUntil, firstFailAt',
+        ExpressionAttributeNames: { '#status': 'status' },
+        ExpressionAttributeValues: { ':status': status, ':zero': 0, ':now': now },
+      }),
+    );
+  } else {
+    await dynamoClient.send(
+      new UpdateCommand({
+        TableName: tableName,
+        Key: { userId },
+        UpdateExpression: 'SET #status = :status, updatedAt = :now',
+        ExpressionAttributeNames: { '#status': 'status' },
+        ExpressionAttributeValues: { ':status': status, ':now': now },
+      }),
+    );
+  }
 
   return { success: true };
 }
@@ -271,6 +283,61 @@ export async function deleteUser(
   // Hard delete the user record
   await dynamoClient.send(
     new DeleteCommand({ TableName: tableName, Key: { userId } }),
+  );
+
+  return { success: true };
+}
+
+// ---- UnlockUser ----
+
+export interface UnlockUserResult {
+  success: boolean;
+  error?: { code: string; message: string };
+}
+
+/**
+ * Unlock a locked user account by resetting all lock-related state.
+ * - If user not found → return USER_NOT_FOUND
+ * - If user is not locked → return success (idempotent)
+ * - If locked → reset loginFailCount, remove lockUntil, remove firstFailAt, set status='active'
+ */
+export async function unlockUser(
+  userId: string,
+  dynamoClient: DynamoDBDocumentClient,
+  tableName: string,
+): Promise<UnlockUserResult> {
+  // Fetch target user
+  const getResult = await dynamoClient.send(
+    new GetCommand({ TableName: tableName, Key: { userId } }),
+  );
+
+  const targetUser = getResult.Item;
+  if (!targetUser) {
+    return {
+      success: false,
+      error: { code: ErrorCodes.USER_NOT_FOUND, message: ErrorMessages.USER_NOT_FOUND },
+    };
+  }
+
+  // If user is not locked, return success (idempotent)
+  if (targetUser.status !== 'locked') {
+    return { success: true };
+  }
+
+  // Reset all lock state
+  const now = new Date().toISOString();
+  await dynamoClient.send(
+    new UpdateCommand({
+      TableName: tableName,
+      Key: { userId },
+      UpdateExpression: 'SET #status = :status, loginFailCount = :zero, updatedAt = :now REMOVE lockUntil, firstFailAt',
+      ExpressionAttributeNames: { '#status': 'status' },
+      ExpressionAttributeValues: {
+        ':status': 'active',
+        ':zero': 0,
+        ':now': now,
+      },
+    }),
   );
 
   return { success: true };

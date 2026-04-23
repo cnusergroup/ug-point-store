@@ -1,8 +1,9 @@
 import { S3Client, PutObjectCommand, CopyObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { DynamoDBDocumentClient, PutCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { ulid } from 'ulid';
-import { ErrorCodes, ErrorMessages, isValidContentFileType, isValidVideoUrl, validateTagsArray, normalizeTagName } from '@points-mall/shared';
+import { ErrorCodes, ErrorMessages, isValidContentFileType, isValidVideoUrl, validateTagsArray, normalizeTagName, isOfficeFile } from '@points-mall/shared';
 import type { ContentItem } from '@points-mall/shared';
 import { generateUploadToken } from '../utils/upload-token';
 import { syncTagsOnCreate } from './tags';
@@ -13,6 +14,9 @@ const MAX_CONTENT_LENGTH = 50 * 1024 * 1024; // 50MB
 const UPLOAD_VIA_CLOUDFRONT = process.env.UPLOAD_VIA_CLOUDFRONT === 'true';
 const UPLOAD_TOKEN_SECRET = process.env.UPLOAD_TOKEN_SECRET || '';
 const CLOUDFRONT_DOMAIN = process.env.CLOUDFRONT_DOMAIN || 'https://store.awscommunity.cn';
+const CONVERSION_FUNCTION_NAME = process.env.CONVERSION_FUNCTION_NAME || '';
+
+const lambdaClient = new LambdaClient({});
 
 // ─── Upload URL ────────────────────────────────────────────
 
@@ -196,6 +200,8 @@ export async function createContentItem(
     }
   }
 
+  const officeFile = isOfficeFile(input.fileName);
+
   const item: ContentItem = {
     contentId,
     title: input.title,
@@ -216,6 +222,7 @@ export async function createContentItem(
     reservationCount: 0,
     createdAt: now,
     updatedAt: now,
+    ...(officeFile ? { previewStatus: 'pending' as const } : {}),
   };
 
   await dynamoClient.send(
@@ -225,6 +232,32 @@ export async function createContentItem(
   // Sync tag usage counts in ContentTags table
   if (normalizedTags.length > 0 && tables.contentTagsTable) {
     await syncTagsOnCreate(normalizedTags, dynamoClient, tables.contentTagsTable);
+  }
+
+  // Invoke Conversion Lambda asynchronously for Office files
+  if (officeFile) {
+    if (!CONVERSION_FUNCTION_NAME) {
+      console.warn('[Content] CONVERSION_FUNCTION_NAME not configured, skipping conversion invocation');
+    } else {
+      try {
+        const bucket = s3Options?.bucket || process.env.IMAGES_BUCKET || '';
+        await lambdaClient.send(
+          new InvokeCommand({
+            FunctionName: CONVERSION_FUNCTION_NAME,
+            InvocationType: 'Event',
+            Payload: Buffer.from(JSON.stringify({
+              contentId,
+              fileKey: finalFileKey,
+              uploaderId: input.userId,
+              bucket,
+              contentItemsTable: tables.contentItemsTable,
+            })),
+          }),
+        );
+      } catch (err) {
+        console.error('[Content] Failed to invoke Conversion Lambda (non-blocking):', err);
+      }
+    }
   }
 
   return { success: true, item };

@@ -49,6 +49,8 @@ export default function RegisterPage() {
   const [privacyError, setPrivacyError] = useState('');
   const [inviteState, setInviteState] = useState<InviteState>({ status: 'loading' });
   const [inviteToken, setInviteToken] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const register = useAppStore((s) => s.register);
 
@@ -280,13 +282,28 @@ export default function RegisterPage() {
 
           <View className='register-card__field'>
             <Text className='register-card__label'>{t('register.passwordLabel')}</Text>
-            <input
-              className='register-card__input'
-              type='password'
-              placeholder={t('register.passwordPlaceholder')}
-              value={password}
-              onInput={(e: any) => setPassword(e.target.value || e.detail?.value || '')}
-            />
+            <View className='password-field'>
+              <input
+                className='register-card__input'
+                type={showPassword ? 'text' : 'password'}
+                placeholder={t('register.passwordPlaceholder')}
+                value={password}
+                onInput={(e: any) => setPassword(e.target.value || e.detail?.value || '')}
+              />
+              <Text className='password-field__toggle' onClick={() => setShowPassword(!showPassword)}>
+                {showPassword ? (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                    <line x1="1" y1="1" x2="23" y2="23" />
+                  </svg>
+                ) : (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                )}
+              </Text>
+            </View>
             {passwordError && <Text className='register-card__field-error'>{passwordError}</Text>}
             {password.length > 0 && (
               <View className='register-card__hints'>
@@ -305,13 +322,28 @@ export default function RegisterPage() {
 
           <View className='register-card__field'>
             <Text className='register-card__label'>{t('register.confirmPasswordLabel')}</Text>
-            <input
-              className='register-card__input'
-              type='password'
-              placeholder={t('register.confirmPasswordPlaceholder')}
-              value={confirmPassword}
-              onInput={(e: any) => setConfirmPassword(e.target.value || e.detail?.value || '')}
-            />
+            <View className='password-field'>
+              <input
+                className='register-card__input'
+                type={showConfirmPassword ? 'text' : 'password'}
+                placeholder={t('register.confirmPasswordPlaceholder')}
+                value={confirmPassword}
+                onInput={(e: any) => setConfirmPassword(e.target.value || e.detail?.value || '')}
+              />
+              <Text className='password-field__toggle' onClick={() => setShowConfirmPassword(!showConfirmPassword)}>
+                {showConfirmPassword ? (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                    <line x1="1" y1="1" x2="23" y2="23" />
+                  </svg>
+                ) : (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                )}
+              </Text>
+            </View>
             {confirmPasswordError && <Text className='register-card__field-error'>{confirmPasswordError}</Text>}
           </View>
 
