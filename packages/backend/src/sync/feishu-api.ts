@@ -379,7 +379,13 @@ function normalizeDate(raw: string): string {
   const timestamp = Number(raw);
   if (!isNaN(timestamp) && timestamp > 1000000000) {
     const ms = timestamp > 10000000000 ? timestamp : timestamp * 1000;
-    return new Date(ms).toISOString().split('T')[0];
+    // Feishu timestamps represent dates in China timezone (UTC+8).
+    // Using toISOString() would give UTC date which can be 1 day behind.
+    const d = new Date(ms + 8 * 60 * 60 * 1000);
+    const yyyy = d.getUTCFullYear();
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
   }
 
   try {

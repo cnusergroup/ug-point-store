@@ -37,9 +37,6 @@ const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 const MIN_LIMIT = 1;
 
-/** Over-fetch multiplier to handle role filtering at application layer */
-const OVER_FETCH_MULTIPLIER = 3;
-
 // ============================================================
 // Validation
 // ============================================================
@@ -180,12 +177,8 @@ export async function getRanking(
     }
   }
 
-  // For role-specific GSIs: no application-layer filtering needed — the GSI only contains
-  // users who have that role's earnTotal field set. We still over-fetch slightly to handle
-  // edge cases where users may lack the required role in their roles array.
-  // For 'all': over-fetch to handle admin-only users being filtered out.
-  const fetchLimit = role === 'all' ? limit * OVER_FETCH_MULTIPLIER : Math.ceil(limit * 1.5);
-
+  // GSI only contains eligible users (SA/OA have no pk field, so they're excluded).
+  // Simple direct query — no filtering or looping needed.
   const result = await dynamoClient.send(
     new QueryCommand({
       TableName: usersTable,
@@ -193,55 +186,28 @@ export async function getRanking(
       KeyConditionExpression: 'pk = :pk',
       ExpressionAttributeValues: { ':pk': 'ALL' },
       ScanIndexForward: false,
-      Limit: fetchLimit,
+      Limit: limit,
       ...(exclusiveStartKey && { ExclusiveStartKey: exclusiveStartKey }),
     }),
   );
 
   const rawUsers = result.Items ?? [];
 
-  // For 'all': filter out admin-only users (no regular role)
-  // For specific roles: filter to users who actually have that role in their roles array
-  const filteredUsers = filterByRole(rawUsers, role);
-
-  // Take only the requested limit
-  const pageUsers = filteredUsers.slice(0, limit);
+  // For role-specific tabs, filter to users who actually have that role
+  const pageUsers = role === 'all'
+    ? rawUsers
+    : rawUsers.filter(u => ((u.roles as string[]) ?? []).includes(role));
 
   const items: RankingItem[] = pageUsers.map((user, index) => ({
     rank: index + 1,
     nickname: (user.nickname as string) ?? '',
     roles: ((user.roles as string[]) ?? []).filter(r => (REGULAR_ROLES as string[]).includes(r)),
-    // Show the role-specific earnTotal for role tabs, total earnTotal for 'all' tab
     earnTotal: (user[sortKeyField] as number) ?? 0,
   }));
 
-  // Determine next page cursor
+  // Pagination cursor
   let nextLastKey: string | null = null;
-
-  if (pageUsers.length === limit) {
-    const lastReturnedUser = pageUsers[pageUsers.length - 1];
-    const lastReturnedIndex = rawUsers.indexOf(lastReturnedUser);
-
-    if (lastReturnedIndex < rawUsers.length - 1) {
-      const lastRawItem = rawUsers[lastReturnedIndex];
-      nextLastKey = Buffer.from(JSON.stringify({
-        pk: lastRawItem.pk ?? 'ALL',
-        [sortKeyField]: (lastRawItem[sortKeyField] as number) ?? 0,
-        userId: lastRawItem.userId,
-      })).toString('base64');
-    } else if (result.LastEvaluatedKey) {
-      nextLastKey = Buffer.from(JSON.stringify(result.LastEvaluatedKey)).toString('base64');
-    }
-  } else if (filteredUsers.length > limit) {
-    const lastReturnedUser = pageUsers[pageUsers.length - 1];
-    const lastReturnedIndex = rawUsers.indexOf(lastReturnedUser);
-    const lastRawItem = rawUsers[lastReturnedIndex];
-    nextLastKey = Buffer.from(JSON.stringify({
-      pk: lastRawItem.pk ?? 'ALL',
-      [sortKeyField]: (lastRawItem[sortKeyField] as number) ?? 0,
-      userId: lastRawItem.userId,
-    })).toString('base64');
-  } else if (result.LastEvaluatedKey && filteredUsers.length < limit) {
+  if (result.LastEvaluatedKey) {
     nextLastKey = Buffer.from(JSON.stringify(result.LastEvaluatedKey)).toString('base64');
   }
 

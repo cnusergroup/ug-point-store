@@ -90,12 +90,24 @@ describe('Order Lambda Handler', () => {
       emailOrderShippedEnabled: false,
       emailNewProductEnabled: false,
       emailNewContentEnabled: false,
+      emailContentUpdatedEnabled: false,
+      emailWeeklyDigestEnabled: false,
       adminEmailProductsEnabled: false,
       adminEmailContentEnabled: false,
       reservationApprovalPoints: 10,
       leaderboardRankingEnabled: false,
       leaderboardAnnouncementEnabled: false,
       leaderboardUpdateFrequency: 'weekly',
+      pointsRuleConfig: {
+        uglPointsPerEvent: 50,
+        volunteerPointsPerEvent: 30,
+        volunteerMaxPerEvent: 10,
+        speakerTypeAPoints: 100,
+        speakerTypeBPoints: 50,
+        speakerRoundtablePoints: 50,
+      },
+      brandLogoListEnabled: false,
+      brandLogoDetailEnabled: false,
     });
   });
 
@@ -419,7 +431,7 @@ describe('Order Lambda Handler', () => {
     });
 
     it('routes to getOrderStats', async () => {
-      const mockStats = { pending: 5, shipped: 3, inTransit: 2, delivered: 10, total: 20 };
+      const mockStats = { pending: 5, shipped: 3, cancelled: 0, inTransit: 2, delivered: 10, total: 20 };
       vi.mocked(getOrderStats).mockResolvedValue({ success: true, stats: mockStats });
       const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/orders/stats' });
       const result = await handler(event);
@@ -541,7 +553,7 @@ describe('Order Lambda Handler', () => {
     });
 
     it('OrderAdmin can access GET /api/admin/orders/stats', async () => {
-      const mockStats = { pending: 5, shipped: 3, inTransit: 2, delivered: 10, total: 20 };
+      const mockStats = { pending: 5, shipped: 3, cancelled: 0, inTransit: 2, delivered: 10, total: 20 };
       vi.mocked(getOrderStats).mockResolvedValue({ success: true, stats: mockStats });
       const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/orders/stats' });
       const result = await handler(event);
@@ -598,12 +610,24 @@ describe('Order Lambda Handler', () => {
         emailOrderShippedEnabled: false,
         emailNewProductEnabled: false,
         emailNewContentEnabled: false,
+        emailContentUpdatedEnabled: false,
+        emailWeeklyDigestEnabled: false,
         adminEmailProductsEnabled: false,
         adminEmailContentEnabled: false,
         reservationApprovalPoints: 10,
         leaderboardRankingEnabled: false,
         leaderboardAnnouncementEnabled: false,
         leaderboardUpdateFrequency: 'weekly',
+        pointsRuleConfig: {
+          uglPointsPerEvent: 50,
+          volunteerPointsPerEvent: 30,
+          volunteerMaxPerEvent: 10,
+          speakerTypeAPoints: 100,
+          speakerTypeBPoints: 50,
+          speakerRoundtablePoints: 50,
+        },
+        brandLogoListEnabled: false,
+        brandLogoDetailEnabled: false,
       });
       vi.mocked(getAdminOrders).mockResolvedValue({
         success: true,
@@ -638,12 +662,24 @@ describe('Order Lambda Handler', () => {
         emailOrderShippedEnabled: false,
         emailNewProductEnabled: false,
         emailNewContentEnabled: false,
+        emailContentUpdatedEnabled: false,
+        emailWeeklyDigestEnabled: false,
         adminEmailProductsEnabled: false,
         adminEmailContentEnabled: false,
         reservationApprovalPoints: 10,
         leaderboardRankingEnabled: false,
         leaderboardAnnouncementEnabled: false,
         leaderboardUpdateFrequency: 'weekly',
+        pointsRuleConfig: {
+          uglPointsPerEvent: 50,
+          volunteerPointsPerEvent: 30,
+          volunteerMaxPerEvent: 10,
+          speakerTypeAPoints: 100,
+          speakerTypeBPoints: 50,
+          speakerRoundtablePoints: 50,
+        },
+        brandLogoListEnabled: false,
+        brandLogoDetailEnabled: false,
       });
       const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/orders' });
       const result = await handler(event);

@@ -248,6 +248,16 @@
   }
 }
 
+/* Preview status messages in admin content detail */
+.content-detail-preview-status {
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: var(--text-body-sm);
+  background: var(--bg-surface);
+  border-radius: var(--radius-md);
+}
+
 /* Confirm text in dialogs */
 .content-confirm-text {
   font-size: var(--text-body);

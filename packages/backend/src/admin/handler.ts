@@ -14,6 +14,7 @@ import { getUploadUrl, getTempUploadUrl, deleteImage } from './images';
 import { batchGenerateInvites, listInvites, revokeInvite } from './invites';
 import { listUsers, setUserStatus, deleteUser, unlockUser } from './users';
 import { executeBatchDistribution, validateBatchDistributionInput, listDistributionHistory, getDistributionDetail, getAwardedUserIds } from './batch-points';
+import { executeAdjustment } from './batch-points-adjust';
 import { reviewClaim, listAllClaims } from '../claims/review';
 import { reviewContent, listAllContent, deleteContent, createCategory, updateCategory, deleteCategory } from '../content/admin';
 import { listAllTags, mergeTags, deleteTag } from '../content/admin-tags';
@@ -122,6 +123,7 @@ const CONTENT_DELETE_REGEX = /^\/api\/admin\/content\/([^/]+)$/;
 const CONTENT_CATEGORIES_UPDATE_REGEX = /^\/api\/admin\/content\/categories\/([^/]+)$/;
 const CONTENT_CATEGORIES_DELETE_REGEX = /^\/api\/admin\/content\/categories\/([^/]+)$/;
 const BATCH_POINTS_HISTORY_DETAIL_REGEX = /^\/api\/admin\/batch-points\/history\/([^/]+)$/;
+const BATCH_POINTS_ADJUST_REGEX = /^\/api\/admin\/batch-points\/([^/]+)\/adjust$/;
 const TRAVEL_REVIEW_REGEX = /^\/api\/admin\/travel\/([^/]+)\/review$/;
 const TAGS_DELETE_REGEX = /^\/api\/admin\/tags\/([^/]+)$/;
 const EMAIL_TEMPLATES_UPDATE_REGEX = /^\/api\/admin\/email-templates\/([^/]+)\/([^/]+)$/;
@@ -329,6 +331,15 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     }
     if (path === '/api/admin/batch-points') {
       return await handleBatchDistribution(event);
+    }
+
+    // POST /api/admin/batch-points/{distributionId}/adjust — SuperAdmin only
+    const batchPointsAdjustMatch = path.match(BATCH_POINTS_ADJUST_REGEX);
+    if (batchPointsAdjustMatch) {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleBatchPointsAdjust(batchPointsAdjustMatch[1], event);
     }
 
     if (path === '/api/admin/quarterly-award') {
@@ -1014,16 +1025,14 @@ async function handleListUsers(event: AuthenticatedEvent): Promise<APIGatewayPro
     }
   }
 
-  const result = await listUsers({ role, pageSize, lastKey }, dynamoClient, USERS_TABLE);
-
-  // Hide SuperAdmin users from non-SuperAdmin callers
+  // Non-SuperAdmin callers: exclude SuperAdmin and OrderAdmin users at DB level
   const callerRoles = (event.user.roles as string[]) ?? [];
   const isSuperAdminCaller = callerRoles.includes('SuperAdmin');
-  const filteredUsers = isSuperAdminCaller
-    ? result.users
-    : result.users.filter(u => !u.roles.includes('SuperAdmin'));
+  const excludeRoles = isSuperAdminCaller ? undefined : ['SuperAdmin', 'OrderAdmin'];
 
-  return jsonResponse(200, { users: filteredUsers, lastKey: result.lastKey });
+  const result = await listUsers({ role, pageSize, lastKey, excludeRoles }, dynamoClient, USERS_TABLE);
+
+  return jsonResponse(200, { users: result.users, lastKey: result.lastKey });
 }
 
 async function handleSetUserStatus(userId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
@@ -1103,6 +1112,7 @@ async function handleBatchGenerateInvites(event: AuthenticatedEvent): Promise<AP
     REGISTER_BASE_URL,
     expiryMs,
     isEmployee,
+    event.user.userId,
   );
 
   if (!result.success) {
@@ -1127,7 +1137,12 @@ async function handleListInvites(event: AuthenticatedEvent): Promise<APIGatewayP
     }
   }
 
-  const result = await listInvites(status as any, lastKey, pageSize, dynamoClient, INVITES_TABLE);
+  // Non-SuperAdmin callers only see invites they created (filtered at DB level)
+  const callerRoles = (event.user.roles as string[]) ?? [];
+  const callerIsSuperAdmin = callerRoles.includes('SuperAdmin');
+  const createdByFilter = callerIsSuperAdmin ? undefined : event.user.userId;
+
+  const result = await listInvites(status as any, lastKey, pageSize, dynamoClient, INVITES_TABLE, createdByFilter);
 
   return jsonResponse(200, { invites: result.invites, lastKey: result.lastKey });
 }
@@ -1309,6 +1324,43 @@ async function handleBatchDistribution(event: AuthenticatedEvent): Promise<APIGa
     successCount: result.successCount,
     totalPoints: result.totalPoints,
   });
+}
+
+// ---- Batch Points Adjust Handler ----
+
+async function handleBatchPointsAdjust(distributionId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body) {
+    return errorResponse('INVALID_REQUEST', '请求体无效', 400);
+  }
+
+  const { recipientIds, targetRole, speakerType } = body as Record<string, unknown>;
+
+  if (!Array.isArray(recipientIds) || !targetRole) {
+    return errorResponse('INVALID_REQUEST', '缺少必填字段: recipientIds, targetRole', 400);
+  }
+
+  const result = await executeAdjustment(
+    {
+      distributionId,
+      recipientIds: recipientIds as string[],
+      targetRole: targetRole as 'UserGroupLeader' | 'Speaker' | 'Volunteer',
+      speakerType: speakerType as 'typeA' | 'typeB' | 'roundtable' | undefined,
+      adjustedBy: event.user.userId,
+    },
+    dynamoClient,
+    {
+      usersTable: USERS_TABLE,
+      pointsRecordsTable: POINTS_RECORDS_TABLE,
+      batchDistributionsTable: BATCH_DISTRIBUTIONS_TABLE,
+    },
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message);
+  }
+
+  return jsonResponse(200, { message: '调整成功' });
 }
 
 // ---- Awarded Users Handler ----
@@ -1523,6 +1575,7 @@ async function handleDeleteContent(contentId: string): Promise<APIGatewayProxyRe
       commentsTable: CONTENT_COMMENTS_TABLE,
       likesTable: CONTENT_LIKES_TABLE,
       reservationsTable: CONTENT_RESERVATIONS_TABLE,
+      contentTagsTable: CONTENT_TAGS_TABLE,
     },
     IMAGES_BUCKET,
   );
@@ -2244,12 +2297,14 @@ async function handleGetMyUGs(event: AuthenticatedEvent): Promise<APIGatewayProx
 
 async function handleListActivities(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
   const ugName = event.queryStringParameters?.ugName;
-  const startDate = event.queryStringParameters?.startDate;
   const keyword = event.queryStringParameters?.keyword;
   const pageSize = event.queryStringParameters?.pageSize
     ? parseInt(event.queryStringParameters.pageSize, 10)
     : undefined;
   const lastKey = event.queryStringParameters?.lastKey;
+
+  // Default startDate to 2026-01-01 so 2025 activities are excluded from batch distribution
+  const startDate = event.queryStringParameters?.startDate || '2026-01-01';
 
   // Default endDate to today (China time, UTC+8) so future activities are hidden
   let endDate = event.queryStringParameters?.endDate;

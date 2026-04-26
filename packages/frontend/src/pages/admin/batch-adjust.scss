@@ -1,0 +1,361 @@
+/* Import shared batch-points styles (bp-tabs, bp-search, bp-user-list, bp-checkbox, etc.) */
+@import './batch-points.scss';
+
+/* Admin Batch Points Adjustment Page - Uses design system CSS variables from app.scss */
+.batch-adjust {
+  min-height: 100vh;
+  background-color: var(--bg-base);
+  padding-bottom: var(--space-10);
+
+  &__toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-4) var(--space-5);
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--card-border);
+  }
+
+  &__back {
+    font-size: var(--text-body);
+    color: var(--accent-primary);
+    cursor: pointer;
+    padding: var(--space-1) var(--space-2);
+  }
+
+  &__title {
+    font-family: var(--font-display);
+    font-size: var(--text-body-lg);
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+}
+
+/* Read-only Activity Context Card */
+.ba-activity-context {
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--card-border);
+  padding: var(--space-4) var(--space-5);
+
+  &__label {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+    font-weight: 500;
+    margin-bottom: var(--space-2);
+    display: block;
+  }
+
+  &__card {
+    background: var(--bg-elevated);
+    border: 1px solid rgba(124, 109, 240, 0.2);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+  }
+
+  &__ug {
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  &__topic {
+    font-size: var(--text-body);
+    color: var(--text-primary);
+    font-weight: 600;
+    line-height: 1.4;
+    margin-bottom: var(--space-1);
+  }
+
+  &__date {
+    font-family: var(--font-display);
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+  }
+}
+
+/* Original Distribution Info Row */
+.ba-original-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--card-border);
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  &__label {
+    font-size: var(--text-body-sm);
+    color: var(--text-tertiary);
+  }
+
+  &__value {
+    font-size: var(--text-body-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+}
+
+/* Diff Summary Panel */
+.ba-diff-summary {
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--card-border);
+  padding: var(--space-4) var(--space-5);
+
+  &__title {
+    font-family: var(--font-display);
+    font-size: var(--text-body-sm);
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-3);
+    display: block;
+  }
+
+  &__grid {
+    display: flex;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+
+  &__item {
+    flex: 1;
+    background: var(--bg-elevated);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    text-align: center;
+    border: 1px solid var(--card-border);
+
+    &--added {
+      border-color: rgba(45, 212, 168, 0.3);
+    }
+
+    &--removed {
+      border-color: rgba(255, 107, 107, 0.3);
+    }
+
+    &--retained {
+      border-color: rgba(91, 141, 239, 0.3);
+    }
+  }
+
+  &__count {
+    font-family: var(--font-display);
+    font-size: var(--text-body-lg);
+    font-weight: 700;
+    display: block;
+    margin-bottom: 2px;
+
+    .ba-diff-summary__item--added & {
+      color: var(--success);
+    }
+
+    .ba-diff-summary__item--removed & {
+      color: var(--error);
+    }
+
+    .ba-diff-summary__item--retained & {
+      color: var(--info);
+    }
+  }
+
+  &__label {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+  }
+
+  &__delta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3);
+    background: var(--bg-elevated);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--card-border);
+  }
+
+  &__delta-label {
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  &__delta-value {
+    font-family: var(--font-display);
+    font-size: var(--text-body-lg);
+    font-weight: 700;
+    color: var(--text-primary);
+
+    &--positive {
+      color: var(--success);
+    }
+
+    &--negative {
+      color: var(--error);
+    }
+  }
+
+  &__no-changes {
+    display: block;
+    text-align: center;
+    margin-top: var(--space-2);
+    font-size: var(--text-body-sm);
+    color: var(--text-tertiary);
+    font-style: italic;
+  }
+}
+
+/* Original User Tag (in user list rows) */
+.ba-user-original-tag {
+  font-size: var(--text-badge);
+  color: var(--accent-primary);
+  font-weight: 600;
+}
+
+/* Removed state for user rows (original user unchecked) */
+.bp-user-row--removed {
+  border-color: rgba(255, 107, 107, 0.3);
+  background: rgba(255, 107, 107, 0.04);
+}
+
+/* Read-only Reason Display */
+.ba-reason {
+  padding: var(--space-4) var(--space-5);
+  background: var(--bg-surface);
+  border-top: 1px solid var(--card-border);
+
+  &__label {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+    font-weight: 500;
+    margin-bottom: var(--space-2);
+    display: block;
+  }
+
+  &__text {
+    font-size: var(--text-body);
+    color: var(--text-primary);
+    line-height: 1.5;
+    padding: var(--space-3);
+    background: var(--bg-void);
+    border-radius: var(--radius-sm);
+    word-break: break-word;
+  }
+}
+
+/* Submit Area */
+.ba-submit-area {
+  padding: var(--space-4) var(--space-5);
+  background: var(--bg-surface);
+  border-top: 1px solid var(--card-border);
+}
+
+/* Confirmation Dialog - Diff Rows */
+.ba-confirm {
+  &__diff-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--card-border);
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &--highlight {
+      padding: var(--space-3) 0;
+      border-bottom: none;
+      margin-top: var(--space-1);
+      background: var(--bg-elevated);
+      border-radius: var(--radius-sm);
+      padding-left: var(--space-3);
+      padding-right: var(--space-3);
+    }
+  }
+
+  &__diff-label {
+    font-size: var(--text-body-sm);
+    color: var(--text-tertiary);
+  }
+
+  &__diff-value {
+    font-size: var(--text-body);
+    font-weight: 600;
+    color: var(--text-primary);
+    font-family: var(--font-display);
+
+    &--added {
+      color: var(--success);
+    }
+
+    &--removed {
+      color: var(--error);
+    }
+  }
+
+  &__names-section {
+    padding: var(--space-2) 0;
+  }
+
+  &__names-label {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    margin-bottom: var(--space-1);
+    display: block;
+  }
+
+  &__names {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+  }
+
+  &__name-tag {
+    display: inline-block;
+    padding: 2px var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-caption);
+    font-weight: 500;
+
+    &--added {
+      background: rgba(45, 212, 168, 0.1);
+      border: 1px solid rgba(45, 212, 168, 0.25);
+      color: var(--success);
+    }
+
+    &--removed {
+      background: rgba(255, 107, 107, 0.1);
+      border: 1px solid rgba(255, 107, 107, 0.25);
+      color: var(--error);
+    }
+  }
+}
+
+/* Adjusted Badge (reusable indicator) */
+.ba-adjusted-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--text-badge);
+  font-weight: 600;
+  white-space: nowrap;
+  background: rgba(255, 171, 0, 0.15);
+  color: var(--warning);
+  border: 1px solid rgba(255, 171, 0, 0.25);
+}
+
+

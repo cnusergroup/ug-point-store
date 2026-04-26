@@ -22,6 +22,7 @@ export default defineAppConfig({
     'pages/admin/batch-points',
     'pages/admin/quarterly-award',
     'pages/admin/batch-history',
+    'pages/admin/batch-adjust',
     'pages/admin/travel',
     'pages/admin/tags',
     'pages/admin/reservation-approvals',

@@ -306,6 +306,17 @@
     margin-bottom: var(--space-3);
   }
 
+  &__header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+
+    .detail-section__title {
+      margin-bottom: 0;
+    }
+  }
+
   &__subtitle {
     display: block;
     font-size: var(--text-body-sm);

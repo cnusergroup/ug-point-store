@@ -156,7 +156,7 @@ describe('updateShipping', () => {
   it('should return INVALID_STATUS_TRANSITION for invalid transition', async () => {
     client.send.mockResolvedValueOnce({ Item: makeFullOrder({ shippingStatus: 'pending' }) });
 
-    const result = await updateShipping('order-001', 'delivered', undefined, undefined, 'admin-001', client, 'Orders');
+    const result = await updateShipping('order-001', 'delivered' as any, undefined, undefined, 'admin-001', client, 'Orders');
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe(ErrorCodes.INVALID_STATUS_TRANSITION);
   });
@@ -220,6 +220,7 @@ describe('getOrderStats', () => {
     expect(result.stats).toEqual({
       pending: 0,
       shipped: 0,
+      cancelled: 0,
       total: 0,
     });
   });
@@ -238,6 +239,7 @@ describe('getOrderStats', () => {
     expect(result.stats).toEqual({
       pending: 2,
       shipped: 1,
+      cancelled: 0,
       total: 3,
     });
   });

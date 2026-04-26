@@ -55,6 +55,7 @@ export async function createInviteRecord(
   registerBaseUrl: string,
   expiryMs?: number,
   isEmployee?: boolean,
+  createdBy?: string,
 ): Promise<CreateInviteResult> {
   const token = generateInviteToken();
   const now = new Date();
@@ -69,6 +70,7 @@ export async function createInviteRecord(
     createdAt,
     expiresAt,
     isEmployee: isEmployee ?? false,
+    ...(createdBy ? { createdBy } : {}),
   };
 
   await dynamoClient.send(
@@ -94,6 +96,7 @@ export async function batchCreateInvites(
   registerBaseUrl: string,
   expiryMs?: number,
   isEmployee?: boolean,
+  createdBy?: string,
 ): Promise<BatchCreateInvitesResult> {
   if (count < 1 || count > 100) {
     return {
@@ -155,7 +158,7 @@ export async function batchCreateInvites(
   const results: Array<{ token: string; link: string; roles: UserRole[]; expiresAt: string; isEmployee: boolean }> = [];
 
   for (let i = 0; i < count; i++) {
-    const result = await createInviteRecord(uniqueRoles, dynamoClient, invitesTable, registerBaseUrl, expiryMs, isEmployee);
+    const result = await createInviteRecord(uniqueRoles, dynamoClient, invitesTable, registerBaseUrl, expiryMs, isEmployee, createdBy);
     if (!result.success) {
       return result;
     }
@@ -247,13 +250,14 @@ export async function consumeInviteToken(
   userId: string,
   dynamoClient: DynamoDBDocumentClient,
   invitesTable: string,
+  usedByNickname?: string,
 ): Promise<ConsumeInviteResult> {
   try {
     await dynamoClient.send(
       new UpdateCommand({
         TableName: invitesTable,
         Key: { token },
-        UpdateExpression: 'SET #status = :used, usedAt = :now, usedBy = :userId',
+        UpdateExpression: 'SET #status = :used, usedAt = :now, usedBy = :userId, usedByNickname = :nickname',
         ConditionExpression: '#status = :pending',
         ExpressionAttributeNames: { '#status': 'status' },
         ExpressionAttributeValues: {
@@ -261,6 +265,7 @@ export async function consumeInviteToken(
           ':pending': 'pending' as InviteStatus,
           ':now': new Date().toISOString(),
           ':userId': userId,
+          ':nickname': usedByNickname || '',
         },
       }),
     );

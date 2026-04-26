@@ -5,6 +5,7 @@ import { useAppStore } from '../../store';
 import { request, RequestError } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
+import PdfViewer from '../../components/PdfViewer';
 import type { ContentItem, ContentStatus } from '@points-mall/shared';
 import './content.scss';
 
@@ -231,16 +232,10 @@ export default function AdminContentPage() {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  const getPreviewUrl = (item: ContentItem) => {
-    const baseUrl = process.env.TARO_APP_API_BASE_URL || '';
-    const fileUrl = `${baseUrl}/images/${item.fileKey}`;
-    const ext = item.fileName.toLowerCase().split('.').pop();
-    if (ext === 'pdf') {
-      return fileUrl;
-    }
-    // Office Online Viewer for PPT/DOC
-    return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(fileUrl)}`;
-  };
+  const getFilePublicUrl = (fileKey: string): string => `/${fileKey}`;
+
+  const isPdf = (fileName: string): boolean =>
+    fileName.toLowerCase().endsWith('.pdf');
 
   const handleBack = () => goBack('/pages/admin/index');
 
@@ -352,17 +347,23 @@ export default function AdminContentPage() {
               </View>
               <View className='content-detail-section'>
                 <Text className='content-detail-section__label'>{t('contentHub.admin.detailPreviewLabel')}</Text>
-                <Text
-                  className='content-detail-section__value content-detail-section__value--link'
-                  onClick={() => {
-                    const url = getPreviewUrl(detailItem);
-                    if (Taro.getEnv() === Taro.ENV_TYPE.WEB) {
-                      window.open(url, '_blank');
-                    }
-                  }}
-                >
-                  {t('contentHub.admin.detailPreviewLink')}
-                </Text>
+                {detailItem.previewStatus === 'pending' ? (
+                  <View className='content-detail-preview-status'>
+                    <Text>{t('contentHub.detail.previewPending')}</Text>
+                  </View>
+                ) : detailItem.previewStatus === 'failed' ? (
+                  <View className='content-detail-preview-status'>
+                    <Text>{t('contentHub.detail.previewFailed')}</Text>
+                  </View>
+                ) : detailItem.previewFileKey ? (
+                  <PdfViewer url={getFilePublicUrl(detailItem.previewFileKey)} />
+                ) : isPdf(detailItem.fileName) ? (
+                  <PdfViewer url={getFilePublicUrl(detailItem.fileKey)} />
+                ) : (
+                  <View className='content-detail-preview-status'>
+                    <Text>{t('contentHub.detail.previewUnsupported')}</Text>
+                  </View>
+                )}
               </View>
               {detailItem.videoUrl && (
                 <View className='content-detail-section'>

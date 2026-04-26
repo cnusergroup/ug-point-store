@@ -25,12 +25,14 @@ export default function AdminOrdersPage() {
   const STATUS_LABELS: Record<ShippingStatus, string> = {
     pending: t('admin.orders.statusPending'),
     shipped: t('admin.orders.statusShipped'),
+    cancelled: t('admin.orders.statusCancelled'),
   };
 
   const STATUS_TABS: { key: ShippingStatus | 'all'; label: string }[] = [
     { key: 'all', label: t('admin.orders.filterAll') },
     { key: 'pending', label: t('admin.orders.statusPending') },
     { key: 'shipped', label: t('admin.orders.statusShipped') },
+    { key: 'cancelled', label: t('admin.orders.statusCancelled') },
   ];
 
   const [orders, setOrders] = useState<OrderListItem[]>([]);
@@ -52,6 +54,10 @@ export default function AdminOrdersPage() {
   const [shipRemark, setShipRemark] = useState('');
   const [shipSubmitting, setShipSubmitting] = useState(false);
   const [shipError, setShipError] = useState('');
+
+  // Cancel order dialog
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [cancelSubmitting, setCancelSubmitting] = useState(false);
 
   const PAGE_SIZE = 10;
 
@@ -205,6 +211,36 @@ export default function AdminOrdersPage() {
     }
   };
 
+  const handleCancelOrder = async () => {
+    if (!orderDetail) return;
+    setCancelSubmitting(true);
+    try {
+      const res = await request<{ message: string; userDeleted?: boolean }>({
+        url: `/api/admin/orders/${orderDetail.orderId}/cancel`,
+        method: 'POST',
+      });
+      if (res.userDeleted) {
+        Taro.showToast({ title: t('admin.orders.cancelSuccessUserDeleted'), icon: 'none', duration: 3000 });
+      } else {
+        Taro.showToast({ title: t('admin.orders.cancelSuccess'), icon: 'none' });
+      }
+      setShowCancelDialog(false);
+      // Refresh detail, list, and stats
+      const detail = await request<OrderResponse>({ url: `/api/admin/orders/${orderDetail.orderId}` });
+      setOrderDetail(detail);
+      fetchStats();
+      fetchOrders(activeTab, 1);
+      setPage(1);
+    } catch (err) {
+      Taro.showToast({
+        title: err instanceof RequestError ? err.message : t('common.operationFailed'),
+        icon: 'none',
+      });
+    } finally {
+      setCancelSubmitting(false);
+    }
+  };
+
   const handleBack = () => {
     if (isOrderAdmin) {
       goBack('/pages/settings/index');
@@ -247,6 +283,10 @@ export default function AdminOrdersPage() {
           <View className='order-stats__card order-stats__card--info'>
             <Text className='order-stats__num'>{stats.shipped}</Text>
             <Text className='order-stats__label'>{t('admin.orders.statsShipped')}</Text>
+          </View>
+          <View className='order-stats__card order-stats__card--error'>
+            <Text className='order-stats__num'>{stats.cancelled}</Text>
+            <Text className='order-stats__label'>{t('admin.orders.statsCancelled')}</Text>
           </View>
         </View>
       )}
@@ -359,10 +399,19 @@ export default function AdminOrdersPage() {
                       </View>
 
                       {/* Update Shipping Action */}
-                      {orderDetail.shippingStatus !== 'shipped' && !showShipForm && (
+                      {orderDetail.shippingStatus !== 'shipped' && orderDetail.shippingStatus !== 'cancelled' && !showShipForm && (
                         <View className='order-detail__action'>
                           <View className='order-detail__update-btn' onClick={openShipForm}>
                             <Text>{t('admin.orders.updateToStatus', { status: getNextStatusLabel(orderDetail.shippingStatus) ?? '' })}</Text>
+                          </View>
+                        </View>
+                      )}
+
+                      {/* Cancel Order Button — only for pending orders */}
+                      {orderDetail.shippingStatus === 'pending' && !showShipForm && (
+                        <View className='order-detail__action'>
+                          <View className='btn-danger order-detail__cancel-btn' onClick={() => setShowCancelDialog(true)}>
+                            <Text>{t('admin.orders.cancelButton')}</Text>
                           </View>
                         </View>
                       )}
@@ -438,6 +487,34 @@ export default function AdminOrdersPage() {
               <Text>{t('admin.orders.loadMore')}</Text>
             </View>
           )}
+        </View>
+      )}
+      {/* Cancel Order Confirmation Dialog */}
+      {showCancelDialog && orderDetail && (
+        <View className='cancel-confirm-dialog' onClick={() => !cancelSubmitting && setShowCancelDialog(false)}>
+          <View className='cancel-confirm-dialog__content' onClick={(e) => e.stopPropagation()}>
+            <Text className='cancel-confirm-dialog__title'>{t('admin.orders.cancelDialogTitle')}</Text>
+            <Text className='cancel-confirm-dialog__message'>
+              {t('admin.orders.cancelDialogMessage', {
+                orderId: orderDetail.orderId.slice(0, 12),
+                points: String(orderDetail.totalPoints),
+              })}
+            </Text>
+            <View className='cancel-confirm-dialog__actions'>
+              <View
+                className='cancel-confirm-dialog__cancel-btn'
+                onClick={() => !cancelSubmitting && setShowCancelDialog(false)}
+              >
+                <Text>{t('common.cancel')}</Text>
+              </View>
+              <View
+                className={`btn-danger cancel-confirm-dialog__confirm-btn ${cancelSubmitting ? 'cancel-confirm-dialog__confirm-btn--loading' : ''}`}
+                onClick={() => !cancelSubmitting && handleCancelOrder()}
+              >
+                <Text>{cancelSubmitting ? t('admin.orders.submitting') : t('admin.orders.cancelConfirmButton')}</Text>
+              </View>
+            </View>
+          </View>
         </View>
       )}
     </View>

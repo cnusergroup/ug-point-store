@@ -1,4 +1,4 @@
-import { DynamoDBDocumentClient, QueryCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, QueryCommand, PutCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { ErrorCodes, ErrorMessages } from '@points-mall/shared';
 import { hash } from 'bcryptjs';
 import { ulid } from 'ulid';
@@ -33,6 +33,16 @@ export async function registerUser(
     return { success: false, error: inviteValidation.error };
   }
   const { roles, isEmployee } = inviteValidation;
+
+  // 1b. Fetch invite's createdBy to record who invited this user
+  const inviteRecord = await dynamoClient.send(
+    new GetCommand({
+      TableName: invitesTable,
+      Key: { token: request.inviteToken },
+      ProjectionExpression: 'createdBy',
+    }),
+  );
+  const invitedBy = inviteRecord.Item?.createdBy as string | undefined;
 
   // 2. Validate password format
   const passwordCheck = validatePassword(request.password);
@@ -82,10 +92,13 @@ export async function registerUser(
     UserGroupLeader: 'earnTotalLeader',
     Volunteer: 'earnTotalVolunteer',
   };
-  const leaderboardFields: Record<string, any> = {
-    pk: 'ALL',
-    earnTotal: 0,
-  };
+  const leaderboardFields: Record<string, any> = {};
+  // Only add pk='ALL' for non-excluded roles (SA/OA should not appear in ranking GSI)
+  const isExcludedFromRanking = roles.includes('SuperAdmin') || roles.includes('OrderAdmin');
+  if (!isExcludedFromRanking) {
+    leaderboardFields.pk = 'ALL';
+    leaderboardFields.earnTotal = 0;
+  }
   for (const role of roles) {
     const field = roleFieldMap[role];
     if (field) {
@@ -105,8 +118,11 @@ export async function registerUser(
     status: 'active',
     createdAt: now,
     updatedAt: now,
+    entityType: 'user',
+    emailSubscriptions: { newProduct: true, newContent: true },
     ...leaderboardFields,
     ...(isEmployee === true ? { isEmployee: true } : {}),
+    ...(invitedBy ? { invitedBy } : {}),
   };
 
   await dynamoClient.send(
@@ -117,7 +133,7 @@ export async function registerUser(
   );
 
   // 7. Consume invite token (conditional update, concurrent conflict → INVITE_TOKEN_USED)
-  const consumeResult = await consumeInviteToken(request.inviteToken, userId, dynamoClient, invitesTable);
+  const consumeResult = await consumeInviteToken(request.inviteToken, userId, dynamoClient, invitesTable, request.nickname);
   if (!consumeResult.success) {
     return { success: false, error: consumeResult.error };
   }

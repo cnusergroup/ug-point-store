@@ -98,17 +98,22 @@ describe('listUsers', () => {
     expect(result.users[0].roles).toEqual(['Admin']);
   });
 
-  it('should use ScanCommand with ProjectionExpression', async () => {
+  it('should use QueryCommand on entityType-createdAt-index GSI', async () => {
     const client = createMockDynamoClient();
     await listUsers({}, client, tableName);
 
     const command = client.send.mock.calls[0][0];
-    expect(command.constructor.name).toBe('ScanCommand');
+    expect(command.constructor.name).toBe('QueryCommand');
     expect(command.input.TableName).toBe(tableName);
+    expect(command.input.IndexName).toBe('entityType-createdAt-index');
+    expect(command.input.KeyConditionExpression).toBe('entityType = :et');
+    expect(command.input.ExpressionAttributeValues[':et']).toBe('user');
+    expect(command.input.ScanIndexForward).toBe(false);
     expect(command.input.ProjectionExpression).toContain('#userId');
     expect(command.input.ProjectionExpression).toContain('#email');
     expect(command.input.ProjectionExpression).toContain('#roles');
     expect(command.input.ProjectionExpression).toContain('#status');
+    expect(command.input.ProjectionExpression).toContain('#invitedBy');
   });
 
   it('should default pageSize to 20', async () => {
@@ -152,24 +157,44 @@ describe('listUsers', () => {
     expect(result.lastKey).toEqual(nextKey);
   });
 
-  it('should add FilterExpression when role is provided', async () => {
+  it('should add FilterExpression with contains(roles) when role is provided', async () => {
     const client = createMockDynamoClient();
     await listUsers({ role: 'Speaker' }, client, tableName);
 
     const command = client.send.mock.calls[0][0];
-    expect(command.input.FilterExpression).toContain('attribute_exists(#email)');
     expect(command.input.FilterExpression).toContain('contains(#roles, :role)');
     expect(command.input.ExpressionAttributeValues[':role']).toBe('Speaker');
   });
 
-  it('should filter by attribute_exists(email) to exclude system records when no role filter', async () => {
+  it('should not set FilterExpression when no role or excludeRoles filters', async () => {
     const client = createMockDynamoClient();
     await listUsers({}, client, tableName);
 
     const command = client.send.mock.calls[0][0];
-    expect(command.input.FilterExpression).toContain('attribute_exists(#email)');
-    // No ExpressionAttributeValues needed when only attribute_exists filter
-    expect(command.input.ExpressionAttributeValues).toBeUndefined();
+    expect(command.input.FilterExpression).toBeUndefined();
+  });
+
+  it('should add NOT contains for each excludeRole in FilterExpression', async () => {
+    const client = createMockDynamoClient();
+    await listUsers({ excludeRoles: ['SuperAdmin', 'OrderAdmin'] }, client, tableName);
+
+    const command = client.send.mock.calls[0][0];
+    expect(command.input.FilterExpression).toContain('NOT contains(#roles, :exRole0)');
+    expect(command.input.FilterExpression).toContain('NOT contains(#roles, :exRole1)');
+    expect(command.input.ExpressionAttributeValues[':exRole0']).toBe('SuperAdmin');
+    expect(command.input.ExpressionAttributeValues[':exRole1']).toBe('OrderAdmin');
+  });
+
+  it('should combine role and excludeRoles in FilterExpression with AND', async () => {
+    const client = createMockDynamoClient();
+    await listUsers({ role: 'Speaker', excludeRoles: ['SuperAdmin'] }, client, tableName);
+
+    const command = client.send.mock.calls[0][0];
+    expect(command.input.FilterExpression).toContain('contains(#roles, :role)');
+    expect(command.input.FilterExpression).toContain('NOT contains(#roles, :exRole0)');
+    expect(command.input.FilterExpression).toContain(' AND ');
+    expect(command.input.ExpressionAttributeValues[':role']).toBe('Speaker');
+    expect(command.input.ExpressionAttributeValues[':exRole0']).toBe('SuperAdmin');
   });
 
   it('should default points to 0 when not present', async () => {
@@ -202,6 +227,43 @@ describe('listUsers', () => {
     const result = await listUsers({}, client, tableName);
 
     expect(result.users[0].roles).toEqual([]);
+  });
+
+  it('should include invitedBy in user result when present', async () => {
+    const items = [
+      {
+        userId: 'u1',
+        email: 'a@test.com',
+        nickname: 'Alice',
+        roles: ['Speaker'],
+        points: 100,
+        status: 'active',
+        createdAt: '2024-01-01T00:00:00.000Z',
+        invitedBy: 'admin1',
+      },
+    ];
+    const client = createMockDynamoClient({ Items: items });
+    const result = await listUsers({}, client, tableName);
+
+    expect(result.users[0].invitedBy).toBe('admin1');
+  });
+
+  it('should omit invitedBy from user result when not present', async () => {
+    const items = [
+      {
+        userId: 'u1',
+        email: 'a@test.com',
+        nickname: 'Alice',
+        roles: ['Speaker'],
+        points: 100,
+        status: 'active',
+        createdAt: '2024-01-01T00:00:00.000Z',
+      },
+    ];
+    const client = createMockDynamoClient({ Items: items });
+    const result = await listUsers({}, client, tableName);
+
+    expect(result.users[0]).not.toHaveProperty('invitedBy');
   });
 
   it('should ensure pageSize is at least 1', async () => {

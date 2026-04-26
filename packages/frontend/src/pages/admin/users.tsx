@@ -95,17 +95,17 @@ export default function AdminUsersPage() {
   const fetchUsers = useCallback(async (filter: RoleFilter, append = false, cursor?: string | null) => {
     if (!append) setLoading(true);
     try {
-      let url = '/api/admin/users?pageSize=20';
+      let url = '/api/admin/users?pageSize=50';
       if (filter !== 'all') url += `&role=${filter}`;
       if (append && cursor) url += `&lastKey=${encodeURIComponent(cursor)}`;
 
-      const res = await request<{ users: UserListItem[]; lastKey?: string }>({ url });
+      const res = await request<{ users: UserListItem[]; lastKey?: Record<string, unknown> }>({ url });
       if (append) {
         setUsers((prev) => [...prev, ...(res.users || [])]);
       } else {
         setUsers(res.users || []);
       }
-      setLastKey(res.lastKey || null);
+      setLastKey(res.lastKey ? JSON.stringify(res.lastKey) : null);
     } catch {
       if (!append) setUsers([]);
     } finally {
@@ -358,7 +358,7 @@ export default function AdminUsersPage() {
                       <Text>{t('admin.users.enableUser')}</Text>
                     </View>
                   ))}
-                  {canManageUserCheck(user.roles) && (
+                  {isSuperAdmin && canManageUserCheck(user.roles) && (
                     <View
                       className='user-row__action-btn user-row__action-btn--danger'
                       onClick={() => setConfirmAction({ type: 'delete', user })}

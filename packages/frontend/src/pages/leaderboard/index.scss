@@ -427,6 +427,19 @@
     font-size: var(--text-caption);
     color: var(--text-tertiary);
   }
+
+  &--btn {
+    cursor: pointer;
+
+    .leaderboard-load-more__text {
+      color: var(--accent-primary);
+      font-weight: 500;
+    }
+
+    &:hover .leaderboard-load-more__text {
+      color: var(--accent-hover);
+    }
+  }
 }
 
 /* ---- Tab Content Wrapper ---- */

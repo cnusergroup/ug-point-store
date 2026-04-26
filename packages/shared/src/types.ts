@@ -122,7 +122,7 @@ export interface CodeExclusiveProduct extends Product {
 }
 
 /** 积分记录类型 */
-export type PointsRecordType = 'earn' | 'spend';
+export type PointsRecordType = 'earn' | 'spend' | 'refund' | 'adjust';
 
 /** 积分记录 */
 export interface PointsRecord {
@@ -187,7 +187,7 @@ export interface ErrorResponse {
 // ============================================================
 
 /** 物流状态 */
-export type ShippingStatus = 'pending' | 'shipped';
+export type ShippingStatus = 'pending' | 'shipped' | 'cancelled';
 
 /** 物流事件 */
 export interface ShippingEvent {
@@ -310,6 +310,7 @@ export interface OrderListItem {
 export interface OrderStats {
   pending: number;
   shipped: number;
+  cancelled: number;
   total: number;
 }
 
@@ -356,7 +357,9 @@ export interface InviteRecord {
   expiresAt: string;
   usedAt?: string;
   usedBy?: string; // userId
+  usedByNickname?: string; // nickname of the user who used this invite
   isEmployee?: boolean;  // 员工邀请标记
+  createdBy?: string;    // 创建者 userId
 }
 
 /** 从 InviteRecord 安全获取 roles 数组（兼容旧数据） */
@@ -383,6 +386,11 @@ export function validateStatusTransition(
   current: ShippingStatus,
   target: ShippingStatus,
 ): { valid: boolean; message?: string } {
+  // Special case: pending → cancelled is always valid (branch state)
+  if (current === 'pending' && target === 'cancelled') {
+    return { valid: true };
+  }
+  // Existing linear flow logic
   const currentIdx = SHIPPING_STATUS_ORDER.indexOf(current);
   const targetIdx = SHIPPING_STATUS_ORDER.indexOf(target);
   if (targetIdx === currentIdx + 1) {
@@ -639,6 +647,8 @@ export interface DistributionRecord {
   activityUG?: string;
   activityTopic?: string;
   activityDate?: string;
+  adjustedAt?: string;
+  adjustedBy?: string;
 }
 
 // ============================================================

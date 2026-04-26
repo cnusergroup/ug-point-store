@@ -5,6 +5,7 @@ import { useAppStore } from '../../store';
 import { request, RequestError } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
+import { sortUsersWithInvitePriority } from '../../utils/sort-users';
 import './batch-points.scss';
 
 /** User list item returned by the admin users API */
@@ -16,6 +17,7 @@ interface UserListItem {
   points: number;
   status: 'active' | 'disabled';
   createdAt: string;
+  invitedBy?: string;
 }
 
 /** Activity record from the admin activities API */
@@ -92,6 +94,7 @@ function getPointsForRole(
 
 export default function BatchPointsPage() {
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
+  const currentUserId = useAppStore((s) => s.user?.userId || '');
   const userRoles = useAppStore((s) => s.user?.roles || []);
   const isSuperAdmin = userRoles.includes('SuperAdmin');
   const { t } = useTranslation();
@@ -116,7 +119,6 @@ export default function BatchPointsPage() {
   // User list
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [lastKey, setLastKey] = useState<string | null>(null);
 
   // Awarded users (already received points for this activity+role)
   const [awardedUserIds, setAwardedUserIds] = useState<Set<string>>(new Set());
@@ -199,26 +201,22 @@ export default function BatchPointsPage() {
     }
   }, []);
 
-  // Fetch users for the selected role
-  const fetchUsers = useCallback(async (role: TargetRole, append = false, cursor?: string | null) => {
-    if (!append) setLoading(true);
+  // Fetch users for the selected role (fetch all, no pagination)
+  const fetchUsers = useCallback(async (role: TargetRole) => {
+    setLoading(true);
     try {
-      let url = `/api/admin/users?role=${role}&pageSize=20`;
-      if (append && cursor) url += `&lastKey=${encodeURIComponent(cursor)}`;
-      const res = await request<{ users: UserListItem[]; lastKey?: string }>({ url });
-      const activeUsers = (res.users || []).filter((u) => u.status === 'active' && !u.roles?.includes('SuperAdmin') && !u.roles?.includes('OrderAdmin'));
-      if (append) {
-        setUsers((prev) => [...prev, ...activeUsers]);
-      } else {
-        setUsers(activeUsers);
-      }
-      setLastKey(res.lastKey || null);
+      const url = `/api/admin/users?role=${role}`;
+      const res = await request<{ users: UserListItem[] }>({ url });
+      const activeUsers = (res.users || []).filter(
+        (u) => u.status === 'active' && !u.roles?.includes('SuperAdmin') && !u.roles?.includes('OrderAdmin'),
+      );
+      setUsers(sortUsersWithInvitePriority(activeUsers, currentUserId));
     } catch {
-      if (!append) setUsers([]);
+      setUsers([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentUserId]);
 
   // Fetch awarded users for the selected activity + role
   const fetchAwardedUsers = useCallback(async (activityId: string, role: TargetRole) => {
@@ -301,7 +299,7 @@ export default function BatchPointsPage() {
   };
 
   const handleLoadMore = () => {
-    if (lastKey) fetchUsers(targetRole, true, lastKey);
+    // No longer needed — all users loaded at once
   };
 
   // Selection handlers — skip awarded users
@@ -616,11 +614,6 @@ export default function BatchPointsPage() {
               </View>
             );
           })}
-          {lastKey && (
-            <View className='bp-user-list__load-more' onClick={handleLoadMore}>
-              <Text>{t('common.loadMore')}</Text>
-            </View>
-          )}
         </View>
       )}
 

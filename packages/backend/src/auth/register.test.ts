@@ -158,6 +158,52 @@ describe('registerUser', () => {
     expect(putCall![0].input.Item.roles).toEqual(['Speaker', 'Volunteer']);
   });
 
+  it('should set invitedBy on user record when invite has createdBy', async () => {
+    const inviteWithCreatedBy = {
+      ...validInviteRecord,
+      createdBy: 'admin-user-123',
+    };
+    const dynamoClient = createMockDynamoClient([], inviteWithCreatedBy);
+
+    const result = await registerUser(validRequest, dynamoClient, tableName, INVITES_TABLE);
+
+    expect(result.success).toBe(true);
+
+    // Verify the GetCommand was called to fetch createdBy
+    const getCalls = dynamoClient.send.mock.calls.filter(
+      (c: any) => c[0].constructor.name === 'GetCommand',
+    );
+    // Two GetCommand calls: one from validateInviteToken, one for createdBy
+    expect(getCalls.length).toBeGreaterThanOrEqual(2);
+    const createdByGetCall = getCalls.find(
+      (c: any) => c[0].input.ProjectionExpression === 'createdBy',
+    );
+    expect(createdByGetCall).toBeDefined();
+    expect(createdByGetCall![0].input.TableName).toBe(INVITES_TABLE);
+    expect(createdByGetCall![0].input.Key).toEqual({ token: VALID_TOKEN });
+
+    // Verify PutCommand includes invitedBy
+    const putCall = dynamoClient.send.mock.calls.find(
+      (c: any) => c[0].constructor.name === 'PutCommand',
+    );
+    expect(putCall![0].input.Item.invitedBy).toBe('admin-user-123');
+  });
+
+  it('should omit invitedBy from user record when invite has no createdBy', async () => {
+    // validInviteRecord has no createdBy field
+    const dynamoClient = createMockDynamoClient([], validInviteRecord);
+
+    const result = await registerUser(validRequest, dynamoClient, tableName, INVITES_TABLE);
+
+    expect(result.success).toBe(true);
+
+    // Verify PutCommand does NOT include invitedBy
+    const putCall = dynamoClient.send.mock.calls.find(
+      (c: any) => c[0].constructor.name === 'PutCommand',
+    );
+    expect(putCall![0].input.Item).not.toHaveProperty('invitedBy');
+  });
+
   it('should handle old format invite with only role field (backward compat)', async () => {
     // Old invite record: only has `role`, no `roles` field
     const oldFormatInvite = {

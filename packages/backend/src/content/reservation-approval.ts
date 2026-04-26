@@ -176,11 +176,10 @@ export async function reviewReservation(
             Update: {
               TableName: tables.usersTable,
               Key: { userId: uploaderId },
-              UpdateExpression: 'SET points = points + :pv, earnTotal = if_not_exists(earnTotal, :zero) + :pv, earnTotalSpeaker = if_not_exists(earnTotalSpeaker, :zero) + :pv, pk = :pk, updatedAt = :now',
+              UpdateExpression: 'SET points = points + :pv, earnTotal = if_not_exists(earnTotal, :zero) + :pv, earnTotalSpeaker = if_not_exists(earnTotalSpeaker, :zero) + :pv, updatedAt = :now',
               ExpressionAttributeValues: {
                 ':pv': rewardPoints,
                 ':zero': 0,
-                ':pk': 'ALL',
                 ':now': now,
               },
             },
