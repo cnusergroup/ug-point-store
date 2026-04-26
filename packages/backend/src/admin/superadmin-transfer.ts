@@ -127,11 +127,11 @@ export async function transferSuperAdmin(
       new TransactWriteCommand({
         TransactItems: [
           {
-            // Demote caller: remove SuperAdmin, ensure Admin
+            // Demote caller: remove SuperAdmin, ensure Admin, restore pk for ranking
             Update: {
               TableName: usersTable,
               Key: { userId: callerId },
-              UpdateExpression: 'SET #roles = :newRoles, rolesVersion = :rv, updatedAt = :now',
+              UpdateExpression: 'SET #roles = :newRoles, rolesVersion = :rv, updatedAt = :now, pk = :pk',
               ConditionExpression: 'contains(#roles, :superAdmin)',
               ExpressionAttributeNames: { '#roles': 'roles' },
               ExpressionAttributeValues: {
@@ -139,15 +139,16 @@ export async function transferSuperAdmin(
                 ':rv': rolesVersion,
                 ':now': now,
                 ':superAdmin': 'SuperAdmin',
+                ':pk': 'ALL',
               },
             },
           },
           {
-            // Promote target: add SuperAdmin
+            // Promote target: add SuperAdmin, remove pk from ranking
             Update: {
               TableName: usersTable,
               Key: { userId: targetUserId },
-              UpdateExpression: 'SET #roles = :newRoles, rolesVersion = :rv, updatedAt = :now',
+              UpdateExpression: 'SET #roles = :newRoles, rolesVersion = :rv, updatedAt = :now REMOVE pk',
               ConditionExpression: 'contains(#roles, :admin)',
               ExpressionAttributeNames: { '#roles': 'roles' },
               ExpressionAttributeValues: {

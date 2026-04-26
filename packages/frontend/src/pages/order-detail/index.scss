@@ -123,6 +123,12 @@
     border: 1px solid rgba(45, 212, 168, 0.2);
     color: var(--success);
   }
+
+  &--cancelled {
+    background: rgba(235, 87, 87, 0.12);
+    border: 1px solid rgba(235, 87, 87, 0.2);
+    color: var(--error);
+  }
 }
 
 /* ---- Section ---- */
@@ -298,6 +304,24 @@
   }
 }
 
+/* ---- Refund Info ---- */
+.detail-refund-info {
+  display: flex;
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  background: rgba(235, 87, 87, 0.08);
+  border: 1px solid rgba(235, 87, 87, 0.18);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-5);
+
+  &__text {
+    font-size: var(--text-body);
+    font-weight: 600;
+    color: var(--error);
+    font-family: var(--font-body);
+  }
+}
+
 /* ---- Shipping Timeline ---- */
 .detail-timeline {
   display: flex;
@@ -349,6 +373,10 @@
     &--delivered {
       background: var(--success);
     }
+
+    &--cancelled {
+      background: var(--error);
+    }
   }
 
   &__line {
@@ -390,6 +418,10 @@
 
     &--delivered {
       color: var(--success);
+    }
+
+    &--cancelled {
+      color: var(--error);
     }
   }
 

@@ -285,8 +285,9 @@ export class ApiStack extends cdk.Stack {
       code: DockerImageCode.fromEcr(conversionRepo, {
         tagOrDigest: 'fe89389d4b9375e0f70e08fe026f1e0c450426d7fa2dcd52a28e1c8bfb9e5fb7',
       }),
-      timeout: cdk.Duration.seconds(120),
-      memorySize: 3008,
+      timeout: cdk.Duration.seconds(900),
+      memorySize: 10240,
+      ephemeralStorageSize: cdk.Size.mebibytes(2048),
       environment: {
         CONTENT_ITEMS_TABLE: contentItemsTable.tableName,
         HOME: '/tmp',

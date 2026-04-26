@@ -6,7 +6,7 @@ import { ErrorHttpStatus, hasAdminAccess, isSuperAdmin, isOrderAdmin } from '@po
 import type { UserRole, ShippingStatus } from '@points-mall/shared';
 import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware';
 import { createOrder, createDirectOrder, getOrders, getOrderDetail } from './order';
-import { getAdminOrders, getAdminOrderDetail, updateShipping, getOrderStats } from './admin-order';
+import { getAdminOrders, getAdminOrderDetail, updateShipping, getOrderStats, cancelOrder } from './admin-order';
 import { getFeatureToggles } from '../settings/feature-toggles';
 import { sendNewOrderEmail, sendOrderShippedEmail } from '../email/notifications';
 import type { NotificationContext } from '../email/notifications';
@@ -68,6 +68,7 @@ function parseBody(event: APIGatewayProxyEvent): Record<string, unknown> | null 
 const ORDER_DETAIL_REGEX = /^\/api\/orders\/([^/]+)$/;
 const ADMIN_ORDER_DETAIL_REGEX = /^\/api\/admin\/orders\/([^/]+)$/;
 const ADMIN_ORDER_SHIPPING_REGEX = /^\/api\/admin\/orders\/([^/]+)\/shipping$/;
+const ADMIN_ORDER_CANCEL_REGEX = /^\/api\/admin\/orders\/([^/]+)\/cancel$/;
 
 function isAdmin(event: AuthenticatedEvent): boolean {
   return hasAdminAccess(event.user.roles as UserRole[]) || isOrderAdmin(event.user.roles as UserRole[]);
@@ -101,6 +102,14 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
       const shippingMatch = path.match(ADMIN_ORDER_SHIPPING_REGEX);
       if (shippingMatch) {
         return await handleUpdateShipping(shippingMatch[1], event);
+      }
+    }
+
+    // POST /api/admin/orders/{orderId}/cancel
+    if (method === 'POST') {
+      const cancelMatch = path.match(ADMIN_ORDER_CANCEL_REGEX);
+      if (cancelMatch) {
+        return await handleCancelOrder(cancelMatch[1], event);
       }
     }
 
@@ -392,6 +401,27 @@ async function handleUpdateShipping(orderId: string, event: AuthenticatedEvent):
   }
 
   return jsonResponse(200, { message: '物流状态更新成功' });
+}
+
+async function handleCancelOrder(orderId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const result = await cancelOrder(orderId, event.user.userId, dynamoClient, {
+    ordersTable: ORDERS_TABLE,
+    usersTable: USERS_TABLE,
+    productsTable: PRODUCTS_TABLE,
+    pointsRecordsTable: POINTS_RECORDS_TABLE,
+  });
+
+  if (!result.success) {
+    const code = result.error!.code;
+    const status = (ErrorHttpStatus as Record<string, number>)[code] ?? 400;
+    return jsonResponse(status, result.error);
+  }
+
+  if (result.userDeleted) {
+    return jsonResponse(200, { message: '订单已取消（用户已删除，积分未退还）' });
+  }
+
+  return jsonResponse(200, { message: '订单已取消并退还积分' });
 }
 
 async function handleGetOrderStats(): Promise<APIGatewayProxyResult> {

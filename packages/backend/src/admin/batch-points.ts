@@ -313,12 +313,11 @@ export async function executeBatchDistribution(
         Update: {
           TableName: tables.usersTable,
           Key: { userId },
-          UpdateExpression: `SET points = points + :pv, earnTotal = if_not_exists(earnTotal, :zero) + :pv, #rf = if_not_exists(#rf, :zero) + :pv, pk = :pk, updatedAt = :now`,
+          UpdateExpression: `SET points = points + :pv, earnTotal = if_not_exists(earnTotal, :zero) + :pv, #rf = if_not_exists(#rf, :zero) + :pv, updatedAt = :now`,
           ExpressionAttributeNames: { '#rf': roleField },
           ExpressionAttributeValues: {
             ':pv': input.points,
             ':zero': 0,
-            ':pk': 'ALL',
             ':now': now,
           },
         },
@@ -545,7 +544,7 @@ export function filterUsersBySearch<T extends SearchableUser>(users: T[], query:
 // ============================================================
 
 /** Split an array into chunks of the given size. */
-function chunkArray<T>(arr: T[], size: number): T[][] {
+export function chunkArray<T>(arr: T[], size: number): T[][] {
   const chunks: T[][] = [];
   for (let i = 0; i < arr.length; i += size) {
     chunks.push(arr.slice(i, i + size));

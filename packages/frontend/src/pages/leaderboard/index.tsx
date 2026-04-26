@@ -124,11 +124,15 @@ function RankingTab({
       if (reset) {
         setItems(newItems);
       } else {
-        setItems((prev) => [...prev, ...newItems]);
+        setItems((prev) => {
+          const existingKeys = new Set(prev.map(i => `${i.nickname}|${i.earnTotal}`));
+          const unique = newItems.filter(i => !existingKeys.has(`${i.nickname}|${i.earnTotal}`));
+          return [...prev, ...unique];
+        });
       }
 
       lastKeyRef.current = res.lastKey || null;
-      setHasMore(!!res.lastKey);
+      setHasMore(!!res.lastKey && newItems.length > 0);
     } catch {
       if (reset) setItems([]);
     } finally {
@@ -197,10 +201,12 @@ function RankingTab({
           onScrollToLower={handleScrollToLower}
           lowerThreshold={100}
         >
-          {items.map((item, idx) => (
-            <View key={`${item.rank}-${item.nickname}`} className='ranking-item' style={{ animationDelay: `${idx * 0.04}s` }}>
-              <View className={`ranking-item__rank ${getRankClass(item.rank)}`}>
-                <Text>{item.rank}</Text>
+          {items.map((item, idx) => {
+            const displayRank = idx + 1;
+            return (
+            <View key={`${idx}-${item.nickname}`} className='ranking-item' style={{ animationDelay: `${Math.min(idx, 20) * 0.04}s` }}>
+              <View className={`ranking-item__rank ${getRankClass(displayRank)}`}>
+                <Text>{displayRank}</Text>
               </View>
               <View className='ranking-item__info'>
                 <Text className='ranking-item__nickname'>{item.nickname}</Text>
@@ -219,11 +225,18 @@ function RankingTab({
                 {item.earnTotal.toLocaleString()}
               </Text>
             </View>
-          ))}
+            );
+          })}
 
           {loadingMore && (
             <View className='leaderboard-load-more'>
               <Text className='leaderboard-load-more__text'>{t('common.loading')}</Text>
+            </View>
+          )}
+
+          {!loadingMore && hasMore && (
+            <View className='leaderboard-load-more leaderboard-load-more--btn' onClick={handleScrollToLower}>
+              <Text className='leaderboard-load-more__text'>{t('common.loadMore')}</Text>
             </View>
           )}
 
@@ -362,6 +375,12 @@ function AnnouncementTab() {
           {loadingMore && (
             <View className='leaderboard-load-more'>
               <Text className='leaderboard-load-more__text'>{t('common.loading')}</Text>
+            </View>
+          )}
+
+          {!loadingMore && hasMore && (
+            <View className='leaderboard-load-more leaderboard-load-more--btn' onClick={handleScrollToLower}>
+              <Text className='leaderboard-load-more__text'>{t('common.loadMore')}</Text>
             </View>
           )}
         </ScrollView>

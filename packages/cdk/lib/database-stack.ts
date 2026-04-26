@@ -73,6 +73,15 @@ export class DatabaseStack extends cdk.Stack {
       sortKey: { name: 'earnTotalVolunteer', type: dynamodb.AttributeType.NUMBER },
     });
 
+    // GSI for paginated user listing: partition by entityType, sort by createdAt
+    // NOTE: DynamoDB only allows one GSI creation per CloudFormation update — deploy this GSI alone before proceeding
+    this.usersTable.addGlobalSecondaryIndex({
+      indexName: 'entityType-createdAt-index',
+      partitionKey: { name: 'entityType', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
     // Products table: PK=productId, GSI: type-status-index (PK=type, SK=status)
     this.productsTable = new dynamodb.Table(this, 'ProductsTable', {
       tableName: 'PointsMall-Products',

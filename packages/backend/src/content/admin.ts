@@ -12,6 +12,7 @@ import {
 import { ulid } from 'ulid';
 import { ErrorCodes, ErrorMessages } from '@points-mall/shared';
 import type { ContentItem, ContentCategory, ContentStatus } from '@points-mall/shared';
+import { syncTagsOnEdit } from './tags';
 
 // ─── Review Content ────────────────────────────────────────
 
@@ -222,6 +223,7 @@ export async function deleteContent(
     commentsTable: string;
     likesTable: string;
     reservationsTable: string;
+    contentTagsTable: string;
   },
   bucket: string,
 ): Promise<{ success: boolean; error?: { code: string; message: string } }> {
@@ -291,7 +293,16 @@ export async function deleteContent(
     'pk',
   );
 
-  // 6. Delete the ContentItem record
+  // 6. Decrement tag usageCount for all tags on this content
+  if (item.tags && Array.isArray(item.tags) && item.tags.length > 0) {
+    try {
+      await syncTagsOnEdit(item.tags, [], dynamoClient, tables.contentTagsTable);
+    } catch (err) {
+      console.error('Failed to decrement tag usageCount for content', contentId, err);
+    }
+  }
+
+  // 7. Delete the ContentItem record
   await dynamoClient.send(
     new DeleteCommand({
       TableName: tables.contentItemsTable,

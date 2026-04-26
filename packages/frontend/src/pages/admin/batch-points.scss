@@ -350,6 +350,9 @@
 /* User List */
 .bp-user-list {
   padding: var(--space-3) var(--space-5);
+  max-height: 400px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 
   &__load-more {
     text-align: center;

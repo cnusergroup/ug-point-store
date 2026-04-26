@@ -122,9 +122,14 @@ export async function assignRoles(
     UserGroupLeader: 'earnTotalLeader',
     Volunteer: 'earnTotalVolunteer',
   };
+  // Determine if user should be in leaderboard GSI
+  // SuperAdmin and OrderAdmin are excluded from ranking
+  const isExcludedFromRanking = finalRoles.includes('SuperAdmin') || finalRoles.includes('OrderAdmin');
+
   const extraSetExprs: string[] = [];
   const extraExprNames: Record<string, string> = {};
   const extraExprValues: Record<string, any> = {};
+  const removeExprs: string[] = [];
 
   for (const role of finalRoles) {
     const field = roleFieldMap[role];
@@ -136,14 +141,22 @@ export async function assignRoles(
       extraExprValues[placeholder] = 0;
     }
   }
-  // Ensure pk="ALL" exists for GSI partition key
-  extraSetExprs.push('pk = if_not_exists(pk, :pkVal)');
-  extraExprValues[':pkVal'] = 'ALL';
+
+  if (isExcludedFromRanking) {
+    // Remove pk so user disappears from all ranking GSIs
+    removeExprs.push('pk');
+  } else {
+    // Ensure pk="ALL" exists for GSI partition key
+    extraSetExprs.push('pk = :pkVal');
+    extraExprValues[':pkVal'] = 'ALL';
+  }
   // Ensure earnTotal exists
   extraSetExprs.push('earnTotal = if_not_exists(earnTotal, :etZero)');
   extraExprValues[':etZero'] = 0;
 
-  const updateExpression = `SET #roles = :roles, updatedAt = :now, rolesVersion = :rv${extraSetExprs.length > 0 ? ', ' + extraSetExprs.join(', ') : ''}`;
+  const setClause = `SET #roles = :roles, updatedAt = :now, rolesVersion = :rv${extraSetExprs.length > 0 ? ', ' + extraSetExprs.join(', ') : ''}`;
+  const removeClause = removeExprs.length > 0 ? ` REMOVE ${removeExprs.join(', ')}` : '';
+  const updateExpression = setClause + removeClause;
 
   await dynamoClient.send(
     new UpdateCommand({

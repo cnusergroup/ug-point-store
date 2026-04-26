@@ -17,6 +17,7 @@ interface InviteRecord {
   createdAt: string;
   expiresAt: string;
   usedAt?: string;
+  usedByNickname?: string;
   isEmployee?: boolean;
 }
 
@@ -383,6 +384,9 @@ export default function AdminInvitesPage() {
                     <Text className='invite-row__meta-item'>{t('admin.invites.expiresLabel', { time: formatTime(inv.expiresAt) })}</Text>
                     {inv.usedAt && (
                       <Text className='invite-row__meta-item'>{t('admin.invites.usedLabel', { time: formatTime(inv.usedAt) })}</Text>
+                    )}
+                    {inv.usedByNickname && (
+                      <Text className='invite-row__meta-item invite-row__meta-item--user'>👤 {inv.usedByNickname}</Text>
                     )}
                   </View>
                 </View>

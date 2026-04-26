@@ -173,12 +173,17 @@ export default function BatchHistoryPage() {
                     onClick={() => handleToggleDetail(record.distributionId)}
                   >
                     <View className='bh-record__summary'>
-                      {/* Top: distributor + role badge */}
+                      {/* Top: distributor + role badge + adjusted badge */}
                       <View className='bh-record__top'>
                         <Text className='bh-record__distributor'>{record.distributorNickname}</Text>
                         <Text className={`role-badge ${roleConfig?.className || ''}`}>
                           {roleConfig ? t(roleConfig.labelKey) : record.targetRole}
                         </Text>
+                        {record.adjustedAt && (
+                          <Text className='bh-adjusted-badge'>
+                            {t('batchPoints.history.adjustedBadge' as any)}
+                          </Text>
+                        )}
                       </View>
 
                       {/* Activity summary: type badge + UG + topic */}
@@ -271,6 +276,43 @@ export default function BatchHistoryPage() {
                             </View>
                           </View>
                         ))}
+
+                        {/* Adjustment metadata */}
+                        {(detail || record).adjustedAt && (
+                          <View className='bh-adjusted-meta'>
+                            <View className='bh-adjusted-meta__row'>
+                              <Text className='bh-adjusted-meta__label'>
+                                {t('batchPoints.history.adjustedAt' as any)}
+                              </Text>
+                              <Text className='bh-adjusted-meta__value'>
+                                {formatTime((detail || record).adjustedAt!)}
+                              </Text>
+                            </View>
+                            <View className='bh-adjusted-meta__row'>
+                              <Text className='bh-adjusted-meta__label'>
+                                {t('batchPoints.history.adjustedBy' as any)}
+                              </Text>
+                              <Text className='bh-adjusted-meta__value'>
+                                {(detail || record).adjustedBy}
+                              </Text>
+                            </View>
+                          </View>
+                        )}
+
+                        {/* Adjust button - SuperAdmin only */}
+                        {isSuperAdmin && (
+                          <View
+                            className='bh-adjust-button'
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              Taro.navigateTo({
+                                url: `/pages/admin/batch-adjust?distributionId=${record.distributionId}`,
+                              });
+                            }}
+                          >
+                            <Text>{t('batchPoints.history.adjustButton' as any)}</Text>
+                          </View>
+                        )}
                       </View>
                     )}
                   </View>

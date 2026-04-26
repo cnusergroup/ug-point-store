@@ -46,6 +46,27 @@ function ClockIcon({ size = 14, color = 'currentColor', className }: { size?: nu
   );
 }
 
+/** Small X-circle icon for cancelled status */
+function XCircleIcon({ size = 14, color = 'currentColor', className }: { size?: number; color?: string; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <circle cx="12" cy="12" r="10" />
+      <line x1="15" y1="9" x2="9" y2="15" />
+      <line x1="9" y1="9" x2="15" y2="15" />
+    </svg>
+  );
+}
+
 interface StatusConfig {
   labelKey: string;
   icon: (props: { size?: number; color?: string; className?: string }) => JSX.Element;
@@ -55,6 +76,7 @@ interface StatusConfig {
 const STATUS_CONFIG: Record<ShippingStatus, StatusConfig> = {
   pending: { labelKey: 'orders.statusPending', icon: ClockIcon, className: 'orders-status--pending' },
   shipped: { labelKey: 'orders.statusShipped', icon: PackageIcon, className: 'orders-status--shipped' },
+  cancelled: { labelKey: 'orders.statusCancelled', icon: XCircleIcon, className: 'orders-status--cancelled' },
 };
 
 const PAGE_SIZE = 10;

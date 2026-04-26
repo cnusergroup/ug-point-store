@@ -1,6 +1,6 @@
 import {
   DynamoDBDocumentClient,
-  ScanCommand,
+  QueryCommand,
   GetCommand,
   UpdateCommand,
   DeleteCommand,
@@ -14,6 +14,8 @@ export interface ListUsersOptions {
   role?: string;
   pageSize?: number;
   lastKey?: Record<string, unknown>;
+  /** Roles to exclude from results (e.g., SuperAdmin, OrderAdmin for non-SA callers) */
+  excludeRoles?: string[];
 }
 
 export interface ListUsersResult {
@@ -29,13 +31,14 @@ export interface UserListItem {
   points: number;
   status: UserStatus;
   createdAt: string;
+  invitedBy?: string;
 }
 
 // ---- Core Functions ----
 
 /**
  * List users with optional role filtering and pagination.
- * Uses DynamoDB Scan with ProjectionExpression for needed fields only.
+ * Uses DynamoDB Query on entityType-createdAt-index GSI for correct cursor-based pagination.
  * Historical records without `status` field default to 'active'.
  */
 export async function listUsers(
@@ -53,65 +56,72 @@ export async function listUsers(
     '#points': 'points',
     '#status': 'status',
     '#createdAt': 'createdAt',
+    '#invitedBy': 'invitedBy',
   };
 
-  // Build filter: only return records that have an email attribute (real users).
-  // System config records (feature-toggles, travel-sponsorship, invite-settings,
-  // activity-sync-config, etc.) stored in the same table don't have email,
-  // so this single condition excludes all of them without maintaining a list.
-  const filterParts: string[] = ['attribute_exists(#email)'];
-  const expressionAttributeValues: Record<string, unknown> = {};
+  const expressionAttributeValues: Record<string, unknown> = {
+    ':et': 'user',
+  };
+
+  // Build FilterExpression for role and excludeRoles
+  const filterParts: string[] = [];
 
   if (options.role) {
     filterParts.push('contains(#roles, :role)');
     expressionAttributeValues[':role'] = options.role;
   }
 
-  // DynamoDB Scan Limit is applied BEFORE FilterExpression, so a single scan
-  // may return fewer results than pageSize (or even 0) when system records are
-  // filtered out. We loop until we have enough results or the table is exhausted.
-  const allUsers: UserListItem[] = [];
-  let exclusiveStartKey: Record<string, unknown> | undefined = options.lastKey;
+  if (options.excludeRoles && options.excludeRoles.length > 0) {
+    options.excludeRoles.forEach((r, i) => {
+      filterParts.push(`NOT contains(#roles, :exRole${i})`);
+      expressionAttributeValues[`:exRole${i}`] = r;
+    });
+  }
+
+  const params: Record<string, unknown> = {
+    TableName: tableName,
+    IndexName: 'entityType-createdAt-index',
+    KeyConditionExpression: 'entityType = :et',
+    ScanIndexForward: false,
+    ProjectionExpression: '#userId, #email, #nickname, #roles, #points, #status, #createdAt, #invitedBy',
+    ExpressionAttributeNames: expressionAttributeNames,
+    ExpressionAttributeValues: expressionAttributeValues,
+  };
+
+  if (filterParts.length > 0) {
+    params.FilterExpression = filterParts.join(' AND ');
+  }
+
+  if (options.lastKey) {
+    params.ExclusiveStartKey = options.lastKey;
+  }
+
+  // Fetch all matching users (no client-side pagination — frontend uses scrollable list)
+  const users: UserListItem[] = [];
   let lastEvaluatedKey: Record<string, unknown> | undefined;
 
   do {
-    const params: Record<string, unknown> = {
-      TableName: tableName,
-      Limit: pageSize,
-      ProjectionExpression: '#userId, #email, #nickname, #roles, #points, #status, #createdAt',
-      ExpressionAttributeNames: expressionAttributeNames,
-      FilterExpression: filterParts.join(' AND '),
-      ...(Object.keys(expressionAttributeValues).length > 0 && {
-        ExpressionAttributeValues: expressionAttributeValues,
-      }),
-    };
+    const result = await dynamoClient.send(new QueryCommand(params as any));
 
-    if (exclusiveStartKey) {
-      params.ExclusiveStartKey = exclusiveStartKey;
+    for (const item of result.Items ?? []) {
+      users.push({
+        userId: item.userId,
+        email: item.email,
+        nickname: item.nickname,
+        roles: item.roles instanceof Set ? Array.from(item.roles) : Array.isArray(item.roles) ? item.roles : [],
+        points: item.points ?? 0,
+        status: (item.status as UserStatus) ?? 'active',
+        createdAt: item.createdAt,
+        ...(item.invitedBy ? { invitedBy: item.invitedBy } : {}),
+      });
     }
 
-    const result = await dynamoClient.send(new ScanCommand(params as any));
-
-    const batch: UserListItem[] = (result.Items ?? []).map((item: any) => ({
-      userId: item.userId,
-      email: item.email,
-      nickname: item.nickname,
-      roles: item.roles instanceof Set ? Array.from(item.roles) : Array.isArray(item.roles) ? item.roles : [],
-      points: item.points ?? 0,
-      status: (item.status as UserStatus) ?? 'active',
-      createdAt: item.createdAt,
-    }));
-
-    allUsers.push(...batch);
     lastEvaluatedKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
-    exclusiveStartKey = lastEvaluatedKey;
-
-    // Stop when we have enough results or the table is exhausted
-  } while (allUsers.length < pageSize && lastEvaluatedKey);
+    params.ExclusiveStartKey = lastEvaluatedKey;
+  } while (lastEvaluatedKey);
 
   return {
-    users: allUsers.slice(0, pageSize),
-    lastKey: allUsers.length >= pageSize ? lastEvaluatedKey : undefined,
+    users,
   };
 }
 

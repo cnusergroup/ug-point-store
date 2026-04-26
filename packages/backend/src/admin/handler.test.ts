@@ -83,6 +83,9 @@ vi.mock('./batch-points', () => ({
   listDistributionHistory: vi.fn(),
   getDistributionDetail: vi.fn(),
 }));
+vi.mock('./batch-points-adjust', () => ({
+  executeAdjustment: vi.fn(),
+}));
 vi.mock('../travel/settings', () => ({
   updateTravelSettings: vi.fn(),
   validateTravelSettingsInput: vi.fn(),
@@ -168,6 +171,7 @@ import { checkReviewPermission } from '../content/content-permission';
 import { listAllTags, mergeTags, deleteTag } from '../content/admin-tags';
 import { updateFeatureToggles, updateContentRolePermissions, getFeatureToggles } from '../settings/feature-toggles';
 import { executeBatchDistribution, validateBatchDistributionInput, listDistributionHistory, getDistributionDetail } from './batch-points';
+import { executeAdjustment } from './batch-points-adjust';
 import { updateTravelSettings, validateTravelSettingsInput } from '../travel/settings';
 import { reviewTravelApplication, listAllTravelApplications } from '../travel/review';
 import { getInviteSettings } from '../settings/invite-settings';
@@ -3996,6 +4000,111 @@ describe('Admin Lambda Handler', () => {
         expect.anything(),
         expect.anything(),
       );
+    });
+  });
+
+  // ── Batch Points Adjust Route ──────────────────────────────
+
+  describe('POST /api/admin/batch-points/{distributionId}/adjust', () => {
+    const adjustBody = JSON.stringify({
+      recipientIds: ['user-1', 'user-2'],
+      targetRole: 'Speaker',
+      speakerType: 'typeA',
+    });
+
+    it('SuperAdmin succeeds and calls executeAdjustment', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(executeAdjustment).mockResolvedValue({ success: true });
+
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/batch-points/dist-001/adjust',
+        body: adjustBody,
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body).message).toBe('调整成功');
+      expect(executeAdjustment).toHaveBeenCalledWith(
+        {
+          distributionId: 'dist-001',
+          recipientIds: ['user-1', 'user-2'],
+          targetRole: 'Speaker',
+          speakerType: 'typeA',
+          adjustedBy: 'admin-user-id',
+        },
+        expect.anything(),
+        expect.objectContaining({
+          usersTable: expect.any(String),
+          pointsRecordsTable: expect.any(String),
+          batchDistributionsTable: expect.any(String),
+        }),
+      );
+    });
+
+    it('non-SuperAdmin gets 403 FORBIDDEN', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/batch-points/dist-001/adjust',
+        body: adjustBody,
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(executeAdjustment).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when request body is missing', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/batch-points/dist-001/adjust',
+        body: null,
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+    });
+
+    it('returns 400 when recipientIds is missing', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/batch-points/dist-001/adjust',
+        body: JSON.stringify({ targetRole: 'Speaker', speakerType: 'typeA' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+    });
+
+    it('returns 400 when targetRole is missing', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/batch-points/dist-001/adjust',
+        body: JSON.stringify({ recipientIds: ['user-1'] }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+    });
+
+    it('returns error when executeAdjustment fails', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(executeAdjustment).mockResolvedValue({
+        success: false,
+        error: { code: 'DISTRIBUTION_NOT_FOUND', message: '发放记录不存在' },
+      });
+
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/batch-points/dist-001/adjust',
+        body: adjustBody,
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('DISTRIBUTION_NOT_FOUND');
     });
   });
 });

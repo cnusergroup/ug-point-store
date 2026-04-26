@@ -1508,6 +1508,35 @@ export interface TranslationDict {
       selectActivityFirst: string;
       noResponsibleUGs: string;
     };
+    adjust: {
+      title: string;
+      backButton: string;
+      loadingDistribution: string;
+      distributionNotFound: string;
+      activityLabel: string;
+      originalRole: string;
+      originalSpeakerType: string;
+      originalPoints: string;
+      newPoints: string;
+      diffSummaryTitle: string;
+      addedCount: string;
+      removedCount: string;
+      retainedCount: string;
+      totalDelta: string;
+      noChanges: string;
+      submitButton: string;
+      confirmTitle: string;
+      confirmAddedUsers: string;
+      confirmRemovedUsers: string;
+      confirmOriginalPointsPerPerson: string;
+      confirmNewPointsPerPerson: string;
+      confirmTotalDelta: string;
+      confirmCancel: string;
+      confirmSubmit: string;
+      submitting: string;
+      successToast: string;
+      errorToast: string;
+    };
     history: {
       title: string;
       backButton: string;
@@ -1533,6 +1562,10 @@ export interface TranslationDict {
       activityUGLabel: string;
       activityTopicLabel: string;
       activityDateLabel: string;
+      adjustedBadge: string;
+      adjustedAt: string;
+      adjustedBy: string;
+      adjustButton: string;
     };
   };
   ugManagement: {

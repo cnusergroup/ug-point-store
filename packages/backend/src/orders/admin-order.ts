@@ -3,8 +3,10 @@ import {
   GetCommand,
   QueryCommand,
   ScanCommand,
+  TransactWriteCommand,
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { ulid } from 'ulid';
 import { ErrorCodes, ErrorMessages } from '@points-mall/shared';
 import {
   validateStatusTransition,
@@ -14,6 +16,7 @@ import {
   type OrderListItem,
   type OrderResponse,
   type OrderStats,
+  type SizeOption,
 } from '@points-mall/shared';
 
 export interface AdminOrdersResult {
@@ -40,6 +43,12 @@ export interface OrderStatsResult {
   success: boolean;
   stats?: OrderStats;
   error?: { code: string; message: string };
+}
+
+export interface CancelOrderResult {
+  success: boolean;
+  error?: { code: string; message: string };
+  userDeleted?: boolean;
 }
 
 /**
@@ -232,6 +241,226 @@ export async function updateShipping(
 }
 
 /**
+ * Cancel a pending order and process refund.
+ * - If user exists: atomic TransactWriteItems (update order, refund points, create points record)
+ * - If user deleted: simple UpdateCommand on order only
+ * - Best-effort stock restoration per item (separate from main transaction)
+ *
+ * Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 4.1, 4.2, 4.3, 5.1, 5.2, 5.3, 5.4, 6.1, 6.2, 8.1, 8.2
+ */
+export async function cancelOrder(
+  orderId: string,
+  operatorId: string,
+  dynamoClient: DynamoDBDocumentClient,
+  tables: {
+    ordersTable: string;
+    usersTable: string;
+    productsTable: string;
+    pointsRecordsTable: string;
+  },
+): Promise<CancelOrderResult> {
+  // 1. Fetch order
+  const orderResult = await dynamoClient.send(
+    new GetCommand({
+      TableName: tables.ordersTable,
+      Key: { orderId },
+    }),
+  );
+
+  const orderItem = orderResult.Item;
+  if (!orderItem) {
+    return {
+      success: false,
+      error: { code: ErrorCodes.ORDER_NOT_FOUND, message: ErrorMessages.ORDER_NOT_FOUND },
+    };
+  }
+
+  // 2. Validate shippingStatus === 'pending'
+  const currentStatus = orderItem.shippingStatus as ShippingStatus;
+  if (currentStatus !== 'pending') {
+    return {
+      success: false,
+      error: { code: ErrorCodes.INVALID_STATUS_TRANSITION, message: ErrorMessages.INVALID_STATUS_TRANSITION },
+    };
+  }
+
+  const userId = orderItem.userId as string;
+  const totalPoints = (orderItem.totalPoints as number) ?? 0;
+  const items: OrderItem[] = (orderItem.items as OrderItem[]) ?? [];
+  const now = new Date().toISOString();
+
+  // 3. Check if user exists
+  const userResult = await dynamoClient.send(
+    new GetCommand({
+      TableName: tables.usersTable,
+      Key: { userId },
+    }),
+  );
+
+  const user = userResult.Item;
+
+  if (user) {
+    // User exists: atomic transaction — update order + refund points + create points record
+    const userPoints = (user.points as number) ?? 0;
+    const balanceAfter = userPoints + totalPoints;
+    const recordId = ulid();
+
+    const cancelEvent: ShippingEvent = {
+      status: 'cancelled',
+      timestamp: now,
+      remark: '无法完成发货，订单已取消并退还积分',
+      operatorId,
+    };
+
+    const pointsRecord = {
+      recordId,
+      userId,
+      type: 'refund',
+      amount: totalPoints,
+      source: `订单取消退还 ${orderId}`,
+      balanceAfter,
+      createdAt: now,
+    };
+
+    const transactItems: any[] = [
+      // (1) Update order status to cancelled + append ShippingEvent
+      {
+        Update: {
+          TableName: tables.ordersTable,
+          Key: { orderId },
+          UpdateExpression: 'SET shippingStatus = :cancelled, shippingEvents = list_append(shippingEvents, :newEvent), updatedAt = :now',
+          ConditionExpression: 'shippingStatus = :pending',
+          ExpressionAttributeValues: {
+            ':cancelled': 'cancelled',
+            ':newEvent': [cancelEvent],
+            ':now': now,
+            ':pending': 'pending',
+          },
+        },
+      },
+      // (2) Increment user points by totalPoints
+      {
+        Update: {
+          TableName: tables.usersTable,
+          Key: { userId },
+          UpdateExpression: 'SET points = points + :refund, updatedAt = :now',
+          ExpressionAttributeValues: {
+            ':refund': totalPoints,
+            ':now': now,
+          },
+        },
+      },
+      // (3) Put PointsRecord with type: 'refund'
+      {
+        Put: {
+          TableName: tables.pointsRecordsTable,
+          Item: pointsRecord,
+        },
+      },
+    ];
+
+    try {
+      await dynamoClient.send(
+        new TransactWriteCommand({ TransactItems: transactItems }),
+      );
+    } catch (txErr: any) {
+      if (txErr.name === 'TransactionCanceledException') {
+        return {
+          success: false,
+          error: { code: ErrorCodes.INVALID_STATUS_TRANSITION, message: ErrorMessages.INVALID_STATUS_TRANSITION },
+        };
+      }
+      throw txErr;
+    }
+  } else {
+    // User deleted: simple UpdateCommand on order only
+    const cancelEvent: ShippingEvent = {
+      status: 'cancelled',
+      timestamp: now,
+      remark: '无法完成发货，订单已取消（用户已删除，积分未退还）',
+      operatorId,
+    };
+
+    try {
+      await dynamoClient.send(
+        new UpdateCommand({
+          TableName: tables.ordersTable,
+          Key: { orderId },
+          UpdateExpression: 'SET shippingStatus = :cancelled, shippingEvents = list_append(shippingEvents, :newEvent), updatedAt = :now',
+          ConditionExpression: 'shippingStatus = :pending',
+          ExpressionAttributeValues: {
+            ':cancelled': 'cancelled',
+            ':newEvent': [cancelEvent],
+            ':now': now,
+            ':pending': 'pending',
+          },
+        }),
+      );
+    } catch (err: any) {
+      if (err.name === 'ConditionalCheckFailedException') {
+        return {
+          success: false,
+          error: { code: ErrorCodes.INVALID_STATUS_TRANSITION, message: ErrorMessages.INVALID_STATUS_TRANSITION },
+        };
+      }
+      throw err;
+    }
+  }
+
+  // 4. Best-effort stock restoration per item
+  for (const item of items) {
+    try {
+      // Check if product exists
+      const productResult = await dynamoClient.send(
+        new GetCommand({
+          TableName: tables.productsTable,
+          Key: { productId: item.productId },
+        }),
+      );
+
+      const product = productResult.Item;
+      if (!product) continue; // Product deleted, skip silently (Req 5.4)
+
+      // Build stock restoration update
+      const updateParts = [
+        'stock = stock + :qty',
+        'redemptionCount = redemptionCount - :qty',
+        'updatedAt = :now',
+      ];
+      const exprValues: Record<string, any> = {
+        ':qty': item.quantity,
+        ':now': now,
+      };
+
+      // Restore size-specific stock if selectedSize is present
+      if (item.selectedSize) {
+        const sizeOptions: SizeOption[] | undefined = product.sizeOptions;
+        if (sizeOptions) {
+          const sizeIndex = sizeOptions.findIndex((s: SizeOption) => s.name === item.selectedSize);
+          if (sizeIndex >= 0) {
+            updateParts.push(`sizeOptions[${sizeIndex}].stock = sizeOptions[${sizeIndex}].stock + :qty`);
+          }
+        }
+      }
+
+      await dynamoClient.send(
+        new UpdateCommand({
+          TableName: tables.productsTable,
+          Key: { productId: item.productId },
+          UpdateExpression: `SET ${updateParts.join(', ')}`,
+          ExpressionAttributeValues: exprValues,
+        }),
+      );
+    } catch (err) {
+      // Stock restoration is best-effort; log and continue
+      console.error(`[CancelOrder] Failed to restore stock for product ${item.productId}:`, err);
+    }
+  }
+
+  return { success: true, userDeleted: !user };
+}
+
+/**
  * Get order statistics by shipping status.
  * Scans all orders and counts by shippingStatus.
  *
@@ -253,6 +482,7 @@ export async function getOrderStats(
   const stats: OrderStats = {
     pending: 0,
     shipped: 0,
+    cancelled: 0,
     total: items.length,
   };
 
@@ -260,6 +490,7 @@ export async function getOrderStats(
     const s = item.shippingStatus as string;
     if (s === 'pending') stats.pending++;
     else if (s === 'shipped') stats.shipped++;
+    else if (s === 'cancelled') stats.cancelled++;
   }
 
   return { success: true, stats };

@@ -63,6 +63,7 @@ export default function ProductDetailPage() {
   const productId = router.params.id || '';
 
   const user = useAppStore((s) => s.user);
+  const fetchProfile = useAppStore((s) => s.fetchProfile);
   const [product, setProduct] = useState<ProductDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -78,6 +79,7 @@ export default function ProductDetailPage() {
       setLoading(false);
       return;
     }
+    fetchProfile();
     (async () => {
       setLoading(true);
       try {
@@ -353,9 +355,6 @@ export default function ProductDetailPage() {
                   ))
                 )
               )}
-              {brandLogoEnabled && product.brand && BRAND_DISPLAY[product.brand] && (
-                <Text className='role-badge role-badge--brand'>{t('product.brandLabel')}: {BRAND_DISPLAY[product.brand]}</Text>
-              )}
             </View>
 
             {/* Price */}
@@ -417,7 +416,12 @@ export default function ProductDetailPage() {
 
         {/* Description */}
         <View className='detail-section'>
-          <Text className='detail-section__title'>{t('product.descriptionTitle')}</Text>
+          <View className='detail-section__header'>
+            <Text className='detail-section__title'>{t('product.descriptionTitle')}</Text>
+            {brandLogoEnabled && product.brand && BRAND_DISPLAY[product.brand] && (
+              <Text className='role-badge role-badge--brand'>{t('product.brandLabel')}: {BRAND_DISPLAY[product.brand]}</Text>
+            )}
+          </View>
           <Text className='detail-section__text'>{product.description}</Text>
         </View>
 

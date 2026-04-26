@@ -36,8 +36,9 @@ export async function batchGenerateInvites(
   registerBaseUrl: string,
   expiryMs?: number,
   isEmployee?: boolean,
+  createdBy?: string,
 ): Promise<BatchGenerateInvitesResult> {
-  return batchCreateInvites(count, roles, dynamoClient, invitesTable, registerBaseUrl, expiryMs, isEmployee);
+  return batchCreateInvites(count, roles, dynamoClient, invitesTable, registerBaseUrl, expiryMs, isEmployee, createdBy);
 }
 
 /**
@@ -49,27 +50,44 @@ export async function batchGenerateInvites(
 export async function listInvites(
   status: InviteStatus | undefined,
   lastKey: Record<string, unknown> | undefined,
-  pageSize: number = 50,
+  pageSize: number = 200,
   dynamoClient: DynamoDBDocumentClient,
   invitesTable: string,
+  createdBy?: string,
 ): Promise<ListInvitesResult> {
   let invites: InviteRecord[];
 
-  if (status) {
-    const result = await dynamoClient.send(
-      new QueryCommand({
-        TableName: invitesTable,
-        IndexName: 'status-createdAt-index',
-        KeyConditionExpression: '#status = :status',
-        ExpressionAttributeNames: { '#status': 'status' },
-        ExpressionAttributeValues: { ':status': status },
-        Limit: pageSize,
-        ExclusiveStartKey: lastKey,
-        ScanIndexForward: false,
-      }),
-    );
+  // Build optional FilterExpression for createdBy (non-SuperAdmin callers)
+  const filterExpression = createdBy ? 'createdBy = :cb' : undefined;
+  const filterValues = createdBy ? { ':cb': createdBy } : undefined;
 
-    invites = (result.Items ?? []) as InviteRecord[];
+  if (status) {
+    // Query path: loop until we have enough results or index exhausted
+    const allInvites: InviteRecord[] = [];
+    let queryLastKey: Record<string, unknown> | undefined = lastKey;
+    let queryLastEvaluatedKey: Record<string, unknown> | undefined;
+
+    do {
+      const result = await dynamoClient.send(
+        new QueryCommand({
+          TableName: invitesTable,
+          IndexName: 'status-createdAt-index',
+          KeyConditionExpression: '#status = :status',
+          ExpressionAttributeNames: { '#status': 'status' },
+          ExpressionAttributeValues: { ':status': status, ...(filterValues || {}) },
+          ...(filterExpression ? { FilterExpression: filterExpression } : {}),
+          Limit: pageSize * 3,
+          ExclusiveStartKey: queryLastKey,
+          ScanIndexForward: false,
+        }),
+      );
+
+      allInvites.push(...((result.Items ?? []) as InviteRecord[]));
+      queryLastEvaluatedKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+      queryLastKey = queryLastEvaluatedKey;
+    } while (allInvites.length < pageSize && queryLastEvaluatedKey);
+
+    invites = allInvites.slice(0, pageSize);
 
     // Lazy-expire: update pending invites that have passed their expiresAt
     const now = new Date();
@@ -80,7 +98,6 @@ export async function listInvites(
       }
     }
 
-    // Batch update expired invites in the background (best-effort)
     await Promise.allSettled(
       expiredTokens.map((token) =>
         dynamoClient.send(
@@ -99,7 +116,6 @@ export async function listInvites(
       ),
     );
 
-    // Update local records to reflect the change
     for (const invite of invites) {
       if (expiredTokens.includes(invite.token)) {
         invite.status = 'expired';
@@ -108,19 +124,31 @@ export async function listInvites(
 
     return {
       invites,
-      lastKey: result.LastEvaluatedKey ? JSON.stringify(result.LastEvaluatedKey) : undefined,
+      lastKey: allInvites.length >= pageSize ? (queryLastEvaluatedKey ? JSON.stringify(queryLastEvaluatedKey) : undefined) : undefined,
     };
   }
 
-  const result = await dynamoClient.send(
-    new ScanCommand({
-      TableName: invitesTable,
-      Limit: pageSize,
-      ExclusiveStartKey: lastKey,
-    }),
-  );
+  // Scan path: loop until we have enough results or table exhausted
+  const allInvites: InviteRecord[] = [];
+  let scanLastKey: Record<string, unknown> | undefined = lastKey;
+  let scanLastEvaluatedKey: Record<string, unknown> | undefined;
 
-  invites = (result.Items ?? []) as InviteRecord[];
+  do {
+    const result = await dynamoClient.send(
+      new ScanCommand({
+        TableName: invitesTable,
+        Limit: pageSize * 3, // over-fetch to handle FilterExpression
+        ExclusiveStartKey: scanLastKey,
+        ...(filterExpression ? { FilterExpression: filterExpression, ExpressionAttributeValues: filterValues } : {}),
+      }),
+    );
+
+    allInvites.push(...((result.Items ?? []) as InviteRecord[]));
+    scanLastEvaluatedKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+    scanLastKey = scanLastEvaluatedKey;
+  } while (allInvites.length < pageSize && scanLastEvaluatedKey);
+
+  invites = allInvites.slice(0, pageSize);
 
   // Lazy-expire for scan results too
   const now = new Date();
@@ -157,7 +185,7 @@ export async function listInvites(
 
   return {
     invites,
-    lastKey: result.LastEvaluatedKey ? JSON.stringify(result.LastEvaluatedKey) : undefined,
+    lastKey: allInvites.length >= pageSize ? (scanLastEvaluatedKey ? JSON.stringify(scanLastEvaluatedKey) : undefined) : undefined,
   };
 }
 

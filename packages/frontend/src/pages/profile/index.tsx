@@ -47,7 +47,7 @@ function ProfileErrorContent() {
 /** Points record from API */
 interface PointsRecord {
   recordId: string;
-  type: 'earn' | 'spend';
+  type: 'earn' | 'spend' | 'adjust' | 'refund';
   amount: number;
   source: string;
   balanceAfter: number;
@@ -231,7 +231,7 @@ function ProfilePage() {
   /** Format points record source to user-friendly text */
   const formatSource = (record: PointsRecord): string => {
     const { source, type } = record;
-    if (!source) return type === 'earn' ? t('profile.sourceEarn') : t('profile.sourceSpend');
+    if (!source) return type === 'earn' ? t('profile.sourceEarn') : type === 'adjust' ? '积分调整' : t('profile.sourceSpend');
     if (source.startsWith('积分申请审批:')) {
       return t('profile.sourceClaimApproval');
     }
@@ -243,6 +243,15 @@ function ProfilePage() {
         return `${reserver} 为 ${ugName}（${actDate}）的活动「${topic}」预约了您的「${contentTitle}」，获得 Speaker 内容分享积分`;
       }
       return '预约审批通过，获得内容分享积分';
+    }
+    // Adjustment record: 积分调整:角色|UG名|活动主题|活动日期
+    if (source.startsWith('积分调整:')) {
+      const parts = source.substring('积分调整:'.length).split('|');
+      if (parts.length >= 4) {
+        const [role, ugName, topic, actDate] = parts;
+        return `积分调整：${ugName}（${actDate}）活动「${topic}」${roleLabel(role)} 积分已调整`;
+      }
+      return '积分调整';
     }
     // New format — Batch distribution: 批量发放:角色|UG名|活动主题|活动日期
     if (source.startsWith('批量发放:')) {
@@ -392,15 +401,15 @@ function ProfilePage() {
               {pointsRecords.map((record) => (
                 <View key={record.recordId} className='record-item'>
                   <View className='record-item__left'>
-                    <Text className={`record-item__icon ${record.type === 'earn' ? 'record-item__icon--earn' : 'record-item__icon--spend'}`}>
-                      {record.type === 'earn' ? '↑' : '↓'}
+                    <Text className={`record-item__icon ${record.type === 'earn' ? 'record-item__icon--earn' : record.type === 'adjust' ? (record.amount >= 0 ? 'record-item__icon--earn' : 'record-item__icon--spend') : 'record-item__icon--spend'}`}>
+                      {record.type === 'earn' ? '↑' : record.type === 'adjust' ? '⇄' : '↓'}
                     </Text>
                     <View className='record-item__info'>
                       <Text className='record-item__source'>{formatSource(record)}</Text>
                       <Text className='record-item__time'>{formatTime(record.createdAt)}</Text>
                     </View>
                   </View>
-                  <Text className={`record-item__amount ${record.type === 'earn' ? 'record-item__amount--earn' : 'record-item__amount--spend'}`}>
+                  <Text className={`record-item__amount ${record.amount >= 0 ? 'record-item__amount--earn' : 'record-item__amount--spend'}`}>
                     {record.amount > 0 ? '+' : ''}{record.amount.toLocaleString()}
                   </Text>
                 </View>

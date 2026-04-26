@@ -11,6 +11,26 @@ import TabBar from '../../components/TabBar';
 import type { ShippingStatus, ShippingEvent, OrderItem } from '@points-mall/shared';
 import './index.scss';
 
+/** X-circle icon for cancelled status */
+function XCircleIcon({ size = 24, color = 'currentColor' }: { size?: number; color?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <line x1="15" y1="9" x2="9" y2="15" />
+      <line x1="9" y1="9" x2="15" y2="15" />
+    </svg>
+  );
+}
+
 /** Order detail from API */
 interface OrderDetail {
   orderId: string;
@@ -32,16 +52,19 @@ interface OrderDetail {
 const STATUS_LABEL_KEY: Record<ShippingStatus, string> = {
   pending: 'orders.statusPending',
   shipped: 'orders.statusShipped',
+  cancelled: 'orders.statusCancelled',
 };
 
 const STATUS_ICON: Record<ShippingStatus, JSX.Element> = {
   pending: <ClockIcon size={20} color='currentColor' />,
   shipped: <PackageIcon size={20} color='currentColor' />,
+  cancelled: <XCircleIcon size={20} color='currentColor' />,
 };
 
 const STATUS_CLASS: Record<ShippingStatus, string> = {
   pending: 'detail-timeline__dot--pending',
   shipped: 'detail-timeline__dot--shipped',
+  cancelled: 'detail-timeline__dot--cancelled',
 };
 
 function formatTime(iso: string): string {
@@ -174,6 +197,15 @@ export default function OrderDetailPage() {
             <Text className='detail-summary__value'>{order.totalPoints.toLocaleString()}</Text>
           </View>
         </View>
+
+        {/* Refund Info — shown when order is cancelled */}
+        {order.shippingStatus === 'cancelled' && (
+          <View className='detail-refund-info'>
+            <Text className='detail-refund-info__text'>
+              {t('orders.refundInfo', { points: String(order.totalPoints.toLocaleString()) })}
+            </Text>
+          </View>
+        )}
 
         {/* Shipping Timeline */}
         {order.shippingEvents.length > 0 && (
