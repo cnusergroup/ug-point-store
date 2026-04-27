@@ -6,6 +6,7 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { ErrorHttpStatus, ErrorCodes, ErrorMessages } from '@points-mall/shared';
 import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware';
 import { getFeatureToggles } from '../settings/feature-toggles';
+import { isEmployeeStoreBlocked } from '../middleware/employee-store-check';
 import { getInviteSettings } from '../settings/invite-settings';
 import { redeemCode } from './redeem-code';
 import { getPointsBalance } from './balance';
@@ -75,6 +76,9 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
   // POST /api/points/redeem-code
   if (method === 'POST' && path === '/api/points/redeem-code') {
     const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+    if (isEmployeeStoreBlocked(event.user.isEmployee, toggles.employeeStoreEnabled)) {
+      return errorResponse('EMPLOYEE_STORE_DISABLED', '员工商城功能暂时关闭', 403);
+    }
     if (!toggles.codeRedemptionEnabled) {
       return errorResponse(ErrorCodes.FEATURE_DISABLED, ErrorMessages[ErrorCodes.FEATURE_DISABLED], 403);
     }

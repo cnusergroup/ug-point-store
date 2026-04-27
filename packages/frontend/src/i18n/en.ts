@@ -884,6 +884,11 @@ export const en: TranslationDict = {
       errorTargetNotFound: 'Target user does not exist',
       adminContentReviewLabel: 'Admin Content Review',
       adminContentReviewDesc: 'Allow Admin to review content (approve/reject) (SuperAdmin is not affected)',
+      contentReviewModeLabel: 'Review Mode',
+      contentReviewModeAll: 'All Admins',
+      contentReviewModeSpecific: 'Specific Admins',
+      contentReviewSearchPlaceholder: 'Search by nickname or email',
+      contentReviewSelectedCount: '{count} selected',
       adminCategoriesLabel: 'Admin Category Management',
       adminCategoriesDesc: 'Allow Admin to manage content categories (create/edit/delete) (SuperAdmin is not affected)',
       adminEmailProductsLabel: 'Admin Email Merchandise Permission',
@@ -993,6 +998,8 @@ export const en: TranslationDict = {
       brandLogoDetailDesc: 'Show brand badge on product detail page',
       brandLogoListLabel: 'Product List Brand Display',
       brandLogoListDesc: 'Show brand tag on product list page',
+      employeeStoreLabel: 'Employee Store Access',
+      employeeStoreDesc: 'When disabled, AWS employees cannot browse products, add to cart, place orders, or redeem codes',
     },
     reports: {
       title: 'Reports',
@@ -1368,6 +1375,12 @@ export const en: TranslationDict = {
     featureDisabled: 'This feature is currently unavailable',
     featureDisabledDesc: 'This feature is temporarily disabled. Please try again later.',
     backButton: 'Back',
+  },
+  store: {
+    employeeBlocked: {
+      title: 'Store Temporarily Closed',
+      description: 'The store is currently unavailable for employee users. Please contact an administrator for details.',
+    },
   },
   upload: {
     tokenExpired: 'Upload authorization expired, please get a new upload link',

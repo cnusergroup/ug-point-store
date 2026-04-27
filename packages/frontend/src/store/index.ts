@@ -54,6 +54,7 @@ export interface UserState {
   email?: string;
   roles: UserRole[];
   points: number;
+  isEmployee?: boolean;
 }
 
 /** 登录响应 */
@@ -419,7 +420,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   fetchProfile: async () => {
     try {
-      const res = await request<{ success: boolean; profile: { userId: string; nickname: string; email?: string; roles: UserRole[]; points: number; createdAt?: string } }>({ url: '/api/user/profile' });
+      const res = await request<{ success: boolean; profile: { userId: string; nickname: string; email?: string; roles: UserRole[]; points: number; createdAt?: string; isEmployee?: boolean } }>({ url: '/api/user/profile' });
       if (res.profile) {
         const { createdAt: _, ...rest } = res.profile as any;
         const userState = { ...rest, roles: filterDisabledRoles(rest.roles || []) };

@@ -882,6 +882,11 @@ export const zhTW: TranslationDict = {
       errorTargetNotFound: '目標用戶不存在',
       adminContentReviewLabel: 'Admin 內容審核',
       adminContentReviewDesc: '允許 Admin 審核內容（通過/拒絕）（SuperAdmin 不受此限制）',
+      contentReviewModeLabel: '審批模式',
+      contentReviewModeAll: '所有 Admin',
+      contentReviewModeSpecific: '指定 Admin',
+      contentReviewSearchPlaceholder: '搜尋暱稱或電子郵件',
+      contentReviewSelectedCount: '已選 {count} 人',
       adminCategoriesLabel: 'Admin 分類管理權限',
       adminCategoriesDesc: '允許 Admin 管理內容分類（建立/編輯/刪除）（SuperAdmin 不受此限制）',
       adminEmailProductsLabel: 'Admin 新周邊郵件通知權限',
@@ -991,6 +996,8 @@ export const zhTW: TranslationDict = {
       brandLogoDetailDesc: '在商品詳情頁展示品牌徽章',
       brandLogoListLabel: '商品列表頁品牌顯示',
       brandLogoListDesc: '在商品列表頁展示品牌標籤',
+      employeeStoreLabel: '員工商城存取',
+      employeeStoreDesc: '關閉後，AWS 員工將無法瀏覽商品、加入購物車、下單和兌換碼',
     },
     reports: {
       title: '報表中心',
@@ -1366,6 +1373,12 @@ export const zhTW: TranslationDict = {
     featureDisabled: '該功能目前未開放',
     featureDisabledDesc: '此功能暫時關閉，請稍後再試',
     backButton: '返回',
+  },
+  store: {
+    employeeBlocked: {
+      title: '商城功能暫時關閉',
+      description: '目前商城功能對員工用戶暫時不可用，請聯繫管理員了解詳情。',
+    },
   },
   upload: {
     tokenExpired: '上傳授權已過期，請重新取得上傳連結',

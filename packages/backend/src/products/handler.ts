@@ -6,11 +6,14 @@ import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware
 import { listProducts } from './list';
 import { getProductDetail } from './detail';
 import type { UserRole } from '@points-mall/shared';
+import { getFeatureToggles } from '../settings/feature-toggles';
+import { isEmployeeStoreBlocked } from '../middleware/employee-store-check';
 
 // Create client outside handler for Lambda container reuse
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 const PRODUCTS_TABLE = process.env.PRODUCTS_TABLE ?? '';
+const USERS_TABLE = process.env.USERS_TABLE ?? '';
 
 const CORS_HEADERS = {
   'Content-Type': 'application/json',
@@ -40,6 +43,10 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
 
   // GET /api/products
   if (method === 'GET' && path === '/api/products') {
+    const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+    if (isEmployeeStoreBlocked(event.user.isEmployee, toggles.employeeStoreEnabled)) {
+      return jsonResponse(200, { products: [], employeeStoreBlocked: true });
+    }
     return await handleListProducts(event);
   }
 
@@ -47,6 +54,10 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
   if (method === 'GET') {
     const match = path.match(PRODUCT_DETAIL_REGEX);
     if (match) {
+      const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+      if (isEmployeeStoreBlocked(event.user.isEmployee, toggles.employeeStoreEnabled)) {
+        return errorResponse('EMPLOYEE_STORE_DISABLED', '员工商城功能暂时关闭', 403);
+      }
       return await handleGetProductDetail(match[1], event);
     }
   }

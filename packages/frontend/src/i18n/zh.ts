@@ -884,6 +884,11 @@ export const zh: TranslationDict = {
       errorTargetNotFound: '目标用户不存在',
       adminContentReviewLabel: 'Admin 内容审批',
       adminContentReviewDesc: '允许 Admin 审批内容（通过/拒绝）（SuperAdmin 不受此限制）',
+      contentReviewModeLabel: '审批模式',
+      contentReviewModeAll: '所有 Admin',
+      contentReviewModeSpecific: '指定 Admin',
+      contentReviewSearchPlaceholder: '搜索昵称或邮箱',
+      contentReviewSelectedCount: '已选 {count} 人',
       adminCategoriesLabel: 'Admin 分类管理权限',
       adminCategoriesDesc: '允许 Admin 管理内容分类（创建/编辑/删除）（SuperAdmin 不受此限制）',
       adminEmailProductsLabel: 'Admin 新周边邮件通知权限',
@@ -993,6 +998,8 @@ export const zh: TranslationDict = {
       brandLogoDetailDesc: '在商品详情页展示品牌徽章',
       brandLogoListLabel: '商品列表页品牌显示',
       brandLogoListDesc: '在商品列表页展示品牌标签',
+      employeeStoreLabel: '员工商城访问',
+      employeeStoreDesc: '关闭后，AWS 员工将无法浏览商品、加入购物车、下单和兑换码',
     },
     reports: {
       title: '报表中心',
@@ -1368,6 +1375,12 @@ export const zh: TranslationDict = {
     featureDisabled: '该功能当前未开放',
     featureDisabledDesc: '此功能暂时关闭，请稍后再试',
     backButton: '返回',
+  },
+  store: {
+    employeeBlocked: {
+      title: '商城功能暂时关闭',
+      description: '当前商城功能对员工用户暂时不可用，请联系管理员了解详情。',
+    },
   },
   upload: {
     tokenExpired: '上传授权已过期，请重新获取上传链接',

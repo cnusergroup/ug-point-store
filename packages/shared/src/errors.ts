@@ -199,6 +199,8 @@ export const ErrorCodes = {
   ACTIVITY_NOT_FOUND: 'ACTIVITY_NOT_FOUND',
   /** brand 值无效 (400) */
   INVALID_BRAND: 'INVALID_BRAND',
+  /** 员工商城功能暂时关闭 (403) - 需求 3.1, 3.2, 3.3, 3.4, 3.5 */
+  EMPLOYEE_STORE_DISABLED: 'EMPLOYEE_STORE_DISABLED',
 } as const;
 
 /** 错误码类型 */
@@ -304,6 +306,7 @@ export const ErrorHttpStatus: Record<ErrorCode, number> = {
   [ErrorCodes.RESERVATION_ALREADY_REVIEWED]: 409,
   [ErrorCodes.ACTIVITY_NOT_FOUND]: 404,
   [ErrorCodes.INVALID_BRAND]: 400,
+  [ErrorCodes.EMPLOYEE_STORE_DISABLED]: 403,
 };
 
 /** 错误码对应的默认错误消息 */
@@ -406,4 +409,5 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.RESERVATION_ALREADY_REVIEWED]: '该预约已被审批',
   [ErrorCodes.ACTIVITY_NOT_FOUND]: '关联活动不存在',
   [ErrorCodes.INVALID_BRAND]: 'brand 值无效，仅允许 aws、ug、awscloud',
+  [ErrorCodes.EMPLOYEE_STORE_DISABLED]: '员工商城功能暂时关闭',
 };

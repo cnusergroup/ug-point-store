@@ -84,6 +84,12 @@ export interface FeatureToggles {
   brandLogoListEnabled: boolean;
   /** Whether brand logos are displayed on the product detail page */
   brandLogoDetailEnabled: boolean;
+  /** Whether employee users can access store functions (browse, cart, order, redeem) */
+  employeeStoreEnabled: boolean;
+  /** Content review mode: 'all' = all Admins, 'specific' = specific Admins only */
+  contentReviewMode: 'all' | 'specific';
+  /** List of userId strings for specific content reviewers, only used when contentReviewMode is 'specific' */
+  contentReviewerIds: string[];
 }
 
 export interface UpdateFeatureTogglesInput {
@@ -109,6 +115,9 @@ export interface UpdateFeatureTogglesInput {
   pointsRuleConfig?: PointsRuleConfig;
   brandLogoListEnabled: boolean;
   brandLogoDetailEnabled: boolean;
+  employeeStoreEnabled: boolean;
+  contentReviewMode: 'all' | 'specific';
+  contentReviewerIds: string[];
   updatedBy: string;
 }
 
@@ -181,6 +190,9 @@ const DEFAULT_TOGGLES: FeatureToggles = {
   pointsRuleConfig: { ...DEFAULT_POINTS_RULE_CONFIG },
   brandLogoListEnabled: true,                             // default: brand logos on list page enabled
   brandLogoDetailEnabled: true,                           // default: brand logos on detail page enabled
+  employeeStoreEnabled: true,                             // default: employees can use store
+  contentReviewMode: 'all',                               // default: all Admins can review content
+  contentReviewerIds: [],                                 // default: empty reviewer list
 };
 
 // ---- Core Functions ----
@@ -253,6 +265,16 @@ export async function getFeatureToggles(
           : 'weekly',  // default 'weekly'
       brandLogoListEnabled:             result.Item.brandLogoListEnabled !== false,              // default true
       brandLogoDetailEnabled:           result.Item.brandLogoDetailEnabled !== false,            // default true
+      employeeStoreEnabled:             result.Item.employeeStoreEnabled !== false,              // default true
+      contentReviewMode:
+        result.Item.contentReviewMode === 'all' || result.Item.contentReviewMode === 'specific'
+          ? result.Item.contentReviewMode
+          : 'all',  // default 'all'
+      contentReviewerIds:
+        Array.isArray(result.Item.contentReviewerIds) &&
+        result.Item.contentReviewerIds.every((id: unknown) => typeof id === 'string')
+          ? result.Item.contentReviewerIds as string[]
+          : [],  // default []
       pointsRuleConfig: (() => {
         const raw = result.Item.pointsRuleConfig as Record<string, unknown> | undefined;
         if (!raw || typeof raw !== 'object') return { ...DEFAULT_POINTS_RULE_CONFIG };
@@ -309,7 +331,27 @@ export async function updateFeatureToggles(
     typeof input.leaderboardRankingEnabled !== 'boolean' ||
     typeof input.leaderboardAnnouncementEnabled !== 'boolean' ||
     typeof input.brandLogoListEnabled !== 'boolean' ||
-    typeof input.brandLogoDetailEnabled !== 'boolean'
+    typeof input.brandLogoDetailEnabled !== 'boolean' ||
+    typeof input.employeeStoreEnabled !== 'boolean'
+  ) {
+    return {
+      success: false,
+      error: { code: 'INVALID_REQUEST', message: '请求参数无效' },
+    };
+  }
+
+  // Validate contentReviewMode
+  if (input.contentReviewMode !== 'all' && input.contentReviewMode !== 'specific') {
+    return {
+      success: false,
+      error: { code: 'INVALID_REQUEST', message: '请求参数无效' },
+    };
+  }
+
+  // Validate contentReviewerIds
+  if (
+    !Array.isArray(input.contentReviewerIds) ||
+    !input.contentReviewerIds.every((id: unknown) => typeof id === 'string')
   ) {
     return {
       success: false,
@@ -369,6 +411,9 @@ export async function updateFeatureToggles(
         leaderboardUpdateFrequency = :luf,
         brandLogoListEnabled = :blle,
         brandLogoDetailEnabled = :blde,
+        employeeStoreEnabled = :ese,
+        contentReviewMode = :crm,
+        contentReviewerIds = :cri,
         updatedAt = :ua,
         updatedBy = :ub`;
 
@@ -394,6 +439,9 @@ export async function updateFeatureToggles(
         ':luf': input.leaderboardUpdateFrequency,
         ':blle': input.brandLogoListEnabled,
         ':blde': input.brandLogoDetailEnabled,
+        ':ese': input.employeeStoreEnabled,
+        ':crm': input.contentReviewMode,
+        ':cri': input.contentReviewerIds,
         ':ua': now,
         ':ub': input.updatedBy,
   };
@@ -461,6 +509,9 @@ export async function updateFeatureToggles(
       leaderboardUpdateFrequency: input.leaderboardUpdateFrequency,
       brandLogoListEnabled: input.brandLogoListEnabled,
       brandLogoDetailEnabled: input.brandLogoDetailEnabled,
+      employeeStoreEnabled: input.employeeStoreEnabled,
+      contentReviewMode: input.contentReviewMode,
+      contentReviewerIds: input.contentReviewerIds,
       pointsRuleConfig: input.pointsRuleConfig ?? (item.pointsRuleConfig as PointsRuleConfig | undefined) ?? { ...DEFAULT_POINTS_RULE_CONFIG },
       updatedAt: now,
       updatedBy: input.updatedBy,

@@ -1537,7 +1537,7 @@ async function handleListAllContent(event: AuthenticatedEvent): Promise<APIGatew
 
 async function handleReviewContent(contentId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
   const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
-  if (!checkReviewPermission(event.user.roles, toggles.adminContentReviewEnabled)) {
+  if (!checkReviewPermission(event.user.roles, toggles.adminContentReviewEnabled, event.user.userId, toggles.contentReviewMode, toggles.contentReviewerIds)) {
     return errorResponse('PERMISSION_DENIED', '需要超级管理员权限才能审批内容', 403);
   }
 
@@ -1691,6 +1691,13 @@ async function handleUpdateFeatureToggles(event: AuthenticatedEvent): Promise<AP
       pointsRuleConfig: body.pointsRuleConfig as PointsRuleConfig | undefined,
       brandLogoListEnabled: body.brandLogoListEnabled !== false,     // default true
       brandLogoDetailEnabled: body.brandLogoDetailEnabled !== false, // default true
+      employeeStoreEnabled: body.employeeStoreEnabled !== false,     // default true
+      contentReviewMode: (body.contentReviewMode === 'all' || body.contentReviewMode === 'specific')
+        ? body.contentReviewMode
+        : 'all',  // default 'all'
+      contentReviewerIds: Array.isArray(body.contentReviewerIds) && body.contentReviewerIds.every((id: unknown) => typeof id === 'string')
+        ? body.contentReviewerIds as string[]
+        : [],  // default []
       updatedBy: event.user.userId,
     },
     dynamoClient,

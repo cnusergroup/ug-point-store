@@ -882,6 +882,11 @@ export const ja: TranslationDict = {
       errorTargetNotFound: '対象ユーザーが存在しません',
       adminContentReviewLabel: 'Admin コンテンツ審査',
       adminContentReviewDesc: 'Admin がコンテンツを審査（承認/拒否）できるようにする（SuperAdminは対象外）',
+      contentReviewModeLabel: 'レビューモード',
+      contentReviewModeAll: 'すべての Admin',
+      contentReviewModeSpecific: '指定 Admin',
+      contentReviewSearchPlaceholder: 'ニックネームまたはメールで検索',
+      contentReviewSelectedCount: '{count} 人選択済み',
       adminCategoriesLabel: 'Admin カテゴリ管理権限',
       adminCategoriesDesc: 'Admin がコンテンツカテゴリを管理（作成/編集/削除）できるようにする（SuperAdminは対象外）',
       adminEmailProductsLabel: 'Admin 新グッズメール通知権限',
@@ -991,6 +996,8 @@ export const ja: TranslationDict = {
       brandLogoDetailDesc: '商品詳細ページにブランドバッジを表示',
       brandLogoListLabel: '商品一覧ページのブランド表示',
       brandLogoListDesc: '商品一覧ページにブランドタグを表示',
+      employeeStoreLabel: '社員ストアアクセス',
+      employeeStoreDesc: 'オフにすると、AWS社員は商品の閲覧、カートへの追加、注文、コード引き換えができなくなります',
     },
     reports: {
       title: 'レポート',
@@ -1366,6 +1373,12 @@ export const ja: TranslationDict = {
     featureDisabled: 'この機能は現在利用できません',
     featureDisabledDesc: 'この機能は一時的に無効になっています。後でもう一度お試しください。',
     backButton: '戻る',
+  },
+  store: {
+    employeeBlocked: {
+      title: 'ストアは一時的に閉鎖中',
+      description: '現在、社員ユーザーはストアをご利用いただけません。詳細は管理者にお問い合わせください。',
+    },
   },
   upload: {
     tokenExpired: 'アップロード認証が期限切れです。新しいアップロードリンクを取得してください',

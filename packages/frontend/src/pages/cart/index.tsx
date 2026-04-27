@@ -6,6 +6,7 @@ import TabBar from '../../components/TabBar';
 import { GiftIcon, CartIcon } from '../../components/icons';
 import { useAppStore } from '../../store';
 import { useTranslation } from '../../i18n';
+import EmployeeStoreBlocked from '../../components/EmployeeStoreBlocked';
 import './index.scss';
 
 /** Cart item detail from API */
@@ -36,7 +37,23 @@ export default function CartPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const setCartCount = useAppStore((s) => s.setCartCount);
+  const user = useAppStore((s) => s.user);
   const { t } = useTranslation();
+  const [employeeStoreBlocked, setEmployeeStoreBlocked] = useState(false);
+
+  // Check employee store access
+  useEffect(() => {
+    request<{ employeeStoreEnabled?: boolean }>({
+      url: '/api/settings/feature-toggles',
+      skipAuth: true,
+    })
+      .then((res) => {
+        if (user?.isEmployee && res.employeeStoreEnabled === false) {
+          setEmployeeStoreBlocked(true);
+        }
+      })
+      .catch(() => {});
+  }, [user?.isEmployee]);
 
   const loadCart = useCallback(async () => {
     try {
@@ -175,6 +192,18 @@ export default function CartPage() {
         <View className='cart-error'>
           <Text className='cart-error__text'>{error}</Text>
         </View>
+        <TabBar current="/pages/cart/index" />
+      </View>
+    );
+  }
+
+  if (employeeStoreBlocked) {
+    return (
+      <View className='cart-page'>
+        <View className='cart-header'>
+          <Text className='cart-header__title'>{t('cart.title')}</Text>
+        </View>
+        <EmployeeStoreBlocked />
         <TabBar current="/pages/cart/index" />
       </View>
     );

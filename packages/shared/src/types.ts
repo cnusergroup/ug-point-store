@@ -63,6 +63,7 @@ export interface UserProfile {
   roles: UserRole[];
   points: number;
   createdAt: string;
+  isEmployee?: boolean;
 }
 
 /** 商品品牌 */

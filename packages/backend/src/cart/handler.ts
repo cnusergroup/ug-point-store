@@ -5,6 +5,8 @@ import { ErrorHttpStatus } from '@points-mall/shared';
 import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware';
 import { addToCart, getCart, updateCartItem, deleteCartItem } from './cart';
 import { getAddresses, createAddress, updateAddress, deleteAddress, setDefaultAddress } from './address';
+import { getFeatureToggles } from '../settings/feature-toggles';
+import { isEmployeeStoreBlocked } from '../middleware/employee-store-check';
 
 // Create client outside handler for Lambda container reuse
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
@@ -15,6 +17,7 @@ const CART_TABLE = process.env.CART_TABLE ?? '';
 const PRODUCTS_TABLE = process.env.PRODUCTS_TABLE ?? '';
 const ADDRESSES_TABLE = process.env.ADDRESSES_TABLE ?? '';
 const ORDERS_TABLE = process.env.ORDERS_TABLE ?? '';
+const USERS_TABLE = process.env.USERS_TABLE ?? '';
 
 const CORS_HEADERS = {
   'Content-Type': 'application/json',
@@ -58,11 +61,19 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
 
   // GET /api/cart
   if (method === 'GET' && path === '/api/cart') {
+    const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+    if (isEmployeeStoreBlocked(event.user.isEmployee, toggles.employeeStoreEnabled)) {
+      return errorResponse('EMPLOYEE_STORE_DISABLED', '员工商城功能暂时关闭', 403);
+    }
     return await handleGetCart(event);
   }
 
   // POST /api/cart/items
   if (method === 'POST' && path === '/api/cart/items') {
+    const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+    if (isEmployeeStoreBlocked(event.user.isEmployee, toggles.employeeStoreEnabled)) {
+      return errorResponse('EMPLOYEE_STORE_DISABLED', '员工商城功能暂时关闭', 403);
+    }
     return await handleAddToCart(event);
   }
 

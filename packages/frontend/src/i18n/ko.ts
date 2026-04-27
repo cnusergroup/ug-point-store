@@ -882,6 +882,11 @@ export const ko: TranslationDict = {
       errorTargetNotFound: '대상 사용자가 존재하지 않습니다',
       adminContentReviewLabel: 'Admin 콘텐츠 심사',
       adminContentReviewDesc: 'Admin이 콘텐츠를 심사(승인/거부)할 수 있도록 허용 (SuperAdmin은 제외)',
+      contentReviewModeLabel: '검토 모드',
+      contentReviewModeAll: '모든 Admin',
+      contentReviewModeSpecific: '지정 Admin',
+      contentReviewSearchPlaceholder: '닉네임 또는 이메일로 검색',
+      contentReviewSelectedCount: '{count}명 선택됨',
       adminCategoriesLabel: 'Admin 카테고리 관리 권한',
       adminCategoriesDesc: 'Admin이 콘텐츠 카테고리를 관리(생성/편집/삭제)할 수 있도록 허용 (SuperAdmin은 제외)',
       adminEmailProductsLabel: 'Admin 새 굿즈 이메일 알림 권한',
@@ -991,6 +996,8 @@ export const ko: TranslationDict = {
       brandLogoDetailDesc: '상품 상세 페이지에 브랜드 배지 표시',
       brandLogoListLabel: '상품 목록 페이지 브랜드 표시',
       brandLogoListDesc: '상품 목록 페이지에 브랜드 태그 표시',
+      employeeStoreLabel: '직원 스토어 접근',
+      employeeStoreDesc: '비활성화 시 AWS 직원은 상품 탐색, 장바구니 추가, 주문 및 코드 교환이 불가합니다',
     },
     reports: {
       title: '리포트',
@@ -1366,6 +1373,12 @@ export const ko: TranslationDict = {
     featureDisabled: '이 기능은 현재 사용할 수 없습니다',
     featureDisabledDesc: '이 기능은 일시적으로 비활성화되었습니다. 나중에 다시 시도해 주세요.',
     backButton: '뒤로',
+  },
+  store: {
+    employeeBlocked: {
+      title: '스토어 일시 폐쇄',
+      description: '현재 직원 사용자는 스토어를 이용할 수 없습니다. 자세한 내용은 관리자에게 문의하세요.',
+    },
   },
   upload: {
     tokenExpired: '업로드 인증이 만료되었습니다. 새 업로드 링크를 받아주세요',

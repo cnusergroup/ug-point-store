@@ -7,6 +7,7 @@ import { useTranslation } from '../../i18n';
 import { goBack } from '../../utils/navigation';
 import { TicketIcon, GiftIcon, WarningIcon, ShoppingBagIcon, CartIcon } from '../../components/icons';
 import PageToolbar from '../../components/PageToolbar';
+import EmployeeStoreBlocked from '../../components/EmployeeStoreBlocked';
 import './index.scss';
 
 /** Product image info */
@@ -72,6 +73,7 @@ export default function ProductDetailPage() {
   const [quantity, setQuantity] = useState(1);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [brandLogoEnabled, setBrandLogoEnabled] = useState(true);
+  const [employeeStoreBlocked, setEmployeeStoreBlocked] = useState(false);
 
   useEffect(() => {
     if (!productId) {
@@ -104,20 +106,23 @@ export default function ProductDetailPage() {
     })();
   }, [productId]);
 
-  // Fetch feature toggles to check brandLogoDetailEnabled
+  // Fetch feature toggles to check brandLogoDetailEnabled and employeeStoreEnabled
   useEffect(() => {
-    request<{ brandLogoDetailEnabled?: boolean }>({
+    request<{ brandLogoDetailEnabled?: boolean; employeeStoreEnabled?: boolean }>({
       url: '/api/settings/feature-toggles',
       skipAuth: true,
     })
       .then((res) => {
         setBrandLogoEnabled(res.brandLogoDetailEnabled !== false);
+        if (user?.isEmployee && res.employeeStoreEnabled === false) {
+          setEmployeeStoreBlocked(true);
+        }
       })
       .catch(() => {
         // Default to true on failure
         setBrandLogoEnabled(true);
       });
-  }, []);
+  }, [user?.isEmployee]);
 
   const handleBack = () => {
     goBack('/pages/index/index');
@@ -258,6 +263,15 @@ export default function ProductDetailPage() {
         <View className='detail-error'>
           <Text className='detail-error__text'>{error || t('product.notFound')}</Text>
         </View>
+      </View>
+    );
+  }
+
+  if (employeeStoreBlocked) {
+    return (
+      <View className='detail-page'>
+        <PageToolbar title='' onBack={handleBack} />
+        <EmployeeStoreBlocked />
       </View>
     );
   }

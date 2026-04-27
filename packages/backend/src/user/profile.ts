@@ -46,6 +46,7 @@ export async function getUserProfile(
     roles: roles as UserProfile['roles'],
     points: item.points ?? 0,
     createdAt: item.createdAt,
+    isEmployee: item.isEmployee === true,
   };
 
   return { success: true, profile };

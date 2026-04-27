@@ -872,6 +872,11 @@ export interface TranslationDict {
       errorTargetNotFound: string;
       adminContentReviewLabel: string;
       adminContentReviewDesc: string;
+      contentReviewModeLabel: string;
+      contentReviewModeAll: string;
+      contentReviewModeSpecific: string;
+      contentReviewSearchPlaceholder: string;
+      contentReviewSelectedCount: string;
       adminCategoriesLabel: string;
       adminCategoriesDesc: string;
       adminEmailProductsLabel: string;

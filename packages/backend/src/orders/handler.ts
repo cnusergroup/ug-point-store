@@ -8,6 +8,7 @@ import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware
 import { createOrder, createDirectOrder, getOrders, getOrderDetail } from './order';
 import { getAdminOrders, getAdminOrderDetail, updateShipping, getOrderStats, cancelOrder } from './admin-order';
 import { getFeatureToggles } from '../settings/feature-toggles';
+import { isEmployeeStoreBlocked } from '../middleware/employee-store-check';
 import { sendNewOrderEmail, sendOrderShippedEmail } from '../email/notifications';
 import type { NotificationContext } from '../email/notifications';
 import type { OrderTableNames } from './order';
@@ -133,11 +134,19 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
 
   // POST /api/orders/direct
   if (method === 'POST' && path === '/api/orders/direct') {
+    const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+    if (isEmployeeStoreBlocked(event.user.isEmployee, toggles.employeeStoreEnabled)) {
+      return errorResponse('EMPLOYEE_STORE_DISABLED', '员工商城功能暂时关闭', 403);
+    }
     return await handleCreateDirectOrder(event);
   }
 
   // POST /api/orders
   if (method === 'POST' && path === '/api/orders') {
+    const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+    if (isEmployeeStoreBlocked(event.user.isEmployee, toggles.employeeStoreEnabled)) {
+      return errorResponse('EMPLOYEE_STORE_DISABLED', '员工商城功能暂时关闭', 403);
+    }
     return await handleCreateOrder(event);
   }
 
