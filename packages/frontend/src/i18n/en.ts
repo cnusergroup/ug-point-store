@@ -375,6 +375,7 @@ export const en: TranslationDict = {
     productListTitle: 'Merchandise List',
     pointsTotal: 'Points Total',
     shippingTimelineTitle: 'Shipping Timeline',
+    shippingContactMessage: 'To check shipping status, please email yuanliang@busite.cn',
   },
   profile: {
     pageError: 'Page load error',
@@ -560,6 +561,8 @@ export const en: TranslationDict = {
       reservationPointsConfigDesc: 'Configure points awarded on reservation approval',
       reportsTitle: 'Reports',
       reportsDesc: 'View points reports and export CSV/Excel',
+      credentialsTitle: 'Credential Management',
+      credentialsDesc: 'Batch issue, view, and revoke community event credentials',
       categoryProducts: 'Merchandise',
       categoryOrders: 'Orders',
       categoryUsers: 'Users',
@@ -762,6 +765,11 @@ export const en: TranslationDict = {
       cancelSuccess: 'Order cancelled and points refunded',
       cancelSuccessUserDeleted: 'Order cancelled (user deleted, points not refunded)',
       statsCancelled: 'Cancelled',
+      exportPending: 'Export Pending',
+      exportFailed: 'Export failed, please retry',
+      importStatus: 'Import Status',
+      importFailed: 'Import failed, please retry',
+      importSuccess: 'Import done: {updated} shipped, {skipped} skipped',
     },
     invites: {
       title: 'Invite Management',

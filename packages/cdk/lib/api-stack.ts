@@ -33,6 +33,8 @@ export interface ApiStackProps extends cdk.StackProps {
   emailTemplatesTable: dynamodb.Table;
   ugsTable: dynamodb.Table;
   activitiesTable: dynamodb.Table;
+  credentialsTable: dynamodb.Table;
+  credentialSequencesTable: dynamodb.Table;
   jwtSecret: string;
   wechatAppId: string;
   wechatAppSecret: string;
@@ -53,7 +55,7 @@ export class ApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
-    const { usersTable, productsTable, codesTable, redemptionsTable, pointsRecordsTable, cartTable, addressesTable, ordersTable, invitesTable, claimsTable, contentItemsTable, contentCategoriesTable, contentCommentsTable, contentLikesTable, contentReservationsTable, batchDistributionsTable, travelApplicationsTable, contentTagsTable, emailTemplatesTable, ugsTable, activitiesTable } = props;
+    const { usersTable, productsTable, codesTable, redemptionsTable, pointsRecordsTable, cartTable, addressesTable, ordersTable, invitesTable, claimsTable, contentItemsTable, contentCategoriesTable, contentCommentsTable, contentLikesTable, contentReservationsTable, batchDistributionsTable, travelApplicationsTable, contentTagsTable, emailTemplatesTable, ugsTable, activitiesTable, credentialsTable, credentialSequencesTable } = props;
 
     // --- SSM Parameter for JWT Secret ---
     const jwtSecretParam = new ssm.StringParameter(this, 'JwtSecretParam', {
@@ -276,6 +278,28 @@ export class ApiStack extends cdk.Stack {
       targets: [new targets.LambdaFunction(syncFn)],
     });
 
+    // --- Credential Lambda (independent module for community credentials) ---
+    const credentialFn = new NodejsFunction(this, 'CredentialFunction', {
+      ...commonFnProps,
+      functionName: 'PointsMall-Credential',
+      entry: path.join(backendSrcPath, 'credentials/handler.ts'),
+      handler: 'handler',
+      environment: {
+        CREDENTIALS_TABLE: credentialsTable.tableName,
+        CREDENTIAL_SEQUENCES_TABLE: credentialSequencesTable.tableName,
+        USERS_TABLE: usersTable.tableName,
+        JWT_SECRET_PARAM: jwtSecretParam.parameterName,
+        BASE_URL: 'https://store.awscommunity.cn',
+      },
+    } as NodejsFunctionProps);
+
+    // Credential Lambda: read/write Credentials and CredentialSequences tables
+    credentialsTable.grantReadWriteData(credentialFn);
+    credentialSequencesTable.grantReadWriteData(credentialFn);
+
+    // Credential Lambda: read-only access to Users table (for auth verification)
+    usersTable.grantReadData(credentialFn);
+
     // --- Conversion Lambda (Docker-based, LibreOffice for Office-to-PDF conversion) ---
     const conversionRepo = ecr.Repository.fromRepositoryName(this, 'ConversionRepo',
       'cdk-hnb659fds-container-assets-778409058172-ap-northeast-1',
@@ -396,7 +420,7 @@ export class ApiStack extends cdk.Stack {
       actions: ['ssm:GetParameter'],
       resources: [jwtSecretParam.parameterArn],
     });
-    [authFn, productFn, pointsFn, redemptionFn, adminFn, cartFn, orderFn, contentFn, leaderboardFn].forEach(fn =>
+    [authFn, productFn, pointsFn, redemptionFn, adminFn, cartFn, orderFn, contentFn, leaderboardFn, credentialFn].forEach(fn =>
       fn.addToRolePolicy(ssmReadPolicy)
     );
 
@@ -406,6 +430,7 @@ export class ApiStack extends cdk.Stack {
       restApiName: 'PointsMall-API',
       description: 'Points Mall REST API',
       deployOptions: { stageName: 'prod' },
+      binaryMediaTypes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
         allowMethods: apigateway.Cors.ALL_METHODS,
@@ -493,9 +518,21 @@ export class ApiStack extends cdk.Stack {
     const adminOrders = admin.addResource('orders');
     adminOrders.addMethod('GET', orderInt);
     adminOrders.addResource('stats').addMethod('GET', orderInt);
+    adminOrders.addResource('export').addMethod('GET', orderInt);
+    adminOrders.addResource('import').addMethod('POST', orderInt);
     const adminOrderById = adminOrders.addResource('{orderId}');
     adminOrderById.addMethod('GET', orderInt);
     adminOrderById.addResource('shipping').addMethod('PATCH', orderInt);
+
+    // Admin credential routes must be defined BEFORE addProxy to avoid CDK conflict with {proxy+}.
+    // These routes are handled by the independent Credential Lambda, not the Admin Lambda.
+    const credentialInt = new apigateway.LambdaIntegration(credentialFn);
+    const adminCredentials = admin.addResource('credentials');
+    adminCredentials.addMethod('GET', credentialInt);
+    adminCredentials.addResource('batch').addMethod('POST', credentialInt);
+    const adminCredentialById = adminCredentials.addResource('{credentialId}');
+    adminCredentialById.addMethod('GET', credentialInt);
+    adminCredentialById.addResource('revoke').addMethod('PATCH', credentialInt);
 
     // Catch-all proxy for all other /api/admin/* routes (handled by adminFn)
     admin.addMethod('ANY', adminInt);
@@ -556,6 +593,11 @@ export class ApiStack extends cdk.Stack {
     const leaderboard = api.addResource('leaderboard');
     leaderboard.addResource('ranking').addMethod('GET', leaderboardInt);
     leaderboard.addResource('announcements').addMethod('GET', leaderboardInt);
+
+    // Public credential page route: /c/{credentialId} (no auth required)
+    // This is at the API root level, not under /api
+    const c = this.api.root.addResource('c');
+    c.addResource('{credentialId}').addMethod('GET', credentialInt);
 
     new cdk.CfnOutput(this, 'ApiUrl', {
       value: this.api.url,

@@ -375,6 +375,7 @@ export const zhTW: TranslationDict = {
     productListTitle: '商品列表',
     pointsTotal: '積分總計',
     shippingTimelineTitle: '物流時間線',
+    shippingContactMessage: '如需查詢發貨狀態，請郵件聯繫 yuanliang@busite.cn',
   },
   profile: {
     pageError: '頁面載入出錯',
@@ -558,6 +559,8 @@ export const zhTW: TranslationDict = {
       reservationPointsConfigDesc: '配置預約審批通過後發放的積分值',
       reportsTitle: '報表中心',
       reportsDesc: '查看積分報表資料，匯出 CSV/Excel',
+      credentialsTitle: '憑證管理',
+      credentialsDesc: '批量簽發、查看和撤銷社區活動憑證',
       categoryProducts: '周邊管理',
       categoryOrders: '訂單管理',
       categoryUsers: '用戶管理',
@@ -760,6 +763,11 @@ export const zhTW: TranslationDict = {
       cancelSuccess: '訂單已取消並退還積分',
       cancelSuccessUserDeleted: '訂單已取消（用戶已刪除，積分未退還）',
       statsCancelled: '已取消',
+      exportPending: '匯出待發貨',
+      exportFailed: '匯出失敗，請重試',
+      importStatus: '匯入更新狀態',
+      importFailed: '匯入失敗，請重試',
+      importSuccess: '匯入完成：{updated} 單已發貨，{skipped} 單跳過',
     },
     invites: {
       title: '邀請管理',

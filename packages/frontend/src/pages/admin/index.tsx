@@ -138,6 +138,15 @@ const ADMIN_LINKS = [
     superAdminOnly: true,
   },
   {
+    key: 'credentials',
+    category: 'operations',
+    icon: TicketIcon,
+    titleKey: 'admin.dashboard.credentialsTitle',
+    descKey: 'admin.dashboard.credentialsDesc',
+    url: '/pages/admin/credentials',
+    superAdminOnly: true,
+  },
+  {
     key: 'reservation-approvals',
     category: 'content-management',
     icon: ClaimIcon,

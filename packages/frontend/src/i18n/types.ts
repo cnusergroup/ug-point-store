@@ -374,6 +374,7 @@ export interface TranslationDict {
     productListTitle: string;
     pointsTotal: string;
     shippingTimelineTitle: string;
+    shippingContactMessage: string;
   };
   profile: {
     pageError: string;
@@ -556,6 +557,8 @@ export interface TranslationDict {
       reservationPointsConfigDesc: string;
       reportsTitle: string;
       reportsDesc: string;
+      credentialsTitle: string;
+      credentialsDesc: string;
       categoryProducts: string;
       categoryOrders: string;
       categoryUsers: string;

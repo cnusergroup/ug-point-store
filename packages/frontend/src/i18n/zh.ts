@@ -375,6 +375,7 @@ export const zh: TranslationDict = {
     productListTitle: '周边列表',
     pointsTotal: '积分总计',
     shippingTimelineTitle: '物流时间线',
+    shippingContactMessage: '如需查询发货状态，请邮件联系 yuanliang@busite.cn',
   },
   profile: {
     pageError: '页面加载出错',
@@ -560,6 +561,8 @@ export const zh: TranslationDict = {
       reservationPointsConfigDesc: '配置预约审批通过后发放的积分值',
       reportsTitle: '报表中心',
       reportsDesc: '查看积分报表数据，导出 CSV/Excel',
+      credentialsTitle: '凭证管理',
+      credentialsDesc: '批量签发、查看和撤销社区活动凭证',
       categoryProducts: '周边管理',
       categoryOrders: '订单管理',
       categoryUsers: '用户管理',
@@ -762,6 +765,11 @@ export const zh: TranslationDict = {
       cancelSuccess: '订单已取消并退还积分',
       cancelSuccessUserDeleted: '订单已取消（用户已删除，积分未退还）',
       statsCancelled: '已取消',
+      exportPending: '导出待发货',
+      exportFailed: '导出失败，请重试',
+      importStatus: '导入更新状态',
+      importFailed: '导入失败，请重试',
+      importSuccess: '导入完成：{updated} 单已发货，{skipped} 单跳过',
     },
     invites: {
       title: '邀请管理',

@@ -375,6 +375,7 @@ export const ja: TranslationDict = {
     productListTitle: '商品一覧',
     pointsTotal: 'ポイント合計',
     shippingTimelineTitle: '配送タイムライン',
+    shippingContactMessage: '配送状況を確認するには、yuanliang@busite.cn までメールでお問い合わせください',
   },
   profile: {
     pageError: 'ページの読み込みに失敗しました',
@@ -558,6 +559,8 @@ export const ja: TranslationDict = {
       reservationPointsConfigDesc: '予約承認後に付与されるポイント値を設定',
       reportsTitle: 'レポート',
       reportsDesc: 'ポイントレポートの閲覧、CSV/Excelエクスポート',
+      credentialsTitle: '資格証明管理',
+      credentialsDesc: 'コミュニティイベント資格証明の一括発行、閲覧、取消',
       categoryProducts: 'グッズ管理',
       categoryOrders: '注文管理',
       categoryUsers: 'ユーザー管理',
@@ -760,6 +763,11 @@ export const ja: TranslationDict = {
       cancelSuccess: '注文がキャンセルされ、ポイントが返還されました',
       cancelSuccessUserDeleted: '注文がキャンセルされました（ユーザー削除済み、ポイント未返還）',
       statsCancelled: 'キャンセル済み',
+      exportPending: '未発送をエクスポート',
+      exportFailed: 'エクスポートに失敗しました。再試行してください',
+      importStatus: 'ステータスをインポート',
+      importFailed: 'インポートに失敗しました。再試行してください',
+      importSuccess: 'インポート完了：{updated} 件発送済み、{skipped} 件スキップ',
     },
     invites: {
       title: '招待管理',

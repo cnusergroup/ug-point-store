@@ -167,6 +167,14 @@ export class FrontendStack extends cdk.Stack {
         '/products/*': uploadBehavior,
         '/claims/*': uploadBehavior,
         '/content/*': uploadBehavior,
+        // Public credential pages — cacheable, no authentication required
+        '/c/*': {
+          origin: apiOrigin,
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+          cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+          originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+        },
       },
       errorResponses: [
         { httpStatus: 403, responseHttpStatus: 200, responsePagePath: '/index.html', ttl: cdk.Duration.seconds(0) },
@@ -201,7 +209,7 @@ export class FrontendStack extends cdk.Stack {
       });
 
       // Override upload behavior target origins to use the no-OAC origin
-      // CacheBehaviors order: /api/*, /products/*, /claims/*, /content/*
+      // CacheBehaviors order: /api/*, /products/*, /claims/*, /content/*, /c/*
       cfnDist.addPropertyOverride('DistributionConfig.CacheBehaviors.1.TargetOriginId', uploadOriginId);
       cfnDist.addPropertyOverride('DistributionConfig.CacheBehaviors.2.TargetOriginId', uploadOriginId);
       cfnDist.addPropertyOverride('DistributionConfig.CacheBehaviors.3.TargetOriginId', uploadOriginId);

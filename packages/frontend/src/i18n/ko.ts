@@ -375,6 +375,7 @@ export const ko: TranslationDict = {
     productListTitle: '상품 목록',
     pointsTotal: '포인트 합계',
     shippingTimelineTitle: '배송 타임라인',
+    shippingContactMessage: '배송 상태를 확인하려면 yuanliang@busite.cn으로 이메일 문의해 주세요',
   },
   profile: {
     pageError: '페이지 로딩 오류',
@@ -558,6 +559,8 @@ export const ko: TranslationDict = {
       reservationPointsConfigDesc: '예약 승인 후 지급되는 포인트 값 설정',
       reportsTitle: '리포트',
       reportsDesc: '포인트 리포트 조회 및 CSV/Excel 내보내기',
+      credentialsTitle: '자격증 관리',
+      credentialsDesc: '커뮤니티 이벤트 자격증 일괄 발급, 조회 및 취소',
       categoryProducts: '굿즈 관리',
       categoryOrders: '주문 관리',
       categoryUsers: '사용자 관리',
@@ -760,6 +763,11 @@ export const ko: TranslationDict = {
       cancelSuccess: '주문이 취소되고 포인트가 환불되었습니다',
       cancelSuccessUserDeleted: '주문이 취소되었습니다 (사용자 삭제됨, 포인트 미환불)',
       statsCancelled: '취소됨',
+      exportPending: '미발송 내보내기',
+      exportFailed: '내보내기 실패, 다시 시도해 주세요',
+      importStatus: '상태 가져오기',
+      importFailed: '가져오기 실패, 다시 시도해 주세요',
+      importSuccess: '가져오기 완료: {updated}건 발송됨, {skipped}건 건너뜀',
     },
     invites: {
       title: '초대 관리',

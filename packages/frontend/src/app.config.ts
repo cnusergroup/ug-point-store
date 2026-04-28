@@ -29,6 +29,7 @@ export default defineAppConfig({
     'pages/admin/email-products',
     'pages/admin/email-content',
     'pages/admin/reports',
+    'pages/admin/credentials',
     'pages/orders/index',
     'pages/order-detail/index',
     'pages/order-confirm/index',

@@ -45,6 +45,8 @@ const apiStack = new ApiStack(app, 'PointsMall-ApiStack', {
   emailTemplatesTable: databaseStack.emailTemplatesTable,
   ugsTable: databaseStack.ugsTable,
   activitiesTable: databaseStack.activitiesTable,
+  credentialsTable: databaseStack.credentialsTable,
+  credentialSequencesTable: databaseStack.credentialSequencesTable,
   jwtSecret,
   wechatAppId,
   wechatAppSecret,
