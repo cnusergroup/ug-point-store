@@ -144,8 +144,12 @@ export default function OrderDetailPage() {
         <View className={`detail-banner detail-banner--${order.shippingStatus.replace('_', '-')}`}>
           <Text className='detail-banner__icon'>{statusIcon}</Text>
           <Text className='detail-banner__label'>{statusLabel}</Text>
-          {order.trackingNumber && (
-            <Text className='detail-banner__tracking'>{t('orderDetail.trackingNumber', { number: order.trackingNumber })}</Text>
+          {order.shippingStatus === 'shipped' ? (
+            <Text className='detail-banner__contact'>{t('orderDetail.shippingContactMessage')}</Text>
+          ) : (
+            order.trackingNumber && (
+              <Text className='detail-banner__tracking'>{t('orderDetail.trackingNumber', { number: order.trackingNumber })}</Text>
+            )
           )}
         </View>
 

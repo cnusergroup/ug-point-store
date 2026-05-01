@@ -39,7 +39,8 @@ RUN npm init -y && \
     npm install --save \
     @aws-sdk/client-s3 \
     @aws-sdk/client-dynamodb \
-    @aws-sdk/lib-dynamodb
+    @aws-sdk/lib-dynamodb \
+    @aws-sdk/client-lambda
 
 # Clean up source files (only bundled index.js needed)
 RUN rm -rf packages tsconfig.json

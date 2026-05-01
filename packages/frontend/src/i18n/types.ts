@@ -374,6 +374,7 @@ export interface TranslationDict {
     productListTitle: string;
     pointsTotal: string;
     shippingTimelineTitle: string;
+    shippingContactMessage: string;
   };
   profile: {
     pageError: string;
@@ -556,6 +557,8 @@ export interface TranslationDict {
       reservationPointsConfigDesc: string;
       reportsTitle: string;
       reportsDesc: string;
+      credentialsTitle: string;
+      credentialsDesc: string;
       categoryProducts: string;
       categoryOrders: string;
       categoryUsers: string;
@@ -872,6 +875,11 @@ export interface TranslationDict {
       errorTargetNotFound: string;
       adminContentReviewLabel: string;
       adminContentReviewDesc: string;
+      contentReviewModeLabel: string;
+      contentReviewModeAll: string;
+      contentReviewModeSpecific: string;
+      contentReviewSearchPlaceholder: string;
+      contentReviewSelectedCount: string;
       adminCategoriesLabel: string;
       adminCategoriesDesc: string;
       adminEmailProductsLabel: string;

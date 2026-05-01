@@ -375,6 +375,7 @@ export const zhTW: TranslationDict = {
     productListTitle: '商品列表',
     pointsTotal: '積分總計',
     shippingTimelineTitle: '物流時間線',
+    shippingContactMessage: '如需查詢發貨狀態，請郵件聯繫 yuanliang@busite.cn',
   },
   profile: {
     pageError: '頁面載入出錯',
@@ -558,6 +559,8 @@ export const zhTW: TranslationDict = {
       reservationPointsConfigDesc: '配置預約審批通過後發放的積分值',
       reportsTitle: '報表中心',
       reportsDesc: '查看積分報表資料，匯出 CSV/Excel',
+      credentialsTitle: '憑證管理',
+      credentialsDesc: '批量簽發、查看和撤銷社區活動憑證',
       categoryProducts: '周邊管理',
       categoryOrders: '訂單管理',
       categoryUsers: '用戶管理',
@@ -760,6 +763,11 @@ export const zhTW: TranslationDict = {
       cancelSuccess: '訂單已取消並退還積分',
       cancelSuccessUserDeleted: '訂單已取消（用戶已刪除，積分未退還）',
       statsCancelled: '已取消',
+      exportPending: '匯出待發貨',
+      exportFailed: '匯出失敗，請重試',
+      importStatus: '匯入更新狀態',
+      importFailed: '匯入失敗，請重試',
+      importSuccess: '匯入完成：{updated} 單已發貨，{skipped} 單跳過',
     },
     invites: {
       title: '邀請管理',
@@ -882,6 +890,11 @@ export const zhTW: TranslationDict = {
       errorTargetNotFound: '目標用戶不存在',
       adminContentReviewLabel: 'Admin 內容審核',
       adminContentReviewDesc: '允許 Admin 審核內容（通過/拒絕）（SuperAdmin 不受此限制）',
+      contentReviewModeLabel: '審批模式',
+      contentReviewModeAll: '所有 Admin',
+      contentReviewModeSpecific: '指定 Admin',
+      contentReviewSearchPlaceholder: '搜尋暱稱或電子郵件',
+      contentReviewSelectedCount: '已選 {count} 人',
       adminCategoriesLabel: 'Admin 分類管理權限',
       adminCategoriesDesc: '允許 Admin 管理內容分類（建立/編輯/刪除）（SuperAdmin 不受此限制）',
       adminEmailProductsLabel: 'Admin 新周邊郵件通知權限',
@@ -991,6 +1004,8 @@ export const zhTW: TranslationDict = {
       brandLogoDetailDesc: '在商品詳情頁展示品牌徽章',
       brandLogoListLabel: '商品列表頁品牌顯示',
       brandLogoListDesc: '在商品列表頁展示品牌標籤',
+      employeeStoreLabel: '員工商城存取',
+      employeeStoreDesc: '關閉後，AWS 員工將無法瀏覽商品、加入購物車、下單和兌換碼',
     },
     reports: {
       title: '報表中心',
@@ -1366,6 +1381,12 @@ export const zhTW: TranslationDict = {
     featureDisabled: '該功能目前未開放',
     featureDisabledDesc: '此功能暫時關閉，請稍後再試',
     backButton: '返回',
+  },
+  store: {
+    employeeBlocked: {
+      title: '商城功能暫時關閉',
+      description: '目前商城功能對員工用戶暫時不可用，請聯繫管理員了解詳情。',
+    },
   },
   upload: {
     tokenExpired: '上傳授權已過期，請重新取得上傳連結',

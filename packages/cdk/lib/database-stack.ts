@@ -24,6 +24,8 @@ export class DatabaseStack extends cdk.Stack {
   public readonly emailTemplatesTable: dynamodb.Table;
   public readonly ugsTable: dynamodb.Table;
   public readonly activitiesTable: dynamodb.Table;
+  public readonly credentialsTable: dynamodb.Table;
+  public readonly credentialSequencesTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -461,5 +463,38 @@ export class DatabaseStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'ActivitiesTableName', { value: this.activitiesTable.tableName, exportName: 'PointsMall-ActivitiesTableName' });
     new cdk.CfnOutput(this, 'ActivitiesTableArn', { value: this.activitiesTable.tableArn, exportName: 'PointsMall-ActivitiesTableArn' });
+
+    // Credentials table: PK=credentialId, GSIs: status-createdAt-index (PK=status, SK=createdAt), batchId-index (PK=batchId)
+    this.credentialsTable = new dynamodb.Table(this, 'CredentialsTable', {
+      tableName: 'PointsMall-Credentials',
+      partitionKey: { name: 'credentialId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.credentialsTable.addGlobalSecondaryIndex({
+      indexName: 'status-createdAt-index',
+      partitionKey: { name: 'status', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+    });
+
+    this.credentialsTable.addGlobalSecondaryIndex({
+      indexName: 'batchId-index',
+      partitionKey: { name: 'batchId', type: dynamodb.AttributeType.STRING },
+    });
+
+    new cdk.CfnOutput(this, 'CredentialsTableName', { value: this.credentialsTable.tableName, exportName: 'PointsMall-CredentialsTableName' });
+    new cdk.CfnOutput(this, 'CredentialsTableArn', { value: this.credentialsTable.tableArn, exportName: 'PointsMall-CredentialsTableArn' });
+
+    // CredentialSequences table: PK=sequenceKey (atomic counter for credential ID sequence generation)
+    this.credentialSequencesTable = new dynamodb.Table(this, 'CredentialSequencesTable', {
+      tableName: 'PointsMall-CredentialSequences',
+      partitionKey: { name: 'sequenceKey', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    new cdk.CfnOutput(this, 'CredentialSequencesTableName', { value: this.credentialSequencesTable.tableName, exportName: 'PointsMall-CredentialSequencesTableName' });
+    new cdk.CfnOutput(this, 'CredentialSequencesTableArn', { value: this.credentialSequencesTable.tableArn, exportName: 'PointsMall-CredentialSequencesTableArn' });
   }
 }

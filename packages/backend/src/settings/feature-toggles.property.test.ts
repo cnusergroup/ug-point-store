@@ -47,12 +47,19 @@ function createInMemoryClient() {
           ':eos': 'emailOrderShippedEnabled',
           ':enp': 'emailNewProductEnabled',
           ':enc': 'emailNewContentEnabled',
+          ':ecu': 'emailContentUpdatedEnabled',
+          ':ewde': 'emailWeeklyDigestEnabled',
           ':aepe': 'adminEmailProductsEnabled',
           ':aece': 'adminEmailContentEnabled',
           ':rap': 'reservationApprovalPoints',
           ':lre': 'leaderboardRankingEnabled',
           ':lae': 'leaderboardAnnouncementEnabled',
           ':luf': 'leaderboardUpdateFrequency',
+          ':blle': 'brandLogoListEnabled',
+          ':blde': 'brandLogoDetailEnabled',
+          ':ese': 'employeeStoreEnabled',
+          ':crm': 'contentReviewMode',
+          ':cri': 'contentReviewerIds',
           ':ua': 'updatedAt',
           ':ub': 'updatedBy',
           ':crp': 'contentRolePermissions',
@@ -87,14 +94,14 @@ function createEmptyClient() {
 const TABLE = 'users-table';
 
 // ============================================================================
-// Property 1: Ä¬ÈÏÖµÕýÈ·ÐÔ
-// Feature: feature-toggle-settings, Property 1: Ä¬ÈÏÖµÕýÈ·ÐÔ
-// ¶ÔÓÚÈÎºÎ²»´æÔÚ Settings_Record µÄÊý¾Ý¿â×´Ì¬£¬µ÷ÓÃ getFeatureToggles Ó¦·µ»Ø
+// Property 1: ?????????
+// Feature: feature-toggle-settings, Property 1: ?????????
+// ?????¦Ê¦Â????? Settings_Record ??????????????? getFeatureToggles ?????
 // { codeRedemptionEnabled: false, pointsClaimEnabled: false }
 // **Validates: Requirements 1.3, 2.2**
 // ============================================================================
 
-describe('Property 1: Ä¬ÈÏÖµÕýÈ·ÐÔ', () => {
+describe('Property 1: ?????????', () => {
   it(
     'should always return { codeRedemptionEnabled: false, pointsClaimEnabled: false } when record does not exist',
     async () => {
@@ -126,10 +133,10 @@ describe('Property 1: Ä¬ÈÏÖµÕýÈ·ÐÔ', () => {
 });
 
 // ============================================================================
-// Property 3: ¸üÐÂÊäÈëÐ£ÑéÕýÈ·ÐÔ
-// Feature: feature-toggle-settings, Property 3: ¸üÐÂÊäÈëÐ£ÑéÕýÈ·ÐÔ
-// ¶ÔÓÚÈÎºÎÇëÇóÌå£¬Èç¹û codeRedemptionEnabled »ò pointsClaimEnabled ²»ÊÇ²¼¶ûÖµ
-// £¨°üÀ¨ undefined¡¢null¡¢Êý×Ö¡¢×Ö·û´®µÈ£©£¬Ôò¸üÐÂÇëÇóÓ¦±»¾Ü¾ø²¢·µ»Ø INVALID_REQUEST¡£
+// Property 3: ????????§µ???????
+// Feature: feature-toggle-settings, Property 3: ????????§µ???????
+// ?????¦Ê??????ÈÉ??? codeRedemptionEnabled ?? pointsClaimEnabled ????????
+// ?????? undefined??null?????????????????????????????????????? INVALID_REQUEST??
 // **Validates: Requirements 3.3, 3.4**
 // ============================================================================
 
@@ -144,7 +151,7 @@ const nonBooleanArb = fc.oneof(
   fc.array(fc.integer(), { maxLength: 5 }),
 );
 
-describe('Property 3: ¸üÐÂÊäÈëÐ£ÑéÕýÈ·ÐÔ', () => {
+describe('Property 3: ????????§µ???????', () => {
   it(
     'should reject with INVALID_REQUEST when codeRedemptionEnabled is not boolean',
     async () => {
@@ -164,12 +171,19 @@ describe('Property 3: ¸üÐÂÊäÈëÐ£ÑéÕýÈ·ÐÔ', () => {
               emailOrderShippedEnabled: false,
               emailNewProductEnabled: false,
               emailNewContentEnabled: false,
+              emailContentUpdatedEnabled: false,
+              emailWeeklyDigestEnabled: false,
               adminEmailProductsEnabled: false,
               adminEmailContentEnabled: false,
               reservationApprovalPoints: 10,
               leaderboardRankingEnabled: false,
               leaderboardAnnouncementEnabled: false,
               leaderboardUpdateFrequency: 'weekly',
+              brandLogoListEnabled: true,
+              brandLogoDetailEnabled: true,
+              employeeStoreEnabled: true,
+              contentReviewMode: 'all',
+              contentReviewerIds: [],
               updatedBy: 'test-user',
             },
             client,
@@ -203,12 +217,19 @@ describe('Property 3: ¸üÐÂÊäÈëÐ£ÑéÕýÈ·ÐÔ', () => {
               emailOrderShippedEnabled: false,
               emailNewProductEnabled: false,
               emailNewContentEnabled: false,
+              emailContentUpdatedEnabled: false,
+              emailWeeklyDigestEnabled: false,
               adminEmailProductsEnabled: false,
               adminEmailContentEnabled: false,
               reservationApprovalPoints: 10,
               leaderboardRankingEnabled: false,
               leaderboardAnnouncementEnabled: false,
               leaderboardUpdateFrequency: 'weekly',
+              brandLogoListEnabled: true,
+              brandLogoDetailEnabled: true,
+              employeeStoreEnabled: true,
+              contentReviewMode: 'all',
+              contentReviewerIds: [],
               updatedBy: 'test-user',
             },
             client,
@@ -242,12 +263,19 @@ describe('Property 3: ¸üÐÂÊäÈëÐ£ÑéÕýÈ·ÐÔ', () => {
               emailOrderShippedEnabled: false,
               emailNewProductEnabled: false,
               emailNewContentEnabled: false,
+              emailContentUpdatedEnabled: false,
+              emailWeeklyDigestEnabled: false,
               adminEmailProductsEnabled: false,
               adminEmailContentEnabled: false,
               reservationApprovalPoints: 10,
               leaderboardRankingEnabled: false,
               leaderboardAnnouncementEnabled: false,
               leaderboardUpdateFrequency: 'weekly',
+              brandLogoListEnabled: true,
+              brandLogoDetailEnabled: true,
+              employeeStoreEnabled: true,
+              contentReviewMode: 'all',
+              contentReviewerIds: [],
               updatedBy: 'test-user',
             },
             client,
@@ -264,15 +292,15 @@ describe('Property 3: ¸üÐÂÊäÈëÐ£ÑéÕýÈ·ÐÔ', () => {
 });
 
 // ============================================================================
-// Property 4: ¸üÐÂÃÝµÈÐÔ
-// Feature: feature-toggle-settings, Property 4: ¸üÐÂÃÝµÈÐÔ
-// ¶ÔÓÚÈÎºÎÓÐÐ§µÄ¹¦ÄÜ¿ª¹ØÉèÖÃÖµ£¬Á¬ÐøÁ½´ÎÊ¹ÓÃÏàÍ¬Öµµ÷ÓÃ updateFeatureToggles£¬
-// µÚ¶þ´Îµ÷ÓÃºó¶ÁÈ¡µÄÉèÖÃÓ¦ÓëµÚÒ»´Îµ÷ÓÃºó¶ÁÈ¡µÄÉèÖÃÔÚ codeRedemptionEnabled ºÍ
-// pointsClaimEnabled ×Ö¶ÎÉÏÍêÈ«Ò»ÖÂ¡£
+// Property 4: ?????????
+// Feature: feature-toggle-settings, Property 4: ?????????
+// ?????¦Ê???§¹?????????????????????????????????? updateFeatureToggles??
+// ????¦Å??¨²???????????????¦Å??¨²??????????? codeRedemptionEnabled ??
+// pointsClaimEnabled ????????????
 // **Validates: Requirements 3.6**
 // ============================================================================
 
-describe('Property 4: ¸üÐÂÃÝµÈÐÔ', () => {
+describe('Property 4: ?????????', () => {
   it(
     'calling updateFeatureToggles twice with the same values should produce consistent results',
     async () => {
@@ -299,12 +327,19 @@ describe('Property 4: ¸üÐÂÃÝµÈÐÔ', () => {
                 emailOrderShippedEnabled: false,
                 emailNewProductEnabled: false,
                 emailNewContentEnabled: false,
+                emailContentUpdatedEnabled: false,
+                emailWeeklyDigestEnabled: false,
                 adminEmailProductsEnabled: false,
                 adminEmailContentEnabled: false,
                 reservationApprovalPoints: 10,
                 leaderboardRankingEnabled: false,
                 leaderboardAnnouncementEnabled: false,
                 leaderboardUpdateFrequency: 'weekly',
+                brandLogoListEnabled: true,
+                brandLogoDetailEnabled: true,
+                employeeStoreEnabled: true,
+                contentReviewMode: 'all',
+                contentReviewerIds: [],
                 updatedBy: 'admin-1',
               },
               client,
@@ -329,12 +364,19 @@ describe('Property 4: ¸üÐÂÃÝµÈÐÔ', () => {
                 emailOrderShippedEnabled: false,
                 emailNewProductEnabled: false,
                 emailNewContentEnabled: false,
+                emailContentUpdatedEnabled: false,
+                emailWeeklyDigestEnabled: false,
                 adminEmailProductsEnabled: false,
                 adminEmailContentEnabled: false,
                 reservationApprovalPoints: 10,
                 leaderboardRankingEnabled: false,
                 leaderboardAnnouncementEnabled: false,
                 leaderboardUpdateFrequency: 'weekly',
+                brandLogoListEnabled: true,
+                brandLogoDetailEnabled: true,
+                employeeStoreEnabled: true,
+                contentReviewMode: 'all',
+                contentReviewerIds: [],
                 updatedBy: 'admin-1',
               },
               client,
@@ -359,15 +401,15 @@ describe('Property 4: ¸üÐÂÃÝµÈÐÔ', () => {
 });
 
 // ============================================================================
-// Property 6: ¶ÁÐ´Ò»ÖÂÐÔ£¨Round-trip£©
-// Feature: feature-toggle-settings, Property 6: ¶ÁÐ´Ò»ÖÂÐÔ
-// ¶ÔÓÚÈÎºÎÓÐÐ§µÄ²¼¶ûÖµ×éºÏ£¬µ÷ÓÃ updateFeatureToggles Ð´Èëºó£¬Á¢¼´µ÷ÓÃ
-// getFeatureToggles ¶ÁÈ¡£¬·µ»ØµÄ codeRedemptionEnabled ºÍ pointsClaimEnabled
-// Ó¦ÓëÐ´ÈëÖµÍêÈ«Ò»ÖÂ¡£
+// Property 6: ??§Õ??????Round-trip??
+// Feature: feature-toggle-settings, Property 6: ??§Õ?????
+// ?????¦Ê???§¹?????????????? updateFeatureToggles §Õ???????????
+// getFeatureToggles ?????????? codeRedemptionEnabled ?? pointsClaimEnabled
+// ???§Õ??????????
 // **Validates: Requirements 1.1, 1.2, 2.1**
 // ============================================================================
 
-describe('Property 6: ¶ÁÐ´Ò»ÖÂÐÔ£¨Round-trip£©', () => {
+describe('Property 6: ??§Õ??????Round-trip??', () => {
   it(
     'getFeatureToggles should return the same values that were written by updateFeatureToggles',
     async () => {
@@ -394,12 +436,19 @@ describe('Property 6: ¶ÁÐ´Ò»ÖÂÐÔ£¨Round-trip£©', () => {
                 emailOrderShippedEnabled: false,
                 emailNewProductEnabled: false,
                 emailNewContentEnabled: false,
+                emailContentUpdatedEnabled: false,
+                emailWeeklyDigestEnabled: false,
                 adminEmailProductsEnabled: false,
                 adminEmailContentEnabled: false,
                 reservationApprovalPoints: 10,
                 leaderboardRankingEnabled: false,
                 leaderboardAnnouncementEnabled: false,
                 leaderboardUpdateFrequency: 'weekly',
+                brandLogoListEnabled: true,
+                brandLogoDetailEnabled: true,
+                employeeStoreEnabled: true,
+                contentReviewMode: 'all',
+                contentReviewerIds: [],
                 updatedBy: 'admin-1',
               },
               client,
@@ -425,18 +474,18 @@ describe('Property 6: ¶ÁÐ´Ò»ÖÂÐÔ£¨Round-trip£©', () => {
 
 
 // ============================================================================
-// Property 5: ¹¦ÄÜ¿ª¹ØÀ¹½ØÕýÈ·ÐÔ
-// Feature: feature-toggle-settings, Property 5: ¹¦ÄÜ¿ª¹ØÀ¹½ØÕýÈ·ÐÔ
-// ¶ÔÓÚÈÎºÎ¹¦ÄÜ¿ª¹Ø×´Ì¬×éºÏ£¨codeRedemptionEnabled: true/false, pointsClaimEnabled:
-// true/false£©£¬µ± codeRedemptionEnabled Îª false Ê± POST /api/points/redeem-code
-// Ó¦·µ»Ø FEATURE_DISABLED£¬µ± pointsClaimEnabled Îª false Ê± POST /api/claims
-// Ó¦·µ»Ø FEATURE_DISABLED£»µ±¶ÔÓ¦¿ª¹ØÎª true Ê±£¬ÇëÇóÓ¦Õý³£Í¨¹ý¹¦ÄÜ¿ª¹Ø¼ì²é¡£
+// Property 5: ????????????????
+// Feature: feature-toggle-settings, Property 5: ????????????????
+// ?????¦Ê¦É????????????codeRedemptionEnabled: true/false, pointsClaimEnabled:
+// true/false?????? codeRedemptionEnabled ? false ? POST /api/points/redeem-code
+// ????? FEATURE_DISABLED???? pointsClaimEnabled ? false ? POST /api/claims
+// ????? FEATURE_DISABLED???????????? true ???????????????????????î•
 // **Validates: Requirements 4.1, 4.2, 4.3**
 // ============================================================================
 
 /**
  * Simulates the interception logic from Points Handler:
- * Check toggle ¡ú return FEATURE_DISABLED error or pass through.
+ * Check toggle ?? return FEATURE_DISABLED error or pass through.
  */
 function simulateInterception(
   toggles: { codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean },
@@ -459,7 +508,7 @@ function simulateInterception(
   return { blocked: false };
 }
 
-describe('Property 5: ¹¦ÄÜ¿ª¹ØÀ¹½ØÕýÈ·ÐÔ', () => {
+describe('Property 5: ????????????????', () => {
   it(
     'POST /api/points/redeem-code should be blocked when codeRedemptionEnabled is false, and pass when true',
     async () => {
@@ -484,12 +533,19 @@ describe('Property 5: ¹¦ÄÜ¿ª¹ØÀ¹½ØÕýÈ·ÐÔ', () => {
                 emailOrderShippedEnabled: false,
                 emailNewProductEnabled: false,
                 emailNewContentEnabled: false,
+                emailContentUpdatedEnabled: false,
+                emailWeeklyDigestEnabled: false,
                 adminEmailProductsEnabled: false,
                 adminEmailContentEnabled: false,
                 reservationApprovalPoints: 10,
                 leaderboardRankingEnabled: false,
                 leaderboardAnnouncementEnabled: false,
                 leaderboardUpdateFrequency: 'weekly',
+                brandLogoListEnabled: true,
+                brandLogoDetailEnabled: true,
+                employeeStoreEnabled: true,
+                contentReviewMode: 'all',
+                contentReviewerIds: [],
                 updatedBy: 'admin',
               },
               client,
@@ -538,12 +594,19 @@ describe('Property 5: ¹¦ÄÜ¿ª¹ØÀ¹½ØÕýÈ·ÐÔ', () => {
                 emailOrderShippedEnabled: false,
                 emailNewProductEnabled: false,
                 emailNewContentEnabled: false,
+                emailContentUpdatedEnabled: false,
+                emailWeeklyDigestEnabled: false,
                 adminEmailProductsEnabled: false,
                 adminEmailContentEnabled: false,
                 reservationApprovalPoints: 10,
                 leaderboardRankingEnabled: false,
                 leaderboardAnnouncementEnabled: false,
                 leaderboardUpdateFrequency: 'weekly',
+                brandLogoListEnabled: true,
+                brandLogoDetailEnabled: true,
+                employeeStoreEnabled: true,
+                contentReviewMode: 'all',
+                contentReviewerIds: [],
                 updatedBy: 'admin',
               },
               client,
@@ -595,10 +658,10 @@ describe('Property 5: ¹¦ÄÜ¿ª¹ØÀ¹½ØÕýÈ·ÐÔ', () => {
 });
 
 // ============================================================================
-// Property 2: ¸üÐÂÈ¨ÏÞÐ£ÑéÕýÈ·ÐÔ
-// Feature: feature-toggle-settings, Property 2: ¸üÐÂÈ¨ÏÞÐ£ÑéÕýÈ·ÐÔ
-// ¶ÔÓÚÈÎºÎÓÃ»§½ÇÉ«¼¯ºÏ£¬Èç¹û¸Ã¼¯ºÏ²»°üº¬ SuperAdmin£¬Ôò¸üÐÂ¹¦ÄÜ¿ª¹ØÇëÇóÓ¦±»¾Ü¾ø
-// ²¢·µ»Ø FORBIDDEN£»Èç¹û°üº¬ SuperAdmin£¬ÔòÈ¨ÏÞÐ£ÑéÓ¦Í¨¹ý¡£
+// Property 2: ???????§µ???????
+// Feature: feature-toggle-settings, Property 2: ???????§µ???????
+// ?????¦Ê????????????????¨¹???????? SuperAdmin??????1????????????????
+// ?????? FORBIDDEN????????? SuperAdmin???????§µ????????
 // **Validates: Requirements 3.1, 3.2**
 // ============================================================================
 
@@ -608,7 +671,7 @@ const ALL_VALID_ROLES: UserRole[] = ['UserGroupLeader', 'Speaker', 'Volunteer', 
 /** Arbitrary that generates a random subset of valid roles */
 const roleSubsetArb = fc.subarray(ALL_VALID_ROLES, { minLength: 0, maxLength: ALL_VALID_ROLES.length });
 
-describe('Property 2: ¸üÐÂÈ¨ÏÞÐ£ÑéÕýÈ·ÐÔ', () => {
+describe('Property 2: ???????§µ???????', () => {
   it(
     'should reject (FORBIDDEN) when role set does NOT contain SuperAdmin',
     async () => {
@@ -664,7 +727,7 @@ describe('Property 2: ¸üÐÂÈ¨ÏÞÐ£ÑéÕýÈ·ÐÔ', () => {
 
 // ============================================================================
 // ---- In-memory DynamoDB mock with UpdateCommand support ----
-// Used by content-role-settings properties (Properties 1¨C4 below)
+// Used by content-role-settings properties (Properties 1?C4 below)
 // ============================================================================
 
 /**
@@ -711,12 +774,19 @@ function createInMemoryClientWithUpdate(initialItem?: Record<string, unknown>) {
           ':eos': 'emailOrderShippedEnabled',
           ':enp': 'emailNewProductEnabled',
           ':enc': 'emailNewContentEnabled',
+          ':ecu': 'emailContentUpdatedEnabled',
+          ':ewde': 'emailWeeklyDigestEnabled',
           ':aepe': 'adminEmailProductsEnabled',
           ':aece': 'adminEmailContentEnabled',
           ':rap': 'reservationApprovalPoints',
           ':lre': 'leaderboardRankingEnabled',
           ':lae': 'leaderboardAnnouncementEnabled',
           ':luf': 'leaderboardUpdateFrequency',
+          ':blle': 'brandLogoListEnabled',
+          ':blde': 'brandLogoDetailEnabled',
+          ':ese': 'employeeStoreEnabled',
+          ':crm': 'contentReviewMode',
+          ':cri': 'contentReviewerIds',
           ':ua': 'updatedAt',
           ':ub': 'updatedBy',
           ':crp': 'contentRolePermissions',
@@ -762,16 +832,16 @@ const contentRolePermissionsArb = fc.record({
 });
 
 // ============================================================================
-// Property 1 (content-role-settings): getFeatureToggles Ê¼ÖÕ·µ»ØÍêÕûµÄÐÂ×Ö¶Î
-// Feature: content-role-settings, Property 1: getFeatureToggles Ê¼ÖÕ·µ»ØÍêÕûµÄÐÂ×Ö¶Î
+// Property 1 (content-role-settings): getFeatureToggles ?????????????????
+// Feature: content-role-settings, Property 1: getFeatureToggles ?????????????????
 // For any DynamoDB record state (missing, partial, complete), returned object
 // always has boolean adminContentReviewEnabled, boolean adminCategoriesEnabled,
 // and complete contentRolePermissions with all 12 boolean fields.
-// **Validates: Requirements 1.1¨C1.4, 2.1¨C2.5, 3.1¨C3.3**
+// **Validates: Requirements 1.1?C1.4, 2.1?C2.5, 3.1?C3.3**
 // ============================================================================
 
-describe('Property 1 (content-role-settings): getFeatureToggles Ê¼ÖÕ·µ»ØÍêÕûµÄÐÂ×Ö¶Î', () => {
-  it('record not found ¡ú all new fields present with correct defaults', async () => {
+describe('Property 1 (content-role-settings): getFeatureToggles ?????????????????', () => {
+  it('record not found ?? all new fields present with correct defaults', async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.string({ minLength: 1, maxLength: 50 }),
@@ -803,7 +873,7 @@ describe('Property 1 (content-role-settings): getFeatureToggles Ê¼ÖÕ·µ»ØÍêÕûµÄÐÂ
     );
   });
 
-  it('partial record (missing contentRolePermissions) ¡ú defaults to all-true matrix', async () => {
+  it('partial record (missing contentRolePermissions) ?? defaults to all-true matrix', async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.boolean(),
@@ -840,7 +910,7 @@ describe('Property 1 (content-role-settings): getFeatureToggles Ê¼ÖÕ·µ»ØÍêÕûµÄÐÂ
     );
   });
 
-  it('complete record ¡ú all 12 fields are booleans', async () => {
+  it('complete record ?? all 12 fields are booleans', async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.boolean(),
@@ -876,14 +946,14 @@ describe('Property 1 (content-role-settings): getFeatureToggles Ê¼ÖÕ·µ»ØÍêÕûµÄÐÂ
 });
 
 // ============================================================================
-// Property 2 (content-role-settings): adminContentReviewEnabled Ð´Èë¶ÁÈ¡Íù·µ
-// Feature: content-role-settings, Property 2: adminContentReviewEnabled Ð´Èë¶ÁÈ¡Íù·µ
+// Property 2 (content-role-settings): adminContentReviewEnabled §Õ????????
+// Feature: content-role-settings, Property 2: adminContentReviewEnabled §Õ????????
 // For any boolean v, write updateFeatureToggles({ adminContentReviewEnabled: v, ... }),
 // then read with getFeatureToggles, the returned adminContentReviewEnabled should equal v.
 // **Validates: Requirements 1.4, 4.1, 4.3**
 // ============================================================================
 
-describe('Property 2 (content-role-settings): adminContentReviewEnabled Ð´Èë¶ÁÈ¡Íù·µ', () => {
+describe('Property 2 (content-role-settings): adminContentReviewEnabled §Õ????????', () => {
   it('adminContentReviewEnabled round-trips correctly for any boolean value', async () => {
     await fc.assert(
       fc.asyncProperty(
@@ -905,12 +975,19 @@ describe('Property 2 (content-role-settings): adminContentReviewEnabled Ð´Èë¶ÁÈ¡
               emailOrderShippedEnabled: false,
               emailNewProductEnabled: false,
               emailNewContentEnabled: false,
+              emailContentUpdatedEnabled: false,
+              emailWeeklyDigestEnabled: false,
               adminEmailProductsEnabled: false,
               adminEmailContentEnabled: false,
               reservationApprovalPoints: 10,
               leaderboardRankingEnabled: false,
               leaderboardAnnouncementEnabled: false,
               leaderboardUpdateFrequency: 'weekly',
+              brandLogoListEnabled: true,
+              brandLogoDetailEnabled: true,
+              employeeStoreEnabled: true,
+              contentReviewMode: 'all',
+              contentReviewerIds: [],
               updatedBy: 'test-user',
             },
             client,
@@ -928,8 +1005,8 @@ describe('Property 2 (content-role-settings): adminContentReviewEnabled Ð´Èë¶ÁÈ¡
 });
 
 // ============================================================================
-// Property 3 (content-role-settings): contentRolePermissions Ð´Èë¶ÁÈ¡Íù·µ
-// Feature: content-role-settings, Property 3: contentRolePermissions Ð´Èë¶ÁÈ¡Íù·µ
+// Property 3 (content-role-settings): contentRolePermissions §Õ????????
+// Feature: content-role-settings, Property 3: contentRolePermissions §Õ????????
 // For any valid 12-boolean ContentRolePermissions matrix, call
 // updateContentRolePermissions, then read with getFeatureToggles, the returned
 // contentRolePermissions should equal the written value.
@@ -938,7 +1015,7 @@ describe('Property 2 (content-role-settings): adminContentReviewEnabled Ð´Èë¶ÁÈ¡
 
 import { updateContentRolePermissions } from './feature-toggles';
 
-describe('Property 3 (content-role-settings): contentRolePermissions Ð´Èë¶ÁÈ¡Íù·µ', () => {
+describe('Property 3 (content-role-settings): contentRolePermissions §Õ????????', () => {
   it('contentRolePermissions round-trips correctly for any valid 12-boolean matrix', async () => {
     await fc.assert(
       fc.asyncProperty(
@@ -970,14 +1047,14 @@ describe('Property 3 (content-role-settings): contentRolePermissions Ð´Èë¶ÁÈ¡Íù·
 });
 
 // ============================================================================
-// Property 4 (content-role-settings): contentRolePermissions ¸üÐÂÃÝµÈÐÔ
-// Feature: content-role-settings, Property 4: contentRolePermissions ¸üÐÂÃÝµÈÐÔ
+// Property 4 (content-role-settings): contentRolePermissions ?????????
+// Feature: content-role-settings, Property 4: contentRolePermissions ?????????
 // For any valid ContentRolePermissions, calling updateContentRolePermissions twice
 // with the same input produces the same read result.
 // **Validates: Requirements 5.6**
 // ============================================================================
 
-describe('Property 4 (content-role-settings): contentRolePermissions ¸üÐÂÃÝµÈÐÔ', () => {
+describe('Property 4 (content-role-settings): contentRolePermissions ?????????', () => {
   it('two identical updateContentRolePermissions calls produce the same read result', async () => {
     await fc.assert(
       fc.asyncProperty(

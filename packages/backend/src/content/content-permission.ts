@@ -52,25 +52,45 @@ export function computeEffectivePermissions(
 }
 
 /**
- * Check review permission:
+ * Check review permission (three-layer + mode check):
  * 1. SuperAdmin → true
- * 2. adminContentReviewEnabled && Admin in roles → true
- * 3. Otherwise → false
+ * 2. adminContentReviewEnabled === false → false
+ * 3. adminContentReviewEnabled === true:
+ *    - contentReviewMode === 'all' (or undefined) and Admin → true
+ *    - contentReviewMode === 'specific' and Admin and userId in contentReviewerIds → true
+ *    - Otherwise → false
+ *
+ * New parameters are optional for backward compatibility with existing callers.
  */
 export function checkReviewPermission(
   userRoles: string[],
   adminContentReviewEnabled: boolean,
+  userId?: string,
+  contentReviewMode?: 'all' | 'specific',
+  contentReviewerIds?: string[],
 ): boolean {
   // Layer 1: SuperAdmin always wins
   if (userRoles.includes('SuperAdmin')) {
     return true;
   }
 
-  // Layer 2: Admin allowed when feature is enabled
-  if (adminContentReviewEnabled && userRoles.includes('Admin')) {
+  // Layer 2: Feature disabled → denied
+  if (!adminContentReviewEnabled) {
+    return false;
+  }
+
+  // Layer 3: Feature enabled — check mode
+  if (!userRoles.includes('Admin')) {
+    return false;
+  }
+
+  const mode = contentReviewMode ?? 'all';
+
+  if (mode === 'all') {
     return true;
   }
 
-  // Layer 3: Denied
-  return false;
+  // mode === 'specific': Admin must be in the reviewer list
+  const reviewerIds = contentReviewerIds ?? [];
+  return userId !== undefined && reviewerIds.includes(userId);
 }

@@ -6,8 +6,9 @@ import { ErrorHttpStatus, hasAdminAccess, isSuperAdmin, isOrderAdmin } from '@po
 import type { UserRole, ShippingStatus } from '@points-mall/shared';
 import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware';
 import { createOrder, createDirectOrder, getOrders, getOrderDetail } from './order';
-import { getAdminOrders, getAdminOrderDetail, updateShipping, getOrderStats, cancelOrder } from './admin-order';
+import { getAdminOrders, getAdminOrderDetail, updateShipping, getOrderStats, cancelOrder, exportPendingOrders, importOrderStatuses } from './admin-order';
 import { getFeatureToggles } from '../settings/feature-toggles';
+import { isEmployeeStoreBlocked } from '../middleware/employee-store-check';
 import { sendNewOrderEmail, sendOrderShippedEmail } from '../email/notifications';
 import type { NotificationContext } from '../email/notifications';
 import type { OrderTableNames } from './order';
@@ -97,6 +98,16 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
       return await handleGetOrderStats();
     }
 
+    // GET /api/admin/orders/export (must be checked before the detail regex)
+    if (method === 'GET' && path === '/api/admin/orders/export') {
+      return await handleExportPendingOrders();
+    }
+
+    // POST /api/admin/orders/import (must be checked before the detail regex)
+    if (method === 'POST' && path === '/api/admin/orders/import') {
+      return await handleImportOrderStatuses(event);
+    }
+
     // PATCH /api/admin/orders/{orderId}/shipping
     if (method === 'PATCH') {
       const shippingMatch = path.match(ADMIN_ORDER_SHIPPING_REGEX);
@@ -133,11 +144,19 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
 
   // POST /api/orders/direct
   if (method === 'POST' && path === '/api/orders/direct') {
+    const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+    if (isEmployeeStoreBlocked(event.user.isEmployee, toggles.employeeStoreEnabled)) {
+      return errorResponse('EMPLOYEE_STORE_DISABLED', '员工商城功能暂时关闭', 403);
+    }
     return await handleCreateDirectOrder(event);
   }
 
   // POST /api/orders
   if (method === 'POST' && path === '/api/orders') {
+    const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+    if (isEmployeeStoreBlocked(event.user.isEmployee, toggles.employeeStoreEnabled)) {
+      return errorResponse('EMPLOYEE_STORE_DISABLED', '员工商城功能暂时关闭', 403);
+    }
     return await handleCreateOrder(event);
   }
 
@@ -434,4 +453,38 @@ async function handleGetOrderStats(): Promise<APIGatewayProxyResult> {
   }
 
   return jsonResponse(200, result.stats);
+}
+
+async function handleExportPendingOrders(): Promise<APIGatewayProxyResult> {
+  const result = await exportPendingOrders(dynamoClient, ORDERS_TABLE);
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 500);
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    statusCode: 200,
+    headers: {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="pending-orders-${today}.xlsx"`,
+      'Access-Control-Allow-Origin': '*',
+    },
+    body: result.buffer!.toString('base64'),
+    isBase64Encoded: true,
+  };
+}
+
+async function handleImportOrderStatuses(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  if (!event.body) {
+    return errorResponse('INVALID_REQUEST', '缺少文件内容', 400);
+  }
+  // API Gateway sends base64-encoded body for binary uploads
+  const fileBuffer = event.isBase64Encoded
+    ? Buffer.from(event.body, 'base64')
+    : Buffer.from(event.body, 'binary');
+
+  const result = await importOrderStatuses(fileBuffer, event.user.userId, dynamoClient, ORDERS_TABLE);
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message, 500);
+  }
+  return jsonResponse(200, { updated: result.updated, skipped: result.skipped, errors: result.errors });
 }

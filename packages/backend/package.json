@@ -18,13 +18,16 @@
     "@points-mall/shared": "*",
     "bcryptjs": "^2.4.3",
     "cheerio": "^1.2.0",
+    "exceljs": "^4.4.0",
     "jsonwebtoken": "^9.0.2",
+    "qrcode": "^1.5.4",
     "ulid": "^2.3.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.149",
     "@types/bcryptjs": "^2.4.6",
-    "@types/jsonwebtoken": "^9.0.9"
+    "@types/jsonwebtoken": "^9.0.9",
+    "@types/qrcode": "^1.5.6"
   }
 }

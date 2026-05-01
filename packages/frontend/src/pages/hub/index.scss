@@ -171,21 +171,15 @@
     }
   }
 
-  /* Leaderboard card — amber accent, coming soon */
+  /* Leaderboard card — warm amber accent */
   &--leaderboard {
     background:
-      linear-gradient(135deg, rgba(245, 166, 35, 0.08) 0%, rgba(245, 166, 35, 0.02) 100%),
+      linear-gradient(135deg, rgba(245, 166, 35, 0.10) 0%, rgba(245, 166, 35, 0.03) 100%),
       var(--bg-surface);
-    border-color: rgba(245, 166, 35, 0.15);
-    opacity: 0;
-    cursor: default;
-
-    /* Override the cardEnter animation to keep 0.6 final opacity */
-    animation: cardEnterDimmed 0.4s ease-out both;
+    border-color: rgba(245, 166, 35, 0.20);
 
     &:hover {
-      transform: none;
-      border-color: rgba(245, 166, 35, 0.15);
+      border-color: rgba(245, 166, 35, 0.4);
     }
   }
 
@@ -244,18 +238,6 @@
     border-radius: var(--radius-full);
     letter-spacing: 0.5px;
     text-transform: uppercase;
-  }
-}
-
-/* Dimmed variant of cardEnter for coming-soon cards */
-@keyframes cardEnterDimmed {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 0.6;
-    transform: translateY(0);
   }
 }
 

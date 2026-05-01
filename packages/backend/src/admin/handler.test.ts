@@ -805,7 +805,7 @@ describe('Admin Lambda Handler', () => {
       const result = await handler(event);
       expect(result.statusCode).toBe(200);
       expect(listUsers).toHaveBeenCalledWith(
-        { role: 'Admin', pageSize: 10, lastKey: { userId: 'last-user' } },
+        { role: 'Admin', pageSize: 10, lastKey: { userId: 'last-user' }, excludeRoles: ['SuperAdmin', 'OrderAdmin'] },
         expect.anything(),
         '',
       );
@@ -1082,6 +1082,7 @@ describe('Admin Lambda Handler', () => {
         '',
         86400000,
         undefined,
+        'admin-user-id',
       );
     });
 
@@ -1517,6 +1518,12 @@ describe('Admin Lambda Handler', () => {
           leaderboardRankingEnabled: false,
           leaderboardAnnouncementEnabled: false,
           leaderboardUpdateFrequency: 'weekly',
+          pointsRuleConfig: undefined,
+          brandLogoListEnabled: true,
+          brandLogoDetailEnabled: true,
+          employeeStoreEnabled: true,
+          contentReviewMode: 'all',
+          contentReviewerIds: [],
           updatedBy: 'admin-user-id',
         },
         expect.anything(),
@@ -2934,8 +2941,7 @@ describe('Admin Lambda Handler', () => {
       expect(listActivities).toHaveBeenCalledWith(
         expect.objectContaining({
           ugName: undefined,
-          startDate: undefined,
-          endDate: undefined,
+          startDate: '2026-01-01',
           keyword: undefined,
           pageSize: undefined,
           lastKey: undefined,

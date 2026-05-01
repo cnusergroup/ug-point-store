@@ -58,6 +58,9 @@ interface FeatureToggles {
   pointsRuleConfig?: PointsRuleConfig;
   brandLogoListEnabled: boolean;
   brandLogoDetailEnabled: boolean;
+  employeeStoreEnabled: boolean;
+  contentReviewMode: 'all' | 'specific';
+  contentReviewerIds: string[];
 }
 
 interface PointsRuleConfig {
@@ -434,6 +437,7 @@ interface AdminUserItem {
   userId: string;
   nickname: string;
   email: string;
+  roles: string[];
 }
 
 export default function AdminSettingsPage() {
@@ -470,6 +474,9 @@ export default function AdminSettingsPage() {
     leaderboardUpdateFrequency: 'weekly',
     brandLogoListEnabled: true,
     brandLogoDetailEnabled: true,
+    employeeStoreEnabled: true,
+    contentReviewMode: 'all',
+    contentReviewerIds: [],
   });
 
 
@@ -495,6 +502,9 @@ export default function AdminSettingsPage() {
   const [transferPassword, setTransferPassword] = useState('');
   const [transferring, setTransferring] = useState(false);
   const [transferError, setTransferError] = useState('');
+
+  // Content reviewer checklist search state
+  const [reviewerSearch, setReviewerSearch] = useState('');
 
   // Email template editor state
   const [editingTemplateType, setEditingTemplateType] = useState<NotificationType | null>(null);
@@ -1101,11 +1111,105 @@ export default function AdminSettingsPage() {
           leaderboardUpdateFrequency: updated.leaderboardUpdateFrequency,
           brandLogoListEnabled: updated.brandLogoListEnabled,
           brandLogoDetailEnabled: updated.brandLogoDetailEnabled,
+          employeeStoreEnabled: updated.employeeStoreEnabled,
+          contentReviewMode: updated.contentReviewMode,
+          contentReviewerIds: updated.contentReviewerIds,
         },
       });
       Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
     } catch {
       // Revert on failure
+      setSettings(prev);
+      Taro.showToast({ title: t('admin.settings.updateFailed'), icon: 'none' });
+    }
+  };
+
+  const handleReviewModeChange = async (newMode: 'all' | 'specific') => {
+    if (newMode === settings.contentReviewMode) return;
+    const prev = { ...settings };
+    const updated = { ...settings, contentReviewMode: newMode };
+    setSettings(updated);
+
+    try {
+      await request({
+        url: '/api/admin/settings/feature-toggles',
+        method: 'PUT',
+        data: {
+          codeRedemptionEnabled: updated.codeRedemptionEnabled,
+          pointsClaimEnabled: updated.pointsClaimEnabled,
+          adminProductsEnabled: updated.adminProductsEnabled,
+          adminOrdersEnabled: updated.adminOrdersEnabled,
+          adminContentReviewEnabled: updated.adminContentReviewEnabled,
+          adminCategoriesEnabled: updated.adminCategoriesEnabled,
+          adminEmailProductsEnabled: updated.adminEmailProductsEnabled,
+          adminEmailContentEnabled: updated.adminEmailContentEnabled,
+          emailPointsEarnedEnabled: updated.emailPointsEarnedEnabled,
+          emailNewOrderEnabled: updated.emailNewOrderEnabled,
+          emailOrderShippedEnabled: updated.emailOrderShippedEnabled,
+          emailNewProductEnabled: updated.emailNewProductEnabled,
+          emailNewContentEnabled: updated.emailNewContentEnabled,
+          emailContentUpdatedEnabled: updated.emailContentUpdatedEnabled,
+          emailWeeklyDigestEnabled: updated.emailWeeklyDigestEnabled,
+          reservationApprovalPoints: updated.reservationApprovalPoints,
+          leaderboardRankingEnabled: updated.leaderboardRankingEnabled,
+          leaderboardAnnouncementEnabled: updated.leaderboardAnnouncementEnabled,
+          leaderboardUpdateFrequency: updated.leaderboardUpdateFrequency,
+          brandLogoListEnabled: updated.brandLogoListEnabled,
+          brandLogoDetailEnabled: updated.brandLogoDetailEnabled,
+          employeeStoreEnabled: updated.employeeStoreEnabled,
+          contentReviewMode: updated.contentReviewMode,
+          contentReviewerIds: updated.contentReviewerIds,
+        },
+      });
+      Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
+    } catch {
+      setSettings(prev);
+      Taro.showToast({ title: t('admin.settings.updateFailed'), icon: 'none' });
+    }
+  };
+
+  const handleReviewerToggle = async (userId: string) => {
+    const prev = { ...settings };
+    const isSelected = settings.contentReviewerIds.includes(userId);
+    const newIds = isSelected
+      ? settings.contentReviewerIds.filter((id) => id !== userId)
+      : [...settings.contentReviewerIds, userId];
+    const updated = { ...settings, contentReviewerIds: newIds };
+    setSettings(updated);
+
+    try {
+      await request({
+        url: '/api/admin/settings/feature-toggles',
+        method: 'PUT',
+        data: {
+          codeRedemptionEnabled: updated.codeRedemptionEnabled,
+          pointsClaimEnabled: updated.pointsClaimEnabled,
+          adminProductsEnabled: updated.adminProductsEnabled,
+          adminOrdersEnabled: updated.adminOrdersEnabled,
+          adminContentReviewEnabled: updated.adminContentReviewEnabled,
+          adminCategoriesEnabled: updated.adminCategoriesEnabled,
+          adminEmailProductsEnabled: updated.adminEmailProductsEnabled,
+          adminEmailContentEnabled: updated.adminEmailContentEnabled,
+          emailPointsEarnedEnabled: updated.emailPointsEarnedEnabled,
+          emailNewOrderEnabled: updated.emailNewOrderEnabled,
+          emailOrderShippedEnabled: updated.emailOrderShippedEnabled,
+          emailNewProductEnabled: updated.emailNewProductEnabled,
+          emailNewContentEnabled: updated.emailNewContentEnabled,
+          emailContentUpdatedEnabled: updated.emailContentUpdatedEnabled,
+          emailWeeklyDigestEnabled: updated.emailWeeklyDigestEnabled,
+          reservationApprovalPoints: updated.reservationApprovalPoints,
+          leaderboardRankingEnabled: updated.leaderboardRankingEnabled,
+          leaderboardAnnouncementEnabled: updated.leaderboardAnnouncementEnabled,
+          leaderboardUpdateFrequency: updated.leaderboardUpdateFrequency,
+          brandLogoListEnabled: updated.brandLogoListEnabled,
+          brandLogoDetailEnabled: updated.brandLogoDetailEnabled,
+          employeeStoreEnabled: updated.employeeStoreEnabled,
+          contentReviewMode: updated.contentReviewMode,
+          contentReviewerIds: updated.contentReviewerIds,
+        },
+      });
+      Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
+    } catch {
       setSettings(prev);
       Taro.showToast({ title: t('admin.settings.updateFailed'), icon: 'none' });
     }
@@ -1143,6 +1247,9 @@ export default function AdminSettingsPage() {
           leaderboardUpdateFrequency: updated.leaderboardUpdateFrequency,
           brandLogoListEnabled: updated.brandLogoListEnabled,
           brandLogoDetailEnabled: updated.brandLogoDetailEnabled,
+          employeeStoreEnabled: updated.employeeStoreEnabled,
+          contentReviewMode: updated.contentReviewMode,
+          contentReviewerIds: updated.contentReviewerIds,
         },
       });
       Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
@@ -1370,6 +1477,9 @@ export default function AdminSettingsPage() {
           leaderboardUpdateFrequency: settings.leaderboardUpdateFrequency,
           brandLogoListEnabled: settings.brandLogoListEnabled,
           brandLogoDetailEnabled: settings.brandLogoDetailEnabled,
+          employeeStoreEnabled: settings.employeeStoreEnabled,
+          contentReviewMode: settings.contentReviewMode,
+          contentReviewerIds: settings.contentReviewerIds,
           pointsRuleConfig,
         },
       });
@@ -1528,6 +1638,25 @@ export default function AdminSettingsPage() {
                     </View>
                   </View>
                 </CollapsibleSection>
+
+                {/* Employee Store Access */}
+                <CollapsibleSection title={t('admin.settings.employeeStoreLabel' as any)} description={t('admin.settings.employeeStoreDesc' as any)}>
+                  <View className='toggle-list'>
+                    <View className='toggle-item'>
+                      <View className='toggle-item__info'>
+                        <Text className='toggle-item__label'>{t('admin.settings.employeeStoreLabel' as any)}</Text>
+                        <Text className='toggle-item__desc'>{t('admin.settings.employeeStoreDesc' as any)}</Text>
+                      </View>
+                      <View className='toggle-item__switch'>
+                        <Switch
+                          checked={settings.employeeStoreEnabled}
+                          onChange={(e) => handleToggle('employeeStoreEnabled', e.detail.value)}
+                          color='var(--accent-primary)'
+                        />
+                      </View>
+                    </View>
+                  </View>
+                </CollapsibleSection>
               </>
             )}
 
@@ -1576,6 +1705,76 @@ export default function AdminSettingsPage() {
                         />
                       </View>
                     </View>
+                    {settings.adminContentReviewEnabled && (
+                      <View className='review-mode-expand'>
+                        <Text className='review-mode-expand__label'>{t('admin.settings.contentReviewModeLabel' as any)}</Text>
+                        <View className='review-mode-expand__options'>
+                          {(['all', 'specific'] as const).map((mode) => (
+                            <View
+                              key={mode}
+                              className={`review-mode-option${settings.contentReviewMode === mode ? ' review-mode-option--active' : ''}`}
+                              onClick={() => handleReviewModeChange(mode)}
+                            >
+                              <View className='review-mode-option__radio'>
+                                {settings.contentReviewMode === mode && (
+                                  <View className='review-mode-option__radio-dot' />
+                                )}
+                              </View>
+                              <Text className='review-mode-option__label'>
+                                {t(`admin.settings.contentReviewMode${mode === 'all' ? 'All' : 'Specific'}` as any)}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                        {settings.contentReviewMode === 'specific' && (
+                          <View className='reviewer-checklist'>
+                            <Input
+                              className='reviewer-checklist__search'
+                              value={reviewerSearch}
+                              onInput={(e) => setReviewerSearch(e.detail.value)}
+                              placeholder={t('admin.settings.contentReviewSearchPlaceholder' as any)}
+                            />
+                            <View className='reviewer-checklist__list'>
+                              {adminUsers
+                                .filter((u) => {
+                                  if (!reviewerSearch.trim()) return true;
+                                  const q = reviewerSearch.trim().toLowerCase();
+                                  return u.nickname.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+                                })
+                                .map((user) => {
+                                  const isChecked = settings.contentReviewerIds.includes(user.userId);
+                                  return (
+                                    <View
+                                      key={user.userId}
+                                      className={`reviewer-checklist__item${isChecked ? ' reviewer-checklist__item--selected' : ''}`}
+                                      onClick={() => handleReviewerToggle(user.userId)}
+                                    >
+                                      <View className={`reviewer-checklist__checkbox${isChecked ? ' reviewer-checklist__checkbox--checked' : ''}`}>
+                                        {isChecked && <Text className='reviewer-checklist__check-icon'>✓</Text>}
+                                      </View>
+                                      <View className='reviewer-checklist__user-info'>
+                                        <Text className='reviewer-checklist__nickname'>{user.nickname}</Text>
+                                        <Text className='reviewer-checklist__email'>{user.email}</Text>
+                                      </View>
+                                      {user.roles && user.roles.map((role) => (
+                                        <Text
+                                          key={role}
+                                          className={`role-badge role-badge--${role === 'Admin' ? 'admin' : role === 'SuperAdmin' ? 'superadmin' : role === 'OrderAdmin' ? 'order-admin' : role === 'UserGroupLeader' ? 'leader' : role === 'Speaker' ? 'speaker' : role === 'Volunteer' ? 'volunteer' : 'admin'}`}
+                                        >
+                                          {role}
+                                        </Text>
+                                      ))}
+                                    </View>
+                                  );
+                                })}
+                            </View>
+                            <Text className='reviewer-checklist__count'>
+                              {(t('admin.settings.contentReviewSelectedCount' as any) as string).replace('{count}', String(settings.contentReviewerIds.length))}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
                     <View className='toggle-item'>
                       <View className='toggle-item__info'>
                         <Text className='toggle-item__label'>{t('admin.settings.adminCategoriesLabel')}</Text>

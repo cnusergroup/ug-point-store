@@ -7,6 +7,7 @@ import { useTranslation } from '../../i18n';
 import TabBar from '../../components/TabBar';
 import { ProductSkeleton } from '../../components/Skeleton';
 import { TicketIcon, GiftIcon, PackageIcon, LockIcon, LocationIcon, GlobeIcon } from '../../components/icons';
+import EmployeeStoreBlocked from '../../components/EmployeeStoreBlocked';
 import type { TravelSponsorshipSettings, TravelQuota } from '@points-mall/shared';
 import './index.scss';
 /** Product type filter options */
@@ -72,7 +73,7 @@ export default function IndexPage() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [roleFilter, setRoleFilter] = useState<UserRole | ''>('');
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
-  const [featureToggles, setFeatureToggles] = useState<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; brandLogoListEnabled?: boolean } | null>(null);
+  const [featureToggles, setFeatureToggles] = useState<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; brandLogoListEnabled?: boolean; employeeStoreEnabled?: boolean } | null>(null);
   const [travelSettings, setTravelSettings] = useState<TravelSponsorshipSettings | null>(null);
   const [travelQuota, setTravelQuota] = useState<TravelQuota | null>(null);
   const [travelQuotaLoading, setTravelQuotaLoading] = useState(false);
@@ -119,7 +120,7 @@ export default function IndexPage() {
     fetchProducts();
 
     // Fetch feature toggles (public endpoint, no auth needed)
-    request<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; brandLogoListEnabled?: boolean }>({
+    request<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; brandLogoListEnabled?: boolean; employeeStoreEnabled?: boolean }>({
       url: '/api/settings/feature-toggles',
       skipAuth: true,
     })
@@ -382,6 +383,11 @@ export default function IndexPage() {
         </View>
       </View>
 
+      {/* Employee Store Blocked */}
+      {user?.isEmployee && featureToggles?.employeeStoreEnabled === false ? (
+        <EmployeeStoreBlocked />
+      ) : (
+      <>
       {/* Filter Bar */}
       <View className='filter-bar'>
         <View className='filter-bar__types'>
@@ -479,6 +485,8 @@ export default function IndexPage() {
               .map((product, index) => renderProductCard(product, index))}
           </View>
         )
+      )}
+      </>
       )}
 
       <TabBar current='/pages/index/index' />

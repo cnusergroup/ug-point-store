@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+﻿import { describe, it, expect, vi } from 'vitest';
 import fc from 'fast-check';
 import { updateFeatureToggles } from './feature-toggles';
 
@@ -38,12 +38,19 @@ function createInMemoryClient() {
           ':eos': 'emailOrderShippedEnabled',
           ':enp': 'emailNewProductEnabled',
           ':enc': 'emailNewContentEnabled',
+          ':ecu': 'emailContentUpdatedEnabled',
+          ':ewde': 'emailWeeklyDigestEnabled',
           ':aepe': 'adminEmailProductsEnabled',
           ':aece': 'adminEmailContentEnabled',
           ':rap': 'reservationApprovalPoints',
           ':lre': 'leaderboardRankingEnabled',
           ':lae': 'leaderboardAnnouncementEnabled',
           ':luf': 'leaderboardUpdateFrequency',
+          ':blle': 'brandLogoListEnabled',
+          ':blde': 'brandLogoDetailEnabled',
+          ':ese': 'employeeStoreEnabled',
+          ':crm': 'contentReviewMode',
+          ':cri': 'contentReviewerIds',
           ':ua': 'updatedAt',
           ':ub': 'updatedBy',
         };
@@ -79,12 +86,19 @@ function validBaseInput(frequencyOverride: any) {
     emailOrderShippedEnabled: false,
     emailNewProductEnabled: false,
     emailNewContentEnabled: false,
+    emailContentUpdatedEnabled: false,
+    emailWeeklyDigestEnabled: false,
     adminEmailProductsEnabled: false,
     adminEmailContentEnabled: false,
     reservationApprovalPoints: 10,
     leaderboardRankingEnabled: false,
     leaderboardAnnouncementEnabled: false,
     leaderboardUpdateFrequency: frequencyOverride,
+    brandLogoListEnabled: true,
+    brandLogoDetailEnabled: true,
+    employeeStoreEnabled: true,
+    contentReviewMode: 'all' as const,
+    contentReviewerIds: [] as string[],
     updatedBy: 'test-admin',
   };
 }

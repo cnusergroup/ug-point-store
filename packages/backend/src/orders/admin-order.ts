@@ -154,7 +154,7 @@ export async function getAdminOrderDetail(
 
 /**
  * Update shipping status for an order.
- * Validates status transition, requires trackingNumber when shipping.
+ * Validates status transition. Stores trackingNumber if provided (optional).
  * Appends a new ShippingEvent to the shippingEvents array.
  *
  * Requirements: 7.3, 7.4, 7.5, 7.6
@@ -194,15 +194,7 @@ export async function updateShipping(
     };
   }
 
-  // 3. If target status is 'shipped', require trackingNumber
-  if (status === 'shipped' && (!trackingNumber || trackingNumber.trim() === '')) {
-    return {
-      success: false,
-      error: { code: ErrorCodes.TRACKING_NUMBER_REQUIRED, message: ErrorMessages.TRACKING_NUMBER_REQUIRED },
-    };
-  }
-
-  // 4. Build new shipping event
+  // 3. Build new shipping event and update order
   const now = new Date().toISOString();
   const newEvent: ShippingEvent = {
     status,
@@ -211,7 +203,7 @@ export async function updateShipping(
     operatorId,
   };
 
-  // 5. Update order
+  // 4. Update order
   const updateExprParts = [
     'shippingStatus = :newStatus',
     'shippingEvents = list_append(shippingEvents, :newEvent)',
@@ -494,4 +486,215 @@ export async function getOrderStats(
   }
 
   return { success: true, stats };
+}
+
+export interface ExportPendingOrdersResult {
+  success: boolean;
+  buffer?: Buffer;
+  error?: { code: string; message: string };
+}
+
+/**
+ * Query all pending orders and generate an Excel file.
+ * Each order item becomes one row with: 发货状态, 订单号, 商品名称, 数量, 尺码, 收件人, 电话, 地址.
+ * 发货状态 column has a dropdown list (待发货/已发货) for batch status update.
+ * If no pending orders exist, returns an Excel file with the header row only.
+ *
+ * Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.7
+ */
+export async function exportPendingOrders(
+  dynamoClient: DynamoDBDocumentClient,
+  ordersTable: string,
+): Promise<ExportPendingOrdersResult> {
+  try {
+    // Query GSI for all pending orders
+    const result = await dynamoClient.send(
+      new QueryCommand({
+        TableName: ordersTable,
+        IndexName: 'shippingStatus-createdAt-index',
+        KeyConditionExpression: 'shippingStatus = :status',
+        ExpressionAttributeValues: { ':status': 'pending' },
+        ScanIndexForward: false,
+      }),
+    );
+
+    const orders = result.Items ?? [];
+
+    // Flatten orders into rows: one row per order item
+    const rows: (string | number)[][] = [];
+    for (const order of orders) {
+      const orderId = order.orderId as string;
+      const items: OrderItem[] = (order.items as OrderItem[]) ?? [];
+      const shippingAddress = order.shippingAddress as {
+        recipientName: string;
+        phone: string;
+        detailAddress: string;
+      };
+
+      for (const item of items) {
+        rows.push([
+          '待发货',
+          orderId,
+          item.productName,
+          item.quantity,
+          item.selectedSize ?? '',
+          shippingAddress.recipientName,
+          shippingAddress.phone,
+          shippingAddress.detailAddress,
+        ]);
+      }
+    }
+
+    // Generate Excel workbook using exceljs (supports data validation)
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet('PendingOrders');
+
+    // Add header row
+    const headers = ['发货状态', '订单号', '商品名称', '数量', '尺码', '收件人', '电话', '地址'];
+    ws.addRow(headers);
+
+    // Add data rows
+    for (const row of rows) {
+      ws.addRow(row);
+    }
+
+    // Add data validation (dropdown) for 发货状态 column (column A, rows 2+)
+    const dataRowCount = Math.max(rows.length, 1);
+    for (let i = 2; i <= dataRowCount + 1; i++) {
+      const cell = ws.getCell(`A${i}`);
+      cell.dataValidation = {
+        type: 'list',
+        allowBlank: false,
+        formulae: ['"待发货,已发货"'],
+      };
+    }
+
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+
+    return { success: true, buffer };
+  } catch (err: any) {
+    console.error('[ExportPendingOrders] Failed:', err);
+    return {
+      success: false,
+      error: {
+        code: 'EXPORT_FAILED',
+        message: err.message ?? 'Failed to export pending orders',
+      },
+    };
+  }
+}
+
+export interface ImportOrderStatusesResult {
+  success: boolean;
+  updated?: number;
+  skipped?: number;
+  errors?: string[];
+  error?: { code: string; message: string };
+}
+
+/**
+ * Import Excel file and batch-update order shipping statuses.
+ * Reads the 发货状态 and 订单号 columns, updates orders whose status changed to 已发货.
+ * Deduplicates by orderId (one order may have multiple item rows).
+ *
+ * @param fileBuffer - The uploaded Excel file as a Buffer
+ * @param operatorId - The admin user performing the import
+ */
+export async function importOrderStatuses(
+  fileBuffer: Buffer,
+  operatorId: string,
+  dynamoClient: DynamoDBDocumentClient,
+  ordersTable: string,
+): Promise<ImportOrderStatusesResult> {
+  try {
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(fileBuffer);
+
+    const ws = workbook.worksheets[0];
+    if (!ws) {
+      return { success: false, error: { code: 'INVALID_FILE', message: '无法读取工作表' } };
+    }
+
+    // Find column indices from header row
+    const headerRow = ws.getRow(1);
+    let statusCol = -1;
+    let orderIdCol = -1;
+    headerRow.eachCell((cell, colNumber) => {
+      const val = String(cell.value ?? '').trim();
+      if (val === '发货状态') statusCol = colNumber;
+      if (val === '订单号') orderIdCol = colNumber;
+    });
+
+    if (statusCol === -1 || orderIdCol === -1) {
+      return { success: false, error: { code: 'INVALID_FILE', message: '缺少必要列：发货状态、订单号' } };
+    }
+
+    // Collect unique orderIds that need to be updated to shipped
+    const toShipOrderIds = new Set<string>();
+    const rowCount = ws.rowCount;
+
+    for (let i = 2; i <= rowCount; i++) {
+      const row = ws.getRow(i);
+      const status = String(row.getCell(statusCol).value ?? '').trim();
+      const orderId = String(row.getCell(orderIdCol).value ?? '').trim();
+
+      if (!orderId) continue;
+      if (status === '已发货') {
+        toShipOrderIds.add(orderId);
+      }
+    }
+
+    // Batch update orders
+    let updated = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+    const now = new Date().toISOString();
+
+    for (const orderId of toShipOrderIds) {
+      try {
+        // Only update if current status is pending
+        const newEvent: ShippingEvent = {
+          status: 'shipped',
+          timestamp: now,
+          remark: '通过 Excel 批量导入更新',
+          operatorId,
+        };
+
+        await dynamoClient.send(
+          new UpdateCommand({
+            TableName: ordersTable,
+            Key: { orderId },
+            UpdateExpression: 'SET shippingStatus = :shipped, shippingEvents = list_append(shippingEvents, :newEvent), updatedAt = :now',
+            ConditionExpression: 'shippingStatus = :pending',
+            ExpressionAttributeValues: {
+              ':shipped': 'shipped',
+              ':newEvent': [newEvent],
+              ':now': now,
+              ':pending': 'pending',
+            },
+          }),
+        );
+        updated++;
+      } catch (err: any) {
+        if (err.name === 'ConditionalCheckFailedException') {
+          skipped++;
+        } else {
+          errors.push(`${orderId}: ${err.message}`);
+        }
+      }
+    }
+
+    return { success: true, updated, skipped, errors: errors.length > 0 ? errors : undefined };
+  } catch (err: any) {
+    console.error('[ImportOrderStatuses] Failed:', err);
+    return {
+      success: false,
+      error: {
+        code: 'IMPORT_FAILED',
+        message: err.message ?? 'Failed to import order statuses',
+      },
+    };
+  }
 }

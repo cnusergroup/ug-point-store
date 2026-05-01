@@ -169,20 +169,25 @@ describe('updateShipping', () => {
     expect(result.error?.code).toBe(ErrorCodes.INVALID_STATUS_TRANSITION);
   });
 
-  it('should return TRACKING_NUMBER_REQUIRED when shipping without tracking number', async () => {
+  it('should succeed when shipping without tracking number', async () => {
     client.send.mockResolvedValueOnce({ Item: makeFullOrder({ shippingStatus: 'pending' }) });
+    client.send.mockResolvedValueOnce({}); // UpdateCommand
 
     const result = await updateShipping('order-001', 'shipped', undefined, undefined, 'admin-001', client, 'Orders');
-    expect(result.success).toBe(false);
-    expect(result.error?.code).toBe(ErrorCodes.TRACKING_NUMBER_REQUIRED);
+    expect(result.success).toBe(true);
+
+    const updateCmd = client.send.mock.calls[1][0];
+    expect(updateCmd.input.ExpressionAttributeValues[':newStatus']).toBe('shipped');
+    // trackingNumber should NOT be in the update expression
+    expect(updateCmd.input.ExpressionAttributeValues[':tn']).toBeUndefined();
   });
 
-  it('should return TRACKING_NUMBER_REQUIRED when tracking number is empty string', async () => {
+  it('should succeed when shipping with whitespace-only tracking number', async () => {
     client.send.mockResolvedValueOnce({ Item: makeFullOrder({ shippingStatus: 'pending' }) });
+    client.send.mockResolvedValueOnce({}); // UpdateCommand
 
     const result = await updateShipping('order-001', 'shipped', '  ', undefined, 'admin-001', client, 'Orders');
-    expect(result.success).toBe(false);
-    expect(result.error?.code).toBe(ErrorCodes.TRACKING_NUMBER_REQUIRED);
+    expect(result.success).toBe(true);
   });
 
   it('should succeed for valid pending -> shipped transition with tracking number', async () => {
@@ -200,6 +205,19 @@ describe('updateShipping', () => {
     expect(newEvent.status).toBe('shipped');
     expect(newEvent.remark).toBe('已发货');
     expect(newEvent.operatorId).toBe('admin-001');
+  });
+
+  it('should store tracking number on the order when a non-empty tracking number is provided', async () => {
+    client.send.mockResolvedValueOnce({ Item: makeFullOrder({ shippingStatus: 'pending' }) });
+    client.send.mockResolvedValueOnce({}); // UpdateCommand
+
+    const result = await updateShipping('order-001', 'shipped', 'YT9876543210', undefined, 'admin-001', client, 'Orders');
+    expect(result.success).toBe(true);
+
+    const updateCmd = client.send.mock.calls[1][0];
+    // Verify tracking number is stored in the update expression
+    expect(updateCmd.input.ExpressionAttributeValues[':tn']).toBe('YT9876543210');
+    expect(updateCmd.input.UpdateExpression).toContain('trackingNumber = :tn');
   });
 
   // in_transit and delivered statuses are not yet implemented

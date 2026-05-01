@@ -8,6 +8,7 @@ export interface AuthenticatedUser {
   userId: string;
   email?: string;
   roles: string[];
+  isEmployee: boolean;
 }
 
 export interface AuthenticatedEvent extends APIGatewayProxyEvent {
@@ -51,6 +52,7 @@ export function withAuth(handler: LambdaHandler) {
 
     const payload = result.payload!;
     let roles: string[] = payload.roles || [];
+    let isEmployee = false;
 
     // Only read DB if rolesVersion is missing (old token) or roles were updated after token was issued.
     // assignRoles writes rolesVersion (ms timestamp) to DynamoDB; token carries the same value.
@@ -66,7 +68,7 @@ export function withAuth(handler: LambdaHandler) {
             new GetCommand({
               TableName: USERS_TABLE,
               Key: { userId: payload.userId },
-              ProjectionExpression: 'rolesVersion, #r, #s',
+              ProjectionExpression: 'rolesVersion, #r, #s, isEmployee',
               ExpressionAttributeNames: { '#r': 'roles', '#s': 'status' },
             }),
           );
@@ -78,6 +80,7 @@ export function withAuth(handler: LambdaHandler) {
           if (versionRecord.Item.status === 'disabled') {
             return errorResponse(401, 'USER_DISABLED', '账号已被停用');
           }
+          isEmployee = versionRecord.Item?.isEmployee === true;
           const dbRolesVersion: number = versionRecord.Item?.rolesVersion ?? 0;
           if (dbRolesVersion > tokenRolesVersion) {
             // Roles were updated after this token was issued — use DB roles
@@ -94,7 +97,7 @@ export function withAuth(handler: LambdaHandler) {
             new GetCommand({
               TableName: USERS_TABLE,
               Key: { userId: payload.userId },
-              ProjectionExpression: '#r, #s',
+              ProjectionExpression: '#r, #s, isEmployee',
               ExpressionAttributeNames: { '#r': 'roles', '#s': 'status' },
             }),
           );
@@ -106,6 +109,7 @@ export function withAuth(handler: LambdaHandler) {
           if (userRecord.Item.status === 'disabled') {
             return errorResponse(401, 'USER_DISABLED', '账号已被停用');
           }
+          isEmployee = userRecord.Item?.isEmployee === true;
           if (userRecord.Item?.roles) {
             roles = userRecord.Item.roles as string[];
           }
@@ -120,6 +124,7 @@ export function withAuth(handler: LambdaHandler) {
       userId: payload.userId,
       email: payload.email,
       roles,
+      isEmployee,
     };
 
     return handler(authenticatedEvent);

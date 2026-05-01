@@ -61,8 +61,6 @@ export const ErrorCodes = {
   NO_ADDRESS_SELECTED: 'NO_ADDRESS_SELECTED',
   /** 物流状态不可回退 (400) - 需求 7.5 */
   INVALID_STATUS_TRANSITION: 'INVALID_STATUS_TRANSITION',
-  /** 发货时需填写物流单号 (400) - 需求 7.6 */
-  TRACKING_NUMBER_REQUIRED: 'TRACKING_NUMBER_REQUIRED',
   /** 订单不存在 (404) - 需求 5.4 */
   ORDER_NOT_FOUND: 'ORDER_NOT_FOUND',
   /** 购物车项不存在 (404) - 需求 2.4 */
@@ -199,6 +197,8 @@ export const ErrorCodes = {
   ACTIVITY_NOT_FOUND: 'ACTIVITY_NOT_FOUND',
   /** brand 值无效 (400) */
   INVALID_BRAND: 'INVALID_BRAND',
+  /** 员工商城功能暂时关闭 (403) - 需求 3.1, 3.2, 3.3, 3.4, 3.5 */
+  EMPLOYEE_STORE_DISABLED: 'EMPLOYEE_STORE_DISABLED',
 } as const;
 
 /** 错误码类型 */
@@ -235,7 +235,6 @@ export const ErrorHttpStatus: Record<ErrorCode, number> = {
   [ErrorCodes.ADDRESS_NOT_FOUND]: 400,
   [ErrorCodes.NO_ADDRESS_SELECTED]: 400,
   [ErrorCodes.INVALID_STATUS_TRANSITION]: 400,
-  [ErrorCodes.TRACKING_NUMBER_REQUIRED]: 400,
   [ErrorCodes.ORDER_NOT_FOUND]: 404,
   [ErrorCodes.CART_ITEM_NOT_FOUND]: 404,
   [ErrorCodes.IMAGE_LIMIT_EXCEEDED]: 400,
@@ -304,6 +303,7 @@ export const ErrorHttpStatus: Record<ErrorCode, number> = {
   [ErrorCodes.RESERVATION_ALREADY_REVIEWED]: 409,
   [ErrorCodes.ACTIVITY_NOT_FOUND]: 404,
   [ErrorCodes.INVALID_BRAND]: 400,
+  [ErrorCodes.EMPLOYEE_STORE_DISABLED]: 403,
 };
 
 /** 错误码对应的默认错误消息 */
@@ -337,7 +337,6 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.ADDRESS_NOT_FOUND]: '收货地址不存在',
   [ErrorCodes.NO_ADDRESS_SELECTED]: '请选择收货地址',
   [ErrorCodes.INVALID_STATUS_TRANSITION]: '物流状态不可回退',
-  [ErrorCodes.TRACKING_NUMBER_REQUIRED]: '发货时需填写物流单号',
   [ErrorCodes.ORDER_NOT_FOUND]: '订单不存在',
   [ErrorCodes.CART_ITEM_NOT_FOUND]: '购物车项不存在',
   [ErrorCodes.IMAGE_LIMIT_EXCEEDED]: '图片数量已达上限（最多 5 张）',
@@ -406,4 +405,5 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.RESERVATION_ALREADY_REVIEWED]: '该预约已被审批',
   [ErrorCodes.ACTIVITY_NOT_FOUND]: '关联活动不存在',
   [ErrorCodes.INVALID_BRAND]: 'brand 值无效，仅允许 aws、ug、awscloud',
+  [ErrorCodes.EMPLOYEE_STORE_DISABLED]: '员工商城功能暂时关闭',
 };
