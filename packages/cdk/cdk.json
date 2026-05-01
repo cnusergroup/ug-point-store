@@ -3,7 +3,7 @@
   "context": {
     "senderEmail": "store@awscommunity.cn",
     "domainName": "store.awscommunity.cn",
-    "certificateArn": "arn:aws:acm:us-east-1:778409058172:certificate/1e9c7abe-e4b1-4a39-95e1-00deb0cf2c46",
+    "certificateArn": "arn:aws:acm:us-east-1:778409058172:certificate/4392238f-ef48-4576-abe6-9b3a9f295e04",
     "uploadViaCloudfront": "false",
     "edgeSignerLambdaArn": "arn:aws:lambda:us-east-1:778409058172:function:PointsMall-EdgeSignerStack-EdgeSignerFnCB9181AF-dLyygfwL0FI2:4"
   },

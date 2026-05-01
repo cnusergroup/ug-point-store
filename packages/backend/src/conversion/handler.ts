@@ -1,6 +1,7 @@
 import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -15,12 +16,17 @@ export interface ConversionEvent {
   bucket: string;            // S3 bucket name
   contentItemsTable: string; // DynamoDB table name
   oldPreviewFileKey?: string; // Previous preview PDF to delete (on re-conversion)
+  retryCount?: number;       // Number of retries attempted (for auto-retry)
 }
 
 // ─── AWS Clients ───────────────────────────────────────────
 
 const s3Client = new S3Client({});
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const lambdaClient = new LambdaClient({});
+
+const MAX_RETRIES = 2;
+const LIBREOFFICE_TIMEOUT_MS = 300_000; // 5 minutes (up from 90s)
 
 // ─── Helpers ───────────────────────────────────────────────
 
@@ -133,7 +139,7 @@ export const handler = async (event: ConversionEvent): Promise<void> => {
     //    Must cd to /tmp first per shelf's documentation
     console.log(`[Conversion] Converting ${originalFileName} to PDF`);
     const libreOfficeCmd = `cd /tmp && libreoffice --headless --invisible --nodefault --view --nolockcheck --nologo --norestore --convert-to pdf --outdir "${tmpDir}" "${localFilePath}"`;
-    execSync(libreOfficeCmd, { timeout: 90_000, stdio: 'pipe' });
+    execSync(libreOfficeCmd, { timeout: LIBREOFFICE_TIMEOUT_MS, stdio: 'pipe' });
 
     // 4. Find the resulting PDF file
     //    LibreOffice replaces the original extension with .pdf
@@ -178,9 +184,28 @@ export const handler = async (event: ConversionEvent): Promise<void> => {
 
     console.log(`[Conversion] Conversion completed successfully for contentId=${contentId}`);
   } catch (error) {
-    // On failure: set previewStatus to 'failed' and log the error
-    console.error(`[Conversion] Conversion failed for contentId=${contentId}:`, error);
+    // On failure: check if we should retry
+    const retryCount = event.retryCount ?? 0;
+    console.error(`[Conversion] Conversion failed for contentId=${contentId} (attempt ${retryCount + 1}/${MAX_RETRIES + 1}):`, error);
 
+    if (retryCount < MAX_RETRIES) {
+      // Schedule a retry by invoking self asynchronously
+      console.log(`[Conversion] Scheduling retry ${retryCount + 1}/${MAX_RETRIES} for contentId=${contentId}`);
+      try {
+        await lambdaClient.send(new InvokeCommand({
+          FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME ?? 'PointsMall-Conversion',
+          InvocationType: 'Event', // async
+          Payload: JSON.stringify({ ...event, retryCount: retryCount + 1 }),
+        }));
+        console.log(`[Conversion] Retry scheduled successfully`);
+        // Don't mark as failed yet — retry will handle it
+        return;
+      } catch (retryErr) {
+        console.error(`[Conversion] Failed to schedule retry:`, retryErr);
+      }
+    }
+
+    // Max retries exhausted or retry scheduling failed — mark as failed
     try {
       await updatePreviewStatus(contentId, contentItemsTable, 'failed');
     } catch (updateErr) {

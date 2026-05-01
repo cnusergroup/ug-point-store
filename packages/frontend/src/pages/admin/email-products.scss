@@ -389,22 +389,32 @@
   &__html {
     font-family: var(--font-body);
     font-size: var(--text-body-sm);
-    color: var(--text-primary);
+    color: #333333;
     line-height: 1.6;
+    background: #ffffff;
+    padding: var(--space-4);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--card-border);
 
     /* Allow rendered HTML to display properly */
     h2 {
       font-family: var(--font-display);
       margin-bottom: var(--space-2);
+      color: #1a1a1a;
     }
 
     p {
       margin-bottom: var(--space-2);
+      color: #333333;
+    }
+
+    a {
+      color: #7c6df0;
     }
 
     hr {
       border: none;
-      border-top: 1px solid var(--card-border);
+      border-top: 1px solid #e5e5e5;
       margin: var(--space-4) 0;
     }
   }

@@ -289,7 +289,8 @@ export class ApiStack extends cdk.Stack {
         CREDENTIAL_SEQUENCES_TABLE: credentialSequencesTable.tableName,
         USERS_TABLE: usersTable.tableName,
         JWT_SECRET_PARAM: jwtSecretParam.parameterName,
-        BASE_URL: 'https://store.awscommunity.cn',
+        BASE_URL: 'https://creds.awscommunity.cn',
+        CF_DISTRIBUTION_ID: 'E2B6NIC389CI8P',
       },
     } as NodejsFunctionProps);
 
@@ -300,6 +301,12 @@ export class ApiStack extends cdk.Stack {
     // Credential Lambda: read-only access to Users table (for auth verification)
     usersTable.grantReadData(credentialFn);
 
+    // Credential Lambda: CloudFront invalidation permission for cache busting on revocation
+    credentialFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['cloudfront:CreateInvalidation'],
+      resources: [`arn:aws:cloudfront::778409058172:distribution/E2B6NIC389CI8P`],
+    }));
+
     // --- Conversion Lambda (Docker-based, LibreOffice for Office-to-PDF conversion) ---
     const conversionRepo = ecr.Repository.fromRepositoryName(this, 'ConversionRepo',
       'cdk-hnb659fds-container-assets-778409058172-ap-northeast-1',
@@ -307,7 +314,7 @@ export class ApiStack extends cdk.Stack {
     const conversionFn = new DockerImageFunction(this, 'ConversionFunction', {
       functionName: 'PointsMall-Conversion',
       code: DockerImageCode.fromEcr(conversionRepo, {
-        tagOrDigest: 'fe89389d4b9375e0f70e08fe026f1e0c450426d7fa2dcd52a28e1c8bfb9e5fb7',
+        tagOrDigest: 'conversion-v3',
       }),
       timeout: cdk.Duration.seconds(900),
       memorySize: 10240,
@@ -321,6 +328,12 @@ export class ApiStack extends cdk.Stack {
 
     // Conversion Lambda: DynamoDB read/write on ContentItems table (update previewFileKey and previewStatus)
     contentItemsTable.grantReadWriteData(conversionFn);
+
+    // Conversion Lambda: permission to invoke itself for auto-retry on failure
+    conversionFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['lambda:InvokeFunction'],
+      resources: [`arn:aws:lambda:${this.region}:${this.account}:function:PointsMall-Conversion`],
+    }));
 
     // Content Lambda: env var and permission to invoke Conversion Lambda for async PDF conversion
     contentFn.addEnvironment('CONVERSION_FUNCTION_NAME', conversionFn.functionName);
@@ -530,6 +543,7 @@ export class ApiStack extends cdk.Stack {
     const adminCredentials = admin.addResource('credentials');
     adminCredentials.addMethod('GET', credentialInt);
     adminCredentials.addResource('batch').addMethod('POST', credentialInt);
+    adminCredentials.addResource('export-feishu').addMethod('POST', credentialInt);
     const adminCredentialById = adminCredentials.addResource('{credentialId}');
     adminCredentialById.addMethod('GET', credentialInt);
     adminCredentialById.addResource('revoke').addMethod('PATCH', credentialInt);

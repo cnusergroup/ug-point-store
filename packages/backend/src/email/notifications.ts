@@ -309,6 +309,7 @@ export async function sendNewOrderEmail(
 /**
  * Send an "order shipped" email to the order's user.
  * Checks toggle, loads user locale, sends.
+ * When trackingNumber is missing or empty, substitutes a contact email message.
  */
 export async function sendOrderShippedEmail(
   ctx: NotificationContext,
@@ -333,10 +334,14 @@ export async function sendOrderShippedEmail(
       return;
     }
 
+    const CONTACT_EMAIL = 'yuanliang@busite.cn';
+
     const variables: Record<string, string> = {
       nickname: user.nickname,
       orderId,
-      trackingNumber: trackingNumber ?? '',
+      trackingNumber: trackingNumber && trackingNumber.trim()
+        ? trackingNumber
+        : `如需查询发货状态，请邮件联系 ${CONTACT_EMAIL}`,
     };
 
     const subject = replaceVariables(template.subject, variables);

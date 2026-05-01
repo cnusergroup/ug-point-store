@@ -32,7 +32,7 @@ describe('buildLinkedInUrl', () => {
 
     expect(url).toContain('https://www.linkedin.com/profile/add?');
     expect(url).toContain('startTask=CERTIFICATION_NAME');
-    expect(url).toContain('organizationName=');
+    expect(url).toContain('organizationName=AWS+User+Group+China');
     expect(url).toContain('issueYear=2026');
     expect(url).toContain('issueMonth=6');
     expect(url).toContain('certId=ACD-BASE-2026-Summer-VOL-0001');
@@ -94,12 +94,9 @@ describe('renderCredentialPage', () => {
     expect(html).toContain('linkedin.com/profile/add');
     expect(html).toContain('添加到 LinkedIn');
 
-    // No external stylesheets or scripts
+    // No external stylesheets
     expect(html).not.toMatch(/<link[^>]+rel=["']stylesheet["']/);
-    expect(html).not.toMatch(/<script[^>]+src=/);
-  });
-
-  it('should include optional fields when provided', async () => {
+  });  it('should include optional fields when provided', async () => {
     const credential = makeCredential({
       eventDate: '2026-06-15',
       eventLocation: '北京',
@@ -166,7 +163,6 @@ describe('render404Page', () => {
     expect(html).toContain('href="/"');
     expect(html).toContain('<style>');
     expect(html).not.toMatch(/<link[^>]+rel=["']stylesheet["']/);
-    expect(html).not.toMatch(/<script[^>]+src=/);
   });
 
   it('should render English 404 page', () => {

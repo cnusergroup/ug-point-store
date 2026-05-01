@@ -401,8 +401,8 @@ describe('Integration: sendOrderShippedEmail trigger after shipping update', () 
 
     expect(mockSes.send).toHaveBeenCalledOnce();
     const cmd = mockSes.send.mock.calls[0][0];
-    // trackingNumber replaced with empty string
-    expect(cmd.input.Message.Body.Html.Data).toBe('<p>物流单号：</p>');
+    // trackingNumber replaced with contact email message when missing
+    expect(cmd.input.Message.Body.Html.Data).toBe('<p>物流单号：如需查询发货状态，请邮件联系 yuanliang@busite.cn</p>');
   });
 });
 

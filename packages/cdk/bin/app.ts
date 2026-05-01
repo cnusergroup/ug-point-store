@@ -62,7 +62,7 @@ const frontendStack = new FrontendStack(app, 'PointsMall-FrontendStack', {
   edgeSignerLambdaArn: edgeSignerLambdaArn || undefined,
   domainName: app.node.tryGetContext('domainName') ?? 'store.awscommunity.cn',
   certificateArn: app.node.tryGetContext('certificateArn')
-    ?? 'arn:aws:acm:us-east-1:778409058172:certificate/1e9c7abe-e4b1-4a39-95e1-00deb0cf2c46',
+    ?? 'arn:aws:acm:us-east-1:778409058172:certificate/4392238f-ef48-4576-abe6-9b3a9f295e04',
 });
 frontendStack.addDependency(apiStack);
 

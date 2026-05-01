@@ -398,7 +398,7 @@ describe('sendOrderShippedEmail', () => {
     expect(cmd.input.Message.Body.Html.Data).toContain('TRACK-ABC');
   });
 
-  it('should replace trackingNumber with empty string when not provided', async () => {
+  it('should substitute contact email message when trackingNumber is not provided', async () => {
     mockedGetFeatureToggles.mockResolvedValue(enableToggle('emailOrderShippedEnabled'));
 
     const mockSes = { send: vi.fn().mockResolvedValue({}) };
@@ -422,8 +422,67 @@ describe('sendOrderShippedEmail', () => {
 
     expect(mockSes.send).toHaveBeenCalledOnce();
     const cmd = mockSes.send.mock.calls[0][0];
-    // trackingNumber should be empty string
-    expect(cmd.input.Message.Body.Html.Data).toBe('<p>物流单号: </p>');
+    expect(cmd.input.Message.Body.Html.Data).toBe(
+      '<p>物流单号: 如需查询发货状态，请邮件联系 yuanliang@busite.cn</p>',
+    );
+  });
+
+  it('should substitute contact email message when trackingNumber is empty string', async () => {
+    mockedGetFeatureToggles.mockResolvedValue(enableToggle('emailOrderShippedEnabled'));
+
+    const mockSes = { send: vi.fn().mockResolvedValue({}) };
+    const mockDynamo = createSmartDynamoClient({
+      users: {
+        'user-1': { email: 'dave@test.com', nickname: 'Dave', locale: 'zh' },
+      },
+      templates: {
+        'orderShipped:zh': {
+          subject: '包裹已发出 {{orderId}}',
+          body: '<p>物流单号: {{trackingNumber}}</p>',
+        },
+      },
+    });
+
+    const ctx = createMockContext({ sesClient: mockSes, dynamoClient: mockDynamo });
+
+    const p = sendOrderShippedEmail(ctx, 'user-1', 'ORD-200', '');
+    await vi.runAllTimersAsync();
+    await p;
+
+    expect(mockSes.send).toHaveBeenCalledOnce();
+    const cmd = mockSes.send.mock.calls[0][0];
+    expect(cmd.input.Message.Body.Html.Data).toBe(
+      '<p>物流单号: 如需查询发货状态，请邮件联系 yuanliang@busite.cn</p>',
+    );
+  });
+
+  it('should substitute contact email message when trackingNumber is whitespace only', async () => {
+    mockedGetFeatureToggles.mockResolvedValue(enableToggle('emailOrderShippedEnabled'));
+
+    const mockSes = { send: vi.fn().mockResolvedValue({}) };
+    const mockDynamo = createSmartDynamoClient({
+      users: {
+        'user-1': { email: 'dave@test.com', nickname: 'Dave', locale: 'zh' },
+      },
+      templates: {
+        'orderShipped:zh': {
+          subject: '包裹已发出 {{orderId}}',
+          body: '<p>物流单号: {{trackingNumber}}</p>',
+        },
+      },
+    });
+
+    const ctx = createMockContext({ sesClient: mockSes, dynamoClient: mockDynamo });
+
+    const p = sendOrderShippedEmail(ctx, 'user-1', 'ORD-200', '   ');
+    await vi.runAllTimersAsync();
+    await p;
+
+    expect(mockSes.send).toHaveBeenCalledOnce();
+    const cmd = mockSes.send.mock.calls[0][0];
+    expect(cmd.input.Message.Body.Html.Data).toBe(
+      '<p>物流单号: 如需查询发货状态，请邮件联系 yuanliang@busite.cn</p>',
+    );
   });
 
   it('should skip sending when toggle is disabled', async () => {

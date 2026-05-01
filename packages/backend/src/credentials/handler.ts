@@ -9,10 +9,12 @@ import {
   QueryCommand,
   ScanCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { CloudFrontClient, CreateInvalidationCommand } from '@aws-sdk/client-cloudfront';
 import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware';
 import { renderCredentialPage, render404Page } from './render';
 import { batchCreateCredentials } from './batch';
 import { revokeCredential } from './revoke';
+import { exportCredentialsToFeishu, type FeishuExportField } from './feishu-export';
 import type { Credential } from './types';
 
 // ============================================================
@@ -23,7 +25,11 @@ const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 const CREDENTIALS_TABLE = process.env.CREDENTIALS_TABLE ?? '';
 const CREDENTIAL_SEQUENCES_TABLE = process.env.CREDENTIAL_SEQUENCES_TABLE ?? '';
-const BASE_URL = process.env.BASE_URL ?? 'https://store.awscommunity.cn';
+const USERS_TABLE = process.env.USERS_TABLE ?? '';
+const BASE_URL = process.env.BASE_URL ?? 'https://creds.awscommunity.cn';
+const CF_DISTRIBUTION_ID = process.env.CF_DISTRIBUTION_ID ?? '';
+
+const cfClient = CF_DISTRIBUTION_ID ? new CloudFrontClient({}) : null;
 
 // ============================================================
 // Constants
@@ -40,6 +46,7 @@ const CORS_HEADERS = {
 const PUBLIC_CREDENTIAL_REGEX = /^\/c\/([^/]+)$/;
 const CREDENTIAL_LIST_PATH = '/api/admin/credentials';
 const CREDENTIAL_BATCH_PATH = '/api/admin/credentials/batch';
+const CREDENTIAL_EXPORT_FEISHU_PATH = '/api/admin/credentials/export-feishu';
 const CREDENTIAL_DETAIL_REGEX = /^\/api\/admin\/credentials\/([^/]+)$/;
 const CREDENTIAL_REVOKE_REGEX = /^\/api\/admin\/credentials\/([^/]+)\/revoke$/;
 
@@ -83,6 +90,16 @@ function parseBody(event: APIGatewayProxyEvent): Record<string, unknown> | null 
 // ============================================================
 
 async function handlePublicCredentialPage(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
+  // Redirect store.awscommunity.cn/c/* to creds.awscommunity.cn/c/*
+  const host = event.headers?.['X-Forwarded-Host'] || event.headers?.['x-forwarded-host'] || event.headers?.Host || event.headers?.host || '';
+  if (host.includes('store.awscommunity.cn') && event.path.startsWith('/c/')) {
+    return {
+      statusCode: 301,
+      headers: { Location: `https://creds.awscommunity.cn${event.path}` },
+      body: '',
+    };
+  }
+
   const match = event.path.match(PUBLIC_CREDENTIAL_REGEX);
   if (!match) {
     return htmlResponse(404, render404Page('zh'));
@@ -248,6 +265,107 @@ async function handleBatchCreate(event: AuthenticatedEvent): Promise<APIGatewayP
 }
 
 // ============================================================
+// Admin route: POST /api/admin/credentials/export-feishu — export to Feishu Bitable
+// ============================================================
+
+const SYNC_CONFIG_KEY = 'activity-sync-config';
+
+async function handleExportFeishu(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body) {
+    return errorResponse('INVALID_REQUEST', '请求体不能为空');
+  }
+
+  const { fields, statusFilter, search: searchQuery, title } = body as {
+    fields?: FeishuExportField[];
+    statusFilter?: string;
+    search?: string;
+    title?: string;
+  };
+
+  if (!fields || !Array.isArray(fields) || fields.length === 0) {
+    return errorResponse('MISSING_REQUIRED_FIELD', '请至少选择一个导出字段');
+  }
+
+  try {
+    // 1. Get Feishu credentials from sync config
+    const configResult = await dynamoClient.send(
+      new GetCommand({
+        TableName: USERS_TABLE,
+        Key: { userId: SYNC_CONFIG_KEY },
+      }),
+    );
+
+    const config = configResult.Item;
+    if (!config?.feishuAppId || !config?.feishuAppSecret) {
+      return errorResponse('MISSING_CONFIG', '飞书 API 凭证未配置（请在同步设置中配置 App ID 和 App Secret）', 400);
+    }
+
+    // 2. Fetch credentials to export (same logic as list, but without pagination)
+    let items: Record<string, unknown>[];
+
+    if (statusFilter && (statusFilter === 'active' || statusFilter === 'revoked')) {
+      const queryResult = await dynamoClient.send(
+        new QueryCommand({
+          TableName: CREDENTIALS_TABLE,
+          IndexName: 'status-createdAt-index',
+          KeyConditionExpression: '#status = :status',
+          ExpressionAttributeNames: { '#status': 'status' },
+          ExpressionAttributeValues: { ':status': statusFilter },
+          ScanIndexForward: false,
+        }),
+      );
+      items = (queryResult.Items ?? []) as Record<string, unknown>[];
+    } else {
+      const scanResult = await dynamoClient.send(
+        new ScanCommand({ TableName: CREDENTIALS_TABLE }),
+      );
+      items = (scanResult.Items ?? []) as Record<string, unknown>[];
+      items.sort((a, b) => {
+        const aDate = (a.createdAt as string) ?? '';
+        const bDate = (b.createdAt as string) ?? '';
+        return bDate.localeCompare(aDate);
+      });
+    }
+
+    // Apply search filter
+    if (searchQuery) {
+      const lowerSearch = searchQuery.toLowerCase();
+      items = items.filter((item) => {
+        const id = ((item.credentialId as string) ?? '').toLowerCase();
+        const name = ((item.recipientName as string) ?? '').toLowerCase();
+        const eventName = ((item.eventName as string) ?? '').toLowerCase();
+        return id.includes(lowerSearch) || name.includes(lowerSearch) || eventName.includes(lowerSearch);
+      });
+    }
+
+    const credentials = items as unknown as Credential[];
+
+    // 3. Export to Feishu
+    const result = await exportCredentialsToFeishu({
+      appId: config.feishuAppId as string,
+      appSecret: config.feishuAppSecret as string,
+      credentials,
+      fields,
+      title,
+      baseUrl: BASE_URL,
+    });
+
+    if (!result.success) {
+      return errorResponse(result.error?.code ?? 'EXPORT_FAILED', result.error?.message ?? '导出失败', 500);
+    }
+
+    return jsonResponse(200, {
+      tableUrl: result.tableUrl,
+      recordCount: result.recordCount,
+    });
+  } catch (err) {
+    console.error('Error exporting to Feishu:', err);
+    return errorResponse('INTERNAL_ERROR', '导出到飞书失败', 500);
+  }
+}
+
+// ============================================================
 // Admin route: PATCH /api/admin/credentials/{credentialId}/revoke
 // ============================================================
 
@@ -282,6 +400,21 @@ async function handleRevoke(credentialId: string, event: AuthenticatedEvent): Pr
       return errorResponse(result.code, result.message, statusCode);
     }
 
+    // Invalidate CloudFront cache for the revoked credential page
+    if (cfClient && CF_DISTRIBUTION_ID) {
+      try {
+        await cfClient.send(new CreateInvalidationCommand({
+          DistributionId: CF_DISTRIBUTION_ID,
+          InvalidationBatch: {
+            CallerReference: `revoke-${credentialId}-${Date.now()}`,
+            Paths: { Quantity: 1, Items: [`/c/${credentialId}`] },
+          },
+        }));
+      } catch (cfErr) {
+        console.warn('CloudFront invalidation failed (non-blocking):', cfErr);
+      }
+    }
+
     return jsonResponse(200, result.credential);
   } catch (err) {
     console.error('Error revoking credential:', err);
@@ -311,6 +444,11 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
   // POST /api/admin/credentials/batch — batch create
   if (method === 'POST' && path === CREDENTIAL_BATCH_PATH) {
     return handleBatchCreate(event);
+  }
+
+  // POST /api/admin/credentials/export-feishu — export to Feishu
+  if (method === 'POST' && path === CREDENTIAL_EXPORT_FEISHU_PATH) {
+    return handleExportFeishu(event);
   }
 
   // PATCH /api/admin/credentials/{id}/revoke — revoke (must check before detail regex)

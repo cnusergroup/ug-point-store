@@ -61,8 +61,6 @@ export const ErrorCodes = {
   NO_ADDRESS_SELECTED: 'NO_ADDRESS_SELECTED',
   /** 物流状态不可回退 (400) - 需求 7.5 */
   INVALID_STATUS_TRANSITION: 'INVALID_STATUS_TRANSITION',
-  /** 发货时需填写物流单号 (400) - 需求 7.6 */
-  TRACKING_NUMBER_REQUIRED: 'TRACKING_NUMBER_REQUIRED',
   /** 订单不存在 (404) - 需求 5.4 */
   ORDER_NOT_FOUND: 'ORDER_NOT_FOUND',
   /** 购物车项不存在 (404) - 需求 2.4 */
@@ -237,7 +235,6 @@ export const ErrorHttpStatus: Record<ErrorCode, number> = {
   [ErrorCodes.ADDRESS_NOT_FOUND]: 400,
   [ErrorCodes.NO_ADDRESS_SELECTED]: 400,
   [ErrorCodes.INVALID_STATUS_TRANSITION]: 400,
-  [ErrorCodes.TRACKING_NUMBER_REQUIRED]: 400,
   [ErrorCodes.ORDER_NOT_FOUND]: 404,
   [ErrorCodes.CART_ITEM_NOT_FOUND]: 404,
   [ErrorCodes.IMAGE_LIMIT_EXCEEDED]: 400,
@@ -340,7 +337,6 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.ADDRESS_NOT_FOUND]: '收货地址不存在',
   [ErrorCodes.NO_ADDRESS_SELECTED]: '请选择收货地址',
   [ErrorCodes.INVALID_STATUS_TRANSITION]: '物流状态不可回退',
-  [ErrorCodes.TRACKING_NUMBER_REQUIRED]: '发货时需填写物流单号',
   [ErrorCodes.ORDER_NOT_FOUND]: '订单不存在',
   [ErrorCodes.CART_ITEM_NOT_FOUND]: '购物车项不存在',
   [ErrorCodes.IMAGE_LIMIT_EXCEEDED]: '图片数量已达上限（最多 5 张）',

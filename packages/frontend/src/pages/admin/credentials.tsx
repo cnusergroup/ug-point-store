@@ -95,6 +95,14 @@ export default function AdminCredentialsPage() {
   /* ── Detail state ── */
   const [selectedCredential, setSelectedCredential] = useState<CredentialItem | null>(null);
 
+  /* ── Feishu export state ── */
+  const [showExport, setShowExport] = useState(false);
+  const [exportFields, setExportFields] = useState<string[]>(['recipientName', 'role', 'verifyUrl']);
+  const [exportTitle, setExportTitle] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [exportResult, setExportResult] = useState<{ tableUrl: string; recordCount: number } | null>(null);
+  const [exportError, setExportError] = useState('');
+
   /* ── Fetch credentials ── */
   const fetchCredentials = useCallback(async (p: number, s: string, status: StatusFilter) => {
     setLoading(true);
@@ -142,6 +150,21 @@ export default function AdminCredentialsPage() {
   /* ── View public page ── */
   const openPublicPage = (credentialId: string) => {
     window.open(`/c/${credentialId}`, '_blank');
+  };
+
+  /* ── Download CSV template ── */
+  const downloadCsvTemplate = () => {
+    const header = 'recipientName,role,eventName,locale,eventDate,eventLocation,contribution,issuingOrganization';
+    const exampleZh = '张三,Volunteer,亚马逊云科技 Community Day 2026 Summer,zh,2026-06-28,杭州,活动签到引导,AWS User Group China';
+    const exampleEn = 'John Doe,Speaker,AWS Community Day 2026 Summer,en,2026-06-28,Hangzhou,Keynote presentation,AWS User Group China';
+    const csvText = `${header}\n${exampleZh}\n${exampleEn}\n`;
+    const blob = new Blob(['\uFEFF' + csvText], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'credential-template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   /* ── CSV file handling ── */
@@ -296,6 +319,65 @@ export default function AdminCredentialsPage() {
 
   const currentStatusIdx = STATUS_MAP.indexOf(statusFilter);
 
+  /* ── Feishu export ── */
+  const EXPORT_FIELD_OPTIONS: { key: string; label: string }[] = [
+    { key: 'recipientName', label: '姓名' },
+    { key: 'role', label: '身份' },
+    { key: 'verifyUrl', label: '验证链接' },
+    { key: 'credentialId', label: '凭证 ID' },
+    { key: 'eventName', label: '活动名称' },
+    { key: 'issueDate', label: '签发日期' },
+    { key: 'eventDate', label: '活动日期' },
+    { key: 'eventLocation', label: '活动地点' },
+    { key: 'status', label: '状态' },
+  ];
+
+  const toggleExportField = (key: string) => {
+    setExportFields((prev) =>
+      prev.includes(key) ? prev.filter((f) => f !== key) : [...prev, key],
+    );
+  };
+
+  const openExportModal = () => {
+    setExportFields(['recipientName', 'role', 'verifyUrl']);
+    setExportTitle('');
+    setExportResult(null);
+    setExportError('');
+    setShowExport(true);
+  };
+
+  const closeExportModal = () => {
+    setShowExport(false);
+    setExportError('');
+    setExportResult(null);
+  };
+
+  const handleExportFeishu = async () => {
+    if (exportFields.length === 0) {
+      setExportError('请至少选择一个导出字段');
+      return;
+    }
+    setExporting(true);
+    setExportError('');
+    try {
+      const res = await request<{ tableUrl: string; recordCount: number }>({
+        url: '/api/admin/credentials/export-feishu',
+        method: 'POST',
+        data: {
+          fields: exportFields,
+          statusFilter: statusFilter !== 'all' ? statusFilter : undefined,
+          search: search.trim() || undefined,
+          title: exportTitle.trim() || undefined,
+        },
+      });
+      setExportResult(res);
+    } catch (err) {
+      setExportError(err instanceof RequestError ? err.message : '导出失败，请重试');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <View className='admin-credentials'>
       {/* Toolbar */}
@@ -306,6 +388,9 @@ export default function AdminCredentialsPage() {
         <Text className='admin-credentials__title'>凭证管理</Text>
         <View className='admin-credentials__import-btn' onClick={openImportModal}>
           <Text>批量导入</Text>
+        </View>
+        <View className='admin-credentials__export-btn' onClick={openExportModal}>
+          <Text>导出飞书</Text>
         </View>
       </View>
 
@@ -486,11 +571,14 @@ export default function AdminCredentialsPage() {
               </View>
               {/* CSV Upload */}
               <View className='form-field'>
-                <Text className='form-field__label'>CSV 文件</Text>
+                <View className='form-field__label-row'>
+                  <Text className='form-field__label'>CSV 文件</Text>
+                  <Text className='form-field__download-link' onClick={downloadCsvTemplate}>下载模板</Text>
+                </View>
                 {/* Use native div for drag-and-drop support in H5 */}
-                <div
+                <label
+                  htmlFor='csvFileInput'
                   className={`csv-upload ${isDragging ? 'csv-upload--dragging' : ''} ${csvFileName ? 'csv-upload--has-file' : ''}`}
-                  onClick={() => fileInputRef.current?.click()}
                   onDragOver={handleDragOver as any}
                   onDragLeave={handleDragLeave as any}
                   onDrop={handleDrop as any}
@@ -507,15 +595,23 @@ export default function AdminCredentialsPage() {
                       <Text className='csv-upload__hint'>支持 UTF-8 编码的 CSV 文件</Text>
                     </View>
                   )}
-                </div>
+                </label>
                 {/* Hidden file input for H5 */}
                 <input
                   ref={fileInputRef}
+                  id='csvFileInput'
                   type='file'
                   accept='.csv,text/csv'
                   style={{ display: 'none' }}
                   onChange={(e) => handleFileInputChange(e as unknown as Event)}
                 />
+                <View className='csv-hints'>
+                  <Text className='csv-hints__title'>CSV 列说明</Text>
+                  <Text className='csv-hints__item'>• role: Volunteer / Speaker / Workshop / Organizer</Text>
+                  <Text className='csv-hints__item'>• locale: zh（中文）/ en（English），默认 zh</Text>
+                  <Text className='csv-hints__item'>• eventDate: 可选，格式 YYYY-MM-DD</Text>
+                  <Text className='csv-hints__item'>• issuingOrganization: 可选，默认 AWS User Group China</Text>
+                </View>
               </View>
             </View>
 
@@ -616,6 +712,98 @@ export default function AdminCredentialsPage() {
             >
               <Text>{revoking ? '撤销中...' : '确认撤销'}</Text>
             </View>
+          </View>
+        </View>
+      )}
+
+      {/* Feishu Export Modal */}
+      {showExport && (
+        <View className='form-overlay' onClick={closeExportModal}>
+          <View className='form-modal' onClick={(e) => e.stopPropagation()}>
+            <View className='form-modal__header'>
+              <Text className='form-modal__title'>导出到飞书</Text>
+              <View className='form-modal__close' onClick={closeExportModal}><Text>✕</Text></View>
+            </View>
+            {exportError && (
+              <View className='form-modal__error'><Text>{exportError}</Text></View>
+            )}
+            <View className='form-modal__body'>
+              {/* Export title */}
+              <View className='form-field'>
+                <Text className='form-field__label'>表格标题（可选）</Text>
+                <Input
+                  className='form-field__input'
+                  placeholder={`凭证导出 ${new Date().toISOString().split('T')[0]}`}
+                  value={exportTitle}
+                  onInput={(e) => setExportTitle(e.detail.value)}
+                />
+              </View>
+              {/* Field selection */}
+              <View className='form-field'>
+                <Text className='form-field__label'>选择导出字段</Text>
+                <View className='export-fields'>
+                  {EXPORT_FIELD_OPTIONS.map((opt) => (
+                    <View
+                      key={opt.key}
+                      className={`export-fields__item ${exportFields.includes(opt.key) ? 'export-fields__item--selected' : ''}`}
+                      onClick={() => toggleExportField(opt.key)}
+                    >
+                      <View className={`export-fields__check ${exportFields.includes(opt.key) ? 'export-fields__check--on' : ''}`}>
+                        <Text>{exportFields.includes(opt.key) ? '✓' : ''}</Text>
+                      </View>
+                      <Text className='export-fields__label'>{opt.label}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+              {/* Scope hint */}
+              <View className='export-scope'>
+                <Text className='export-scope__text'>
+                  导出范围：{statusFilter === 'all' ? '全部' : statusFilter === 'active' ? '有效' : '已撤销'}
+                  {search.trim() ? ` · 搜索「${search.trim()}」` : ''}
+                  {` · 共 ${total} 条`}
+                </Text>
+              </View>
+            </View>
+
+            {/* Export result */}
+            {exportResult && (
+              <View className='export-result'>
+                <Text className='export-result__success'>导出成功！共 {exportResult.recordCount} 条记录</Text>
+                <View className='export-result__url-box'>
+                  <Text className='export-result__url-label'>飞书表格链接</Text>
+                  <Text
+                    className='export-result__url'
+                    onClick={() => window.open(exportResult.tableUrl, '_blank')}
+                  >
+                    {exportResult.tableUrl}
+                  </Text>
+                </View>
+                <View
+                  className='export-result__copy-btn'
+                  onClick={() => {
+                    navigator.clipboard?.writeText(exportResult.tableUrl);
+                    Taro.showToast({ title: '链接已复制', icon: 'none' });
+                  }}
+                >
+                  <Text>复制链接</Text>
+                </View>
+              </View>
+            )}
+
+            {/* Submit / Done */}
+            {!exportResult ? (
+              <View
+                className={`form-modal__submit ${exporting ? 'form-modal__submit--loading' : ''}`}
+                onClick={handleExportFeishu}
+              >
+                <Text>{exporting ? '导出中...' : '开始导出'}</Text>
+              </View>
+            ) : (
+              <View className='form-modal__submit' onClick={closeExportModal}>
+                <Text>完成</Text>
+              </View>
+            )}
           </View>
         </View>
       )}

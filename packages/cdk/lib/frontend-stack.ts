@@ -139,13 +139,37 @@ export class FrontendStack extends cdk.Stack {
       comment: 'Sets cf_country cookie from CloudFront-Viewer-Country header',
     });
 
+    // CloudFront Function: block non-credential paths on creds.awscommunity.cn
+    const credsDomainGuardFn = new cloudfront.Function(this, 'CredsDomainGuardFunction', {
+      code: cloudfront.FunctionCode.fromInline(`
+function handler(event) {
+  var request = event.request;
+  var host = request.headers.host ? request.headers.host.value : '';
+  var uri = request.uri;
+  if (host === 'creds.awscommunity.cn') {
+    if (uri.match(/^\\/c\\/.+/)) return request;
+    if (uri.startsWith('/products/')) return request;
+    if (uri.startsWith('/api/')) return request;
+    return {
+      statusCode: 302,
+      statusDescription: 'Found',
+      headers: { location: { value: 'https://store.awscommunity.cn' + uri } }
+    };
+  }
+  return request;
+}
+      `.trim()),
+      runtime: cloudfront.FunctionRuntime.JS_2_0,
+      comment: 'Redirects non-credential paths on creds.awscommunity.cn to store domain (strict /c/{id} check)',
+    });
+
     const domainName = props.domainName;
     const certificateArn = props.certificateArn;
 
     this.distribution = new cloudfront.Distribution(this, 'Distribution', {
       comment: 'Points Mall CDN',
       defaultRootObject: 'index.html',
-      domainNames: [domainName],
+      domainNames: [domainName, 'creds.awscommunity.cn'],
       certificate: acm.Certificate.fromCertificateArn(this, 'CustomCert', certificateArn),
       defaultBehavior: {
         origin: staticOrigin,
@@ -154,6 +178,9 @@ export class FrontendStack extends cdk.Stack {
         functionAssociations: [{
           function: countryCookieFn,
           eventType: cloudfront.FunctionEventType.VIEWER_RESPONSE,
+        }, {
+          function: credsDomainGuardFn,
+          eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
         }],
       },
       additionalBehaviors: {
@@ -174,6 +201,37 @@ export class FrontendStack extends cdk.Stack {
           allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
           cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
           originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+          functionAssociations: [{
+            function: new cloudfront.Function(this, 'StoreToCredsRedirectFn', {
+              code: cloudfront.FunctionCode.fromInline(`
+function handler(event) {
+  var request = event.request;
+  var host = request.headers.host ? request.headers.host.value : '';
+  var uri = request.uri;
+  if (host === 'store.awscommunity.cn') {
+    return {
+      statusCode: 301,
+      statusDescription: 'Moved Permanently',
+      headers: { location: { value: 'https://creds.awscommunity.cn' + uri } }
+    };
+  }
+  if (host === 'creds.awscommunity.cn') {
+    if (!uri.match(/^\\/c\\/.+/)) {
+      return {
+        statusCode: 302,
+        statusDescription: 'Found',
+        headers: { location: { value: 'https://store.awscommunity.cn' } }
+      };
+    }
+  }
+  return request;
+}
+              `.trim()),
+              runtime: cloudfront.FunctionRuntime.JS_2_0,
+              comment: 'Redirects store/c/* to creds/c/* and blocks invalid /c/ paths on creds domain',
+            }),
+            eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+          }],
         },
       },
       errorResponses: [

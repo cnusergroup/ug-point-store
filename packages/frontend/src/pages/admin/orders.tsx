@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, Input } from '@tarojs/components';
+import { View, Text } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useAppStore } from '../../store';
 import { request, RequestError } from '../../utils/request';
@@ -10,7 +10,6 @@ import {
   ShippingStatus,
   SHIPPING_STATUS_ORDER,
   validateStatusTransition,
-  maskPhone,
 } from '@points-mall/shared';
 import type { OrderResponse, OrderListItem, OrderStats, ShippingEvent } from '@points-mall/shared';
 import './orders.scss';
@@ -58,6 +57,9 @@ export default function AdminOrdersPage() {
   // Cancel order dialog
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelSubmitting, setCancelSubmitting] = useState(false);
+
+  // Export state
+  const [exporting, setExporting] = useState(false);
 
   const PAGE_SIZE = 10;
 
@@ -179,11 +181,6 @@ export default function AdminOrdersPage() {
       return;
     }
 
-    if (shipTargetStatus === 'shipped' && !shipTrackingNumber.trim()) {
-      setShipError(t('admin.orders.trackingNumberRequired'));
-      return;
-    }
-
     setShipSubmitting(true);
     setShipError('');
     try {
@@ -249,6 +246,75 @@ export default function AdminOrdersPage() {
     }
   };
 
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const token = Taro.getStorageSync('access_token');
+      const baseUrl = process.env.TARO_APP_API_BASE_URL || '';
+      const res = await fetch(`${baseUrl}/api/admin/orders/export`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        },
+      });
+      if (!res.ok) throw new Error('Export failed');
+      const blob = await res.blob();
+      const today = new Date().toISOString().slice(0, 10);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pending-orders-${today}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      Taro.showToast({ title: t('admin.orders.exportFailed'), icon: 'none' });
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const [importing, setImporting] = useState(false);
+
+  const handleImport = async () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.xlsx,.xls';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      setImporting(true);
+      try {
+        const token = Taro.getStorageSync('access_token');
+        const baseUrl = process.env.TARO_APP_API_BASE_URL || '';
+        const arrayBuffer = await file.arrayBuffer();
+        const res = await fetch(`${baseUrl}/api/admin/orders/import`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          },
+          body: arrayBuffer,
+        });
+        if (!res.ok) throw new Error('Import failed');
+        const data = await res.json();
+        Taro.showToast({
+          title: t('admin.orders.importSuccess', { updated: String(data.updated ?? 0), skipped: String(data.skipped ?? 0) }),
+          icon: 'none',
+          duration: 3000,
+        });
+        // Refresh stats and list
+        fetchStats();
+        fetchOrders(activeTab, 1);
+        setPage(1);
+      } catch {
+        Taro.showToast({ title: t('admin.orders.importFailed'), icon: 'none' });
+      } finally {
+        setImporting(false);
+      }
+    };
+    input.click();
+  };
+
   const formatTime = (iso: string) => {
     const d = new Date(iso);
     const pad = (n: number) => String(n).padStart(2, '0');
@@ -290,6 +356,22 @@ export default function AdminOrdersPage() {
           </View>
         </View>
       )}
+
+      {/* Export & Import Buttons */}
+      <View className='order-stats__export-wrap'>
+        <View
+          className={`btn-primary order-stats__export ${exporting ? 'order-stats__export--loading' : ''}`}
+          onClick={() => !exporting && handleExport()}
+        >
+          <Text>{exporting ? t('common.loading') : t('admin.orders.exportPending')}</Text>
+        </View>
+        <View
+          className={`btn-primary order-stats__export ${importing ? 'order-stats__export--loading' : ''}`}
+          onClick={() => !importing && handleImport()}
+        >
+          <Text>{importing ? t('common.loading') : t('admin.orders.importStatus')}</Text>
+        </View>
+      </View>
 
       {/* Status Filter Tabs */}
       <View className='order-tabs'>
@@ -361,21 +443,13 @@ export default function AdminOrdersPage() {
                         <Text className='order-detail__section-title'>{t('admin.orders.shippingInfoTitle')}</Text>
                         <View className='order-detail__address'>
                           <Text className='order-detail__addr-line'>
-                            {orderDetail.shippingAddress.recipientName}　{maskPhone(orderDetail.shippingAddress.phone)}
+                            {orderDetail.shippingAddress.recipientName}　{orderDetail.shippingAddress.phone}
                           </Text>
                           <Text className='order-detail__addr-detail'>
                             {orderDetail.shippingAddress.detailAddress}
                           </Text>
                         </View>
                       </View>
-
-                      {/* Tracking Number */}
-                      {orderDetail.trackingNumber && (
-                        <View className='order-detail__section'>
-                          <Text className='order-detail__section-title'>{t('admin.orders.trackingNumberTitle')}</Text>
-                          <Text className='order-detail__tracking'>{orderDetail.trackingNumber}</Text>
-                        </View>
-                      )}
 
                       {/* Shipping Timeline */}
                       <View className='order-detail__section'>
@@ -440,17 +514,7 @@ export default function AdminOrdersPage() {
                               })}
                             </View>
                           </View>
-                          {shipTargetStatus === 'shipped' && (
-                            <View className='ship-form__field'>
-                              <Text className='ship-form__label'>{t('admin.orders.trackingNumberLabel')}</Text>
-                              <Input
-                                className='ship-form__input'
-                                value={shipTrackingNumber}
-                                onInput={(e) => setShipTrackingNumber(e.detail.value)}
-                                placeholder={t('admin.orders.trackingNumberPlaceholder')}
-                              />
-                            </View>
-                          )}
+
                           <View className='ship-form__field'>
                             <Text className='ship-form__label'>{t('admin.orders.remarkLabel')}</Text>
                             <textarea
