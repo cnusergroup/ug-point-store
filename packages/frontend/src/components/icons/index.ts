@@ -33,3 +33,4 @@ export { PlaneIcon } from './PlaneIcon';
 export { HelpIcon } from './HelpIcon';
 export { MailIcon } from './MailIcon';
 export { UsersIcon } from './UsersIcon';
+export { WishIcon, WishActiveIcon } from './WishIcon';

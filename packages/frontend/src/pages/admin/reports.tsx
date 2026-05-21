@@ -982,7 +982,7 @@ export default function AdminReportsPage() {
 
     // Load UG options
     request<{ ugs: UGOption[] }>({ url: '/api/admin/ugs' })
-      .then((res) => setUGOptions((res.ugs || []).filter((ug: any) => ug.status === 'active' || !ug.status)))
+      .then((res) => setUGOptions((res.ugs || []).filter((ug: any) => ug.status === 'active' || !ug.status).map((ug: any) => ({ ugId: ug.ugId, ugName: ug.name || ug.ugName || '' }))))
       .catch(() => setUGOptions([]));
 
     // Load activity options

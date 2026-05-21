@@ -38,6 +38,17 @@ interface UGItem {
   status: 'active' | 'inactive';
 }
 
+/** Existing skill claim record from the server */
+interface ExistingSkillClaim {
+  skill: 'liveSupport' | 'promoWriting';
+  userId: string;
+  userNickname: string;
+  claimedAt: string;
+  claimedBy: string;
+  distributionId: string;
+  pointsAwarded: number;
+}
+
 /** Points rule config from settings */
 interface PointsRuleConfig {
   uglPointsPerEvent: number;
@@ -46,6 +57,18 @@ interface PointsRuleConfig {
   speakerTypeAPoints: number;
   speakerTypeBPoints: number;
   speakerRoundtablePoints: number;
+  liveSupportPoints?: number;
+  promoWritingPoints?: number;
+}
+
+/** Skill type for UGL skill claims */
+type SkillType = 'liveSupport' | 'promoWriting';
+
+/** Skill claim lock from server (existing occupation) */
+interface SkillClaimLock {
+  skill: SkillType;
+  userId: string;
+  userNickname: string;
 }
 
 /** Target role options for batch distribution */
@@ -139,6 +162,16 @@ export default function BatchPointsPage() {
   // Whether the Admin user has no responsible UGs
   const [noResponsibleUGs, setNoResponsibleUGs] = useState(false);
 
+  // Skill claims state: tracks which userId has selected each skill in current session
+  // Key: SkillType, Value: userId that selected it
+  const [selectedSkills, setSelectedSkills] = useState<Record<SkillType, string | null>>({
+    liveSupport: null,
+    promoWriting: null,
+  });
+
+  // Server-side skill locks (existing occupations from other distributions)
+  const [serverSkillLocks, setServerSkillLocks] = useState<SkillClaimLock[]>([]);
+
   // Computed points value from config
   const autoPoints = useMemo(() => {
     if (targetRole === 'Speaker' && !speakerType) return 0;
@@ -230,6 +263,22 @@ export default function BatchPointsPage() {
     }
   }, []);
 
+  // Fetch existing skill claims for the selected activity
+  const fetchExistingSkillClaims = useCallback(async (activityId: string) => {
+    try {
+      const res = await request<ExistingSkillClaim[]>({
+        url: `/api/admin/skill-claims?activityId=${encodeURIComponent(activityId)}`,
+      });
+      const claims = Array.isArray(res) ? res : [];
+      // Populate serverSkillLocks for UI rendering (occupied state)
+      setServerSkillLocks(
+        claims.map((c) => ({ skill: c.skill, userId: c.userId, userNickname: c.userNickname })),
+      );
+    } catch {
+      setServerSkillLocks([]);
+    }
+  }, []);
+
   useEffect(() => {
     if (!isAuthenticated) {
       Taro.redirectTo({ url: '/pages/login/index' });
@@ -244,12 +293,25 @@ export default function BatchPointsPage() {
     if (!isAuthenticated) return;
     setSelectedIds(new Set());
     setSearchQuery('');
+    // Reset skill selections when role or activity changes
+    setSelectedSkills({ liveSupport: null, promoWriting: null });
+    setServerSkillLocks([]);
     fetchUsers(targetRole);
     // Fetch awarded users when activity + role changes
     if (selectedActivity) {
       fetchAwardedUsers(selectedActivity.activityId, targetRole);
     }
   }, [isAuthenticated, fetchUsers, targetRole, selectedActivity, fetchAwardedUsers]);
+
+  // Fetch existing skill claims when activityId changes (only for UGL role)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    if (targetRole === 'UserGroupLeader' && selectedActivity) {
+      fetchExistingSkillClaims(selectedActivity.activityId);
+    } else {
+      setServerSkillLocks([]);
+    }
+  }, [isAuthenticated, targetRole, selectedActivity, fetchExistingSkillClaims]);
 
   // Filter activities: only active UG + client-side search
   const filteredActivities = useMemo(() => {
@@ -287,6 +349,8 @@ export default function BatchPointsPage() {
     setActivitySearch('');
     setSelectedIds(new Set());
     setSpeakerType(null);
+    setSelectedSkills({ liveSupport: null, promoWriting: null });
+    setServerSkillLocks([]);
   };
 
   const handleLoadMoreActivities = () => {
@@ -339,13 +403,85 @@ export default function BatchPointsPage() {
     }
   };
 
+  // Skill icon click handler with mutex logic
+  const handleSkillClick = (userId: string, skill: SkillType, e: any) => {
+    // Stop propagation to prevent triggering the row's onClick (checkbox toggle)
+    e.stopPropagation();
+
+    // Check if occupied by server (another user from a previous distribution)
+    const serverLock = serverSkillLocks.find((lock) => lock.skill === skill);
+    if (serverLock) {
+      // Occupied by server data — do nothing
+      return;
+    }
+
+    const currentHolder = selectedSkills[skill];
+
+    if (currentHolder === userId) {
+      // Already selected by this user → deselect
+      setSelectedSkills((prev) => ({ ...prev, [skill]: null }));
+    } else if (currentHolder === null) {
+      // Not selected by anyone → select it
+      setSelectedSkills((prev) => ({ ...prev, [skill]: userId }));
+    }
+    // If occupied by another user in current session (mutex) → do nothing
+  };
+
+  // Helper to determine skill icon state for a given user and skill
+  const getSkillIconState = (userId: string, skill: SkillType): 'normal' | 'selected' | 'occupied' | 'disabled' => {
+    // Check server-side occupation first
+    const serverLock = serverSkillLocks.find((lock) => lock.skill === skill);
+    if (serverLock) {
+      return 'occupied';
+    }
+
+    // Check current session selection
+    const currentHolder = selectedSkills[skill];
+    if (currentHolder === userId) {
+      return 'selected';
+    }
+    if (currentHolder !== null && currentHolder !== userId) {
+      return 'disabled'; // mutex: another user selected this skill in current session
+    }
+
+    return 'normal';
+  };
+
+  // Get tooltip text for occupied/disabled skill icons
+  const getSkillTooltip = (userId: string, skill: SkillType): string => {
+    const skillPoints = skill === 'liveSupport'
+      ? (pointsRuleConfig.liveSupportPoints ?? 30)
+      : (pointsRuleConfig.promoWritingPoints ?? 30);
+    const skillName = skill === 'liveSupport'
+      ? (t('skillClaims.skillIcon.liveSupport.tooltip' as any) as string)
+      : (t('skillClaims.skillIcon.promoWriting.tooltip' as any) as string);
+
+    const serverLock = serverSkillLocks.find((lock) => lock.skill === skill);
+    if (serverLock) {
+      return `${skillName} · +${skillPoints}分 · 每场限1人\n已被 ${serverLock.userNickname} 占用`;
+    }
+
+    const currentHolder = selectedSkills[skill];
+    if (currentHolder !== null && currentHolder !== userId) {
+      const holder = users.find((u) => u.userId === currentHolder);
+      const nickname = holder?.nickname || currentHolder;
+      return `${skillName} · +${skillPoints}分 · 每场限1人\n已被 ${nickname} 占用`;
+    }
+
+    // Normal or selected — show skill name + points + limit
+    return `${skillName} · +${skillPoints}分 · 每场限1人`;
+  };
+
   // Volunteer limit check
   const volunteerLimitExceeded = targetRole === 'Volunteer' && selectedIds.size > pointsRuleConfig.volunteerMaxPerEvent;
+
+  // Check if any skill is selected (for skill-only submission scenario)
+  const hasSkillSelection = selectedSkills.liveSupport !== null || selectedSkills.promoWriting !== null;
 
   // Validation
   const isReasonValid = reasonInput.trim().length >= 1 && reasonInput.trim().length <= 200;
   const isSpeakerTypeValid = targetRole !== 'Speaker' || !!speakerType;
-  const canSubmit = !!selectedActivity && selectedIds.size > 0 && autoPoints > 0 && isReasonValid && !volunteerLimitExceeded && isSpeakerTypeValid;
+  const canSubmit = !!selectedActivity && (selectedIds.size > 0 || hasSkillSelection) && (autoPoints > 0 || hasSkillSelection) && isReasonValid && !volunteerLimitExceeded && isSpeakerTypeValid;
 
   const handleOpenConfirm = () => {
     if (!canSubmit) return;
@@ -360,6 +496,11 @@ export default function BatchPointsPage() {
     if (!canSubmit || submitting || !selectedActivity) return;
     setSubmitting(true);
     try {
+      // Build skillClaims array from selected skill icons
+      const skillClaims = Object.entries(selectedSkills)
+        .filter(([_, userId]) => userId !== null)
+        .map(([skill, userId]) => ({ skill, userId }));
+
       await request({
         url: '/api/admin/batch-points',
         method: 'POST',
@@ -374,21 +515,43 @@ export default function BatchPointsPage() {
           activityUG: selectedActivity.ugName,
           activityTopic: selectedActivity.topic,
           activityDate: selectedActivity.activityDate,
+          ...(skillClaims.length > 0 ? { skillClaims } : {}),
         },
       });
       Taro.showToast({ title: t('batchPoints.page.successToast'), icon: 'none' });
       setSelectedIds(new Set());
       setReasonInput('');
       setShowConfirm(false);
+      // Reset skill selections on success
+      setSelectedSkills({ liveSupport: null, promoWriting: null });
+      // Refresh skill locks from server
+      fetchExistingSkillClaims(selectedActivity.activityId);
       fetchUsers(targetRole);
       if (selectedActivity) {
         fetchAwardedUsers(selectedActivity.activityId, targetRole);
       }
     } catch (err) {
-      Taro.showToast({
-        title: err instanceof RequestError ? err.message : t('batchPoints.page.errorToast'),
-        icon: 'none',
-      });
+      if (err instanceof RequestError) {
+        if (err.code === 'SKILL_ALREADY_CLAIMED') {
+          Taro.showToast({
+            title: t('skillClaims.batchPoints.skillAlreadyClaimed' as any),
+            icon: 'none',
+          });
+          // Refresh locks to show updated occupation state
+          fetchExistingSkillClaims(selectedActivity.activityId);
+          // Reset local skill selections since they may be stale
+          setSelectedSkills({ liveSupport: null, promoWriting: null });
+        } else if (err.code === 'BATCH_TOO_LARGE') {
+          Taro.showToast({
+            title: t('skillClaims.batchPoints.batchTooLarge' as any),
+            icon: 'none',
+          });
+        } else {
+          Taro.showToast({ title: err.message, icon: 'none' });
+        }
+      } else {
+        Taro.showToast({ title: t('batchPoints.page.errorToast'), icon: 'none' });
+      }
     } finally {
       setSubmitting(false);
     }
@@ -592,6 +755,7 @@ export default function BatchPointsPage() {
           {filteredUsers.map((user) => {
             const isAwarded = awardedUserIds.has(user.userId);
             const isSelected = selectedIds.has(user.userId);
+            const showSkillIcons = targetRole === 'UserGroupLeader' && activitySelected && user.status === 'active';
             return (
               <View
                 key={user.userId}
@@ -611,6 +775,34 @@ export default function BatchPointsPage() {
                   <Text className='bp-user-row__email'>{user.email}</Text>
                 </View>
                 <Text className='bp-user-row__points'>{user.points} {t('batchPoints.page.pointsUnit')}</Text>
+                {showSkillIcons && (
+                  <View className='bp-skill-icons'>
+                    {/* video-camera (liveSupport) - Heroicons outline 24×24 */}
+                    <View
+                      className={`bp-skill-icons__icon bp-skill-icons__icon--${getSkillIconState(user.userId, 'liveSupport')}`}
+                      // @ts-ignore - title works in H5 mode
+                      title={getSkillTooltip(user.userId, 'liveSupport')}
+                      aria-label={getSkillTooltip(user.userId, 'liveSupport')}
+                      onClick={(e) => handleSkillClick(user.userId, 'liveSupport', e)}
+                    >
+                      <svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' strokeWidth={1.5} stroke='currentColor' width={24} height={24}>
+                        <path strokeLinecap='round' strokeLinejoin='round' d='m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z' />
+                      </svg>
+                    </View>
+                    {/* pencil-square (promoWriting) - Heroicons outline 24×24 */}
+                    <View
+                      className={`bp-skill-icons__icon bp-skill-icons__icon--${getSkillIconState(user.userId, 'promoWriting')}`}
+                      // @ts-ignore - title works in H5 mode
+                      title={getSkillTooltip(user.userId, 'promoWriting')}
+                      aria-label={getSkillTooltip(user.userId, 'promoWriting')}
+                      onClick={(e) => handleSkillClick(user.userId, 'promoWriting', e)}
+                    >
+                      <svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' strokeWidth={1.5} stroke='currentColor' width={24} height={24}>
+                        <path strokeLinecap='round' strokeLinejoin='round' d='m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10' />
+                      </svg>
+                    </View>
+                  </View>
+                )}
               </View>
             );
           })}
@@ -693,6 +885,40 @@ export default function BatchPointsPage() {
                   {selectedIds.size * autoPoints}
                 </Text>
               </View>
+              {/* Skill Claims Summary */}
+              {hasSkillSelection && (
+                <View className='bp-confirm__skill-section'>
+                  <View className='bp-confirm__row'>
+                    <Text className='bp-confirm__label'>技能分</Text>
+                    <Text className='bp-confirm__value bp-confirm__value--highlight'>
+                      +{(() => {
+                        let total = 0;
+                        if (selectedSkills.liveSupport) total += (pointsRuleConfig.liveSupportPoints ?? 30);
+                        if (selectedSkills.promoWriting) total += (pointsRuleConfig.promoWritingPoints ?? 30);
+                        return total;
+                      })()}
+                    </Text>
+                  </View>
+                  {selectedSkills.liveSupport && (
+                    <View className='bp-confirm__skill-item'>
+                      <Text className='bp-confirm__skill-name'>{t('skillClaims.skillIcon.liveSupport.tooltip' as any)}</Text>
+                      <Text className='bp-confirm__skill-user'>
+                        {users.find(u => u.userId === selectedSkills.liveSupport)?.nickname || selectedSkills.liveSupport}
+                      </Text>
+                      <Text className='bp-confirm__skill-pts'>+{pointsRuleConfig.liveSupportPoints ?? 30}</Text>
+                    </View>
+                  )}
+                  {selectedSkills.promoWriting && (
+                    <View className='bp-confirm__skill-item'>
+                      <Text className='bp-confirm__skill-name'>{t('skillClaims.skillIcon.promoWriting.tooltip' as any)}</Text>
+                      <Text className='bp-confirm__skill-user'>
+                        {users.find(u => u.userId === selectedSkills.promoWriting)?.nickname || selectedSkills.promoWriting}
+                      </Text>
+                      <Text className='bp-confirm__skill-pts'>+{pointsRuleConfig.promoWritingPoints ?? 30}</Text>
+                    </View>
+                  )}
+                </View>
+              )}
               <View className='bp-confirm__row'>
                 <Text className='bp-confirm__label'>{t('batchPoints.page.confirmPointsRule' as any)}</Text>
                 <Text className='bp-confirm__value'>

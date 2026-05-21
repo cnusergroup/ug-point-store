@@ -9,6 +9,18 @@ import { sortUsersWithInvitePriority } from '../../utils/sort-users';
 import type { DistributionRecord } from '@points-mall/shared';
 import './batch-adjust.scss';
 
+/** Skill claim record returned by the skill-claims API */
+interface SkillClaimRecord {
+  activityId: string;
+  skill: 'liveSupport' | 'promoWriting';
+  userId: string;
+  userNickname: string;
+  claimedAt: string;
+  claimedBy: string;
+  distributionId: string;
+  pointsAwarded: number;
+}
+
 /** User list item returned by the admin users API */
 interface UserListItem {
   userId: string;
@@ -29,6 +41,8 @@ interface PointsRuleConfig {
   speakerTypeAPoints: number;
   speakerTypeBPoints: number;
   speakerRoundtablePoints: number;
+  liveSupportPoints?: number;
+  promoWritingPoints?: number;
 }
 
 /** Target role options */
@@ -109,6 +123,22 @@ export default function BatchAdjustPage() {
   // Selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
+  // Skill claims (activity skill locks)
+  const [skillClaims, setSkillClaims] = useState<SkillClaimRecord[]>([]);
+  const [skillClaimsLoading, setSkillClaimsLoading] = useState(false);
+
+  // Skill lock adjustment state
+  const [releaseSkills, setReleaseSkills] = useState<Array<{ skill: 'liveSupport' | 'promoWriting' }>>([]);
+  const [addSkillClaims, setAddSkillClaims] = useState<Array<{ skill: 'liveSupport' | 'promoWriting'; userId: string; userNickname: string }>>([]);
+
+  // Release confirmation dialog
+  const [releaseDialogSkill, setReleaseDialogSkill] = useState<'liveSupport' | 'promoWriting' | null>(null);
+
+  // Assign selector dialog
+  const [assignDialogSkill, setAssignDialogSkill] = useState<'liveSupport' | 'promoWriting' | null>(null);
+  const [uglUsers, setUglUsers] = useState<UserListItem[]>([]);
+  const [uglUsersLoading, setUglUsersLoading] = useState(false);
+
   // Confirm modal
   const [showConfirm, setShowConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -155,8 +185,26 @@ export default function BatchAdjustPage() {
     if (addedUserIds.size > 0 || removedUserIds.size > 0) return true;
     if (targetRole !== originalRecord.targetRole) return true;
     if (targetRole === 'Speaker' && speakerType !== originalRecord.speakerType) return true;
+    if (releaseSkills.length > 0 || addSkillClaims.length > 0) return true;
     return false;
-  }, [originalRecord, addedUserIds, removedUserIds, targetRole, speakerType]);
+  }, [originalRecord, addedUserIds, removedUserIds, targetRole, speakerType, releaseSkills, addSkillClaims]);
+
+  // Skill points delta calculation
+  const skillPointsDelta = useMemo(() => {
+    let delta = 0;
+    for (const rel of releaseSkills) {
+      const claim = skillClaims.find((c) => c.skill === rel.skill);
+      if (claim) delta -= claim.pointsAwarded;
+    }
+    for (const add of addSkillClaims) {
+      // Use the pointsRuleConfig for new assignments (current config value)
+      const pts = add.skill === 'liveSupport'
+        ? pointsRuleConfig.liveSupportPoints || 30
+        : pointsRuleConfig.promoWritingPoints || 30;
+      delta += pts;
+    }
+    return delta;
+  }, [releaseSkills, addSkillClaims, skillClaims, pointsRuleConfig]);
 
   // Fetch points rule config
   const fetchPointsRuleConfig = useCallback(async () => {
@@ -199,6 +247,80 @@ export default function BatchAdjustPage() {
     }
   }, [distributionId]);
 
+  // Fetch skill claims for the activity (SuperAdmin only)
+  const fetchSkillClaims = useCallback(async (activityId: string) => {
+    if (!isSuperAdmin || !activityId) return;
+    setSkillClaimsLoading(true);
+    try {
+      const res = await request<SkillClaimRecord[]>({
+        url: `/api/admin/skill-claims?activityId=${encodeURIComponent(activityId)}`,
+      });
+      setSkillClaims(res || []);
+    } catch {
+      setSkillClaims([]);
+    } finally {
+      setSkillClaimsLoading(false);
+    }
+  }, [isSuperAdmin]);
+
+  // Fetch active UGL users for assign selector
+  const fetchUglUsers = useCallback(async () => {
+    setUglUsersLoading(true);
+    try {
+      const res = await request<{ users: UserListItem[] }>({
+        url: '/api/admin/users?role=UserGroupLeader',
+      });
+      const activeUgls = (res.users || []).filter((u) => u.status === 'active');
+      setUglUsers(activeUgls);
+    } catch {
+      setUglUsers([]);
+    } finally {
+      setUglUsersLoading(false);
+    }
+  }, []);
+
+  // Skill lock interaction handlers
+  const handleReleaseClick = (skill: 'liveSupport' | 'promoWriting') => {
+    setReleaseDialogSkill(skill);
+  };
+
+  const handleReleaseConfirm = () => {
+    if (!releaseDialogSkill) return;
+    // Add to releaseSkills if not already there
+    setReleaseSkills((prev) => {
+      if (prev.some((r) => r.skill === releaseDialogSkill)) return prev;
+      return [...prev, { skill: releaseDialogSkill }];
+    });
+    // Remove from addSkillClaims if it was previously added
+    setAddSkillClaims((prev) => prev.filter((a) => a.skill !== releaseDialogSkill));
+    setReleaseDialogSkill(null);
+  };
+
+  const handleReleaseCancel = () => {
+    setReleaseDialogSkill(null);
+  };
+
+  const handleAssignClick = (skill: 'liveSupport' | 'promoWriting') => {
+    setAssignDialogSkill(skill);
+    fetchUglUsers();
+  };
+
+  const handleAssignSelect = (user: UserListItem) => {
+    if (!assignDialogSkill) return;
+    // Add to addSkillClaims
+    setAddSkillClaims((prev) => {
+      const filtered = prev.filter((a) => a.skill !== assignDialogSkill);
+      return [...filtered, { skill: assignDialogSkill, userId: user.userId, userNickname: user.nickname }];
+    });
+    // Remove from releaseSkills if it was previously released
+    setReleaseSkills((prev) => prev.filter((r) => r.skill !== assignDialogSkill));
+    setAssignDialogSkill(null);
+  };
+
+  const handleAssignCancel = () => {
+    setAssignDialogSkill(null);
+  };
+
   // Fetch users for the selected role (fetch all, no pagination)
   const fetchUsers = useCallback(async (role: TargetRole) => {
     setLoading(true);
@@ -239,6 +361,13 @@ export default function BatchAdjustPage() {
     fetchUsers(targetRole);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialLoadDone]);
+
+  // Fetch skill claims when distribution record loads (SuperAdmin only)
+  useEffect(() => {
+    if (!originalRecord?.activityId || !isSuperAdmin) return;
+    fetchSkillClaims(originalRecord.activityId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [originalRecord?.activityId, isSuperAdmin]);
 
   // When user manually changes role tab (not initial load)
   const handleTabChange = (role: TargetRole) => {
@@ -311,7 +440,7 @@ export default function BatchAdjustPage() {
   const isSpeakerTypeValid = targetRole !== 'Speaker' || !!speakerType;
 
   // Validation
-  const canSubmit = !!originalRecord && selectedIds.size > 0 && autoPoints > 0 && hasChanges && !volunteerLimitExceeded && isSpeakerTypeValid;
+  const canSubmit = !!originalRecord && (selectedIds.size > 0 || releaseSkills.length > 0 || addSkillClaims.length > 0) && (autoPoints > 0 || releaseSkills.length > 0 || addSkillClaims.length > 0) && hasChanges && !volunteerLimitExceeded && isSpeakerTypeValid;
 
   const handleOpenConfirm = () => {
     if (!canSubmit) return;
@@ -333,6 +462,8 @@ export default function BatchAdjustPage() {
           recipientIds: Array.from(selectedIds),
           targetRole,
           ...(targetRole === 'Speaker' && speakerType ? { speakerType } : {}),
+          ...(releaseSkills.length > 0 ? { releaseSkills } : {}),
+          ...(addSkillClaims.length > 0 ? { addSkillClaims: addSkillClaims.map((a) => ({ skill: a.skill, userId: a.userId })) } : {}),
         },
       });
       Taro.showToast({ title: t('batchPoints.adjust.successToast' as any), icon: 'none' });
@@ -379,6 +510,42 @@ export default function BatchAdjustPage() {
     if (delta > 0) return `+${delta}`;
     return String(delta);
   };
+
+  // Skill lock occupant lookup (considering pending changes)
+  const liveSupportClaim = useMemo(
+    () => skillClaims.find((c) => c.skill === 'liveSupport') || null,
+    [skillClaims],
+  );
+  const promoWritingClaim = useMemo(
+    () => skillClaims.find((c) => c.skill === 'promoWriting') || null,
+    [skillClaims],
+  );
+
+  // Effective skill lock state (after pending release/assign)
+  const effectiveLiveSupport = useMemo(() => {
+    if (releaseSkills.some((r) => r.skill === 'liveSupport')) return null;
+    const added = addSkillClaims.find((a) => a.skill === 'liveSupport');
+    if (added) return { userNickname: added.userNickname, pointsAwarded: 0, isNew: true };
+    return liveSupportClaim ? { ...liveSupportClaim, isNew: false } : null;
+  }, [liveSupportClaim, releaseSkills, addSkillClaims]);
+
+  const effectivePromoWriting = useMemo(() => {
+    if (releaseSkills.some((r) => r.skill === 'promoWriting')) return null;
+    const added = addSkillClaims.find((a) => a.skill === 'promoWriting');
+    if (added) return { userNickname: added.userNickname, pointsAwarded: 0, isNew: true };
+    return promoWritingClaim ? { ...promoWritingClaim, isNew: false } : null;
+  }, [promoWritingClaim, releaseSkills, addSkillClaims]);
+
+  // Get skill display name
+  const getSkillName = (skill: 'liveSupport' | 'promoWriting') => {
+    return t(`skillClaims.skillName.${skill}` as any);
+  };
+
+  // Release dialog claim info
+  const releaseDialogClaim = useMemo(() => {
+    if (!releaseDialogSkill) return null;
+    return skillClaims.find((c) => c.skill === releaseDialogSkill) || null;
+  }, [releaseDialogSkill, skillClaims]);
 
   return (
     <View className='batch-adjust'>
@@ -437,6 +604,132 @@ export default function BatchAdjustPage() {
               <Text className='ba-original-info__value'>{originalPoints} {t('batchPoints.page.pointsUnit')}</Text>
             </View>
           </View>
+
+          {/* Skill Lock Panel — SuperAdmin only */}
+          {isSuperAdmin && originalRecord.activityId && (
+            <View className='ba-skill-locks'>
+              <Text className='ba-skill-locks__title'>{t('skillClaims.adjust.skillLockSection')}</Text>
+              {skillClaimsLoading ? (
+                <View className='ba-skill-locks__loading'>
+                  <Text className='ba-skill-locks__loading-text'>{t('batchPoints.adjust.loadingDistribution' as any)}</Text>
+                </View>
+              ) : (
+                <View className='ba-skill-locks__grid'>
+                  {/* liveSupport row */}
+                  <View className='ba-skill-locks__row'>
+                    <Text className='ba-skill-locks__skill-label'>{t('skillClaims.skillName.liveSupport')}</Text>
+                    <View className='ba-skill-locks__right'>
+                      {effectiveLiveSupport ? (
+                        <>
+                          <Text className='ba-skill-locks__occupant ba-skill-locks__occupant--occupied'>
+                            {effectiveLiveSupport.userNickname}
+                          </Text>
+                          {!effectiveLiveSupport.isNew && (
+                            <View
+                              className='btn-danger ba-skill-locks__btn'
+                              onClick={() => handleReleaseClick('liveSupport')}
+                            >
+                              <Text>{t('skillClaims.adjust.release')}</Text>
+                            </View>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <Text className='ba-skill-locks__occupant ba-skill-locks__occupant--empty'>
+                            {t('skillClaims.adjust.notOccupied')}
+                          </Text>
+                          <View
+                            className='btn-primary ba-skill-locks__btn'
+                            onClick={() => handleAssignClick('liveSupport')}
+                          >
+                            <Text>{t('skillClaims.adjust.assign')}</Text>
+                          </View>
+                        </>
+                      )}
+                    </View>
+                  </View>
+                  {/* promoWriting row */}
+                  <View className='ba-skill-locks__row'>
+                    <Text className='ba-skill-locks__skill-label'>{t('skillClaims.skillName.promoWriting')}</Text>
+                    <View className='ba-skill-locks__right'>
+                      {effectivePromoWriting ? (
+                        <>
+                          <Text className='ba-skill-locks__occupant ba-skill-locks__occupant--occupied'>
+                            {effectivePromoWriting.userNickname}
+                          </Text>
+                          {!effectivePromoWriting.isNew && (
+                            <View
+                              className='btn-danger ba-skill-locks__btn'
+                              onClick={() => handleReleaseClick('promoWriting')}
+                            >
+                              <Text>{t('skillClaims.adjust.release')}</Text>
+                            </View>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <Text className='ba-skill-locks__occupant ba-skill-locks__occupant--empty'>
+                            {t('skillClaims.adjust.notOccupied')}
+                          </Text>
+                          <View
+                            className='btn-primary ba-skill-locks__btn'
+                            onClick={() => handleAssignClick('promoWriting')}
+                          >
+                            <Text>{t('skillClaims.adjust.assign')}</Text>
+                          </View>
+                        </>
+                      )}
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              {/* Skill Points Diff Summary */}
+              {(releaseSkills.length > 0 || addSkillClaims.length > 0) && (
+                <View className='ba-skill-locks__diff'>
+                  <Text className='ba-skill-locks__diff-title'>{t('skillClaims.adjust.skillPointsDelta')}</Text>
+                  {releaseSkills.map((rel) => {
+                    const claim = skillClaims.find((c) => c.skill === rel.skill);
+                    return claim ? (
+                      <View key={rel.skill} className='ba-skill-locks__diff-row ba-skill-locks__diff-row--negative'>
+                        <Text className='ba-skill-locks__diff-text'>
+                          {(t('skillClaims.adjust.diffReleaseSkill' as any) as string)
+                            .replace('{skill}', getSkillName(rel.skill))
+                            .replace('{nickname}', claim.userNickname)}
+                        </Text>
+                        <Text className='ba-skill-locks__diff-amount ba-skill-locks__diff-amount--negative'>
+                          -{claim.pointsAwarded}
+                        </Text>
+                      </View>
+                    ) : null;
+                  })}
+                  {addSkillClaims.map((add) => {
+                    const pts = add.skill === 'liveSupport'
+                      ? pointsRuleConfig.liveSupportPoints || 30
+                      : pointsRuleConfig.promoWritingPoints || 30;
+                    return (
+                      <View key={add.skill} className='ba-skill-locks__diff-row ba-skill-locks__diff-row--positive'>
+                        <Text className='ba-skill-locks__diff-text'>
+                          {(t('skillClaims.adjust.diffAddSkill' as any) as string)
+                            .replace('{skill}', getSkillName(add.skill))
+                            .replace('{nickname}', add.userNickname)}
+                        </Text>
+                        <Text className='ba-skill-locks__diff-amount ba-skill-locks__diff-amount--positive'>
+                          +{pts}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                  <View className='ba-skill-locks__diff-total'>
+                    <Text className='ba-skill-locks__diff-total-label'>{t('batchPoints.adjust.totalDelta' as any)}</Text>
+                    <Text className={`ba-skill-locks__diff-total-value ${skillPointsDelta > 0 ? 'ba-skill-locks__diff-total-value--positive' : skillPointsDelta < 0 ? 'ba-skill-locks__diff-total-value--negative' : ''}`}>
+                      {skillPointsDelta > 0 ? `+${skillPointsDelta}` : String(skillPointsDelta)} {t('batchPoints.page.pointsUnit')}
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </View>
+          )}
 
           {/* Role Filter Tabs */}
           <View className='bp-tabs'>
@@ -667,6 +960,47 @@ export default function BatchAdjustPage() {
                 </Text>
               </View>
 
+              {/* Skill point changes in confirmation */}
+              {(releaseSkills.length > 0 || addSkillClaims.length > 0) && (
+                <View className='ba-confirm__skill-section'>
+                  <Text className='ba-confirm__names-label'>{t('skillClaims.adjust.skillPointsDelta')}</Text>
+                  {releaseSkills.map((rel) => {
+                    const claim = skillClaims.find((c) => c.skill === rel.skill);
+                    return claim ? (
+                      <View key={rel.skill} className='ba-confirm__diff-row'>
+                        <Text className='ba-confirm__diff-label'>
+                          {(t('skillClaims.adjust.diffReleaseSkill' as any) as string)
+                            .replace('{skill}', getSkillName(rel.skill))
+                            .replace('{nickname}', claim.userNickname)}
+                        </Text>
+                        <Text className='ba-confirm__diff-value ba-confirm__diff-value--removed'>-{claim.pointsAwarded}</Text>
+                      </View>
+                    ) : null;
+                  })}
+                  {addSkillClaims.map((add) => {
+                    const pts = add.skill === 'liveSupport'
+                      ? pointsRuleConfig.liveSupportPoints || 30
+                      : pointsRuleConfig.promoWritingPoints || 30;
+                    return (
+                      <View key={add.skill} className='ba-confirm__diff-row'>
+                        <Text className='ba-confirm__diff-label'>
+                          {(t('skillClaims.adjust.diffAddSkill' as any) as string)
+                            .replace('{skill}', getSkillName(add.skill))
+                            .replace('{nickname}', add.userNickname)}
+                        </Text>
+                        <Text className='ba-confirm__diff-value ba-confirm__diff-value--added'>+{pts}</Text>
+                      </View>
+                    );
+                  })}
+                  <View className='ba-confirm__diff-row ba-confirm__diff-row--highlight'>
+                    <Text className='ba-confirm__diff-label'>{t('skillClaims.adjust.skillPointsDelta')}</Text>
+                    <Text className={`ba-confirm__diff-value ${skillPointsDelta > 0 ? 'ba-confirm__diff-value--added' : skillPointsDelta < 0 ? 'ba-confirm__diff-value--removed' : ''}`}>
+                      {skillPointsDelta > 0 ? `+${skillPointsDelta}` : String(skillPointsDelta)} {t('batchPoints.page.pointsUnit')}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
               {/* Role info */}
               <View className='ba-confirm__diff-row'>
                 <Text className='ba-confirm__diff-label'>{t('batchPoints.page.confirmTargetRole')}</Text>
@@ -690,6 +1024,81 @@ export default function BatchAdjustPage() {
                 onClick={handleSubmit}
               >
                 <Text>{submitting ? t('batchPoints.adjust.submitting' as any) : t('batchPoints.adjust.confirmSubmit' as any)}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Release Confirmation Dialog */}
+      {releaseDialogSkill && releaseDialogClaim && (
+        <View className='form-overlay'>
+          <View className='form-modal'>
+            <View className='form-modal__header'>
+              <Text className='form-modal__title'>{t('skillClaims.adjust.releaseTitle')}</Text>
+              <View className='form-modal__close' onClick={handleReleaseCancel}><Text>✕</Text></View>
+            </View>
+            <View className='form-modal__body'>
+              <Text className='ba-skill-dialog__message'>
+                {(t('skillClaims.adjust.releaseConfirm') as string).replace('{points}', String(releaseDialogClaim.pointsAwarded))}
+              </Text>
+              <View className='ba-skill-dialog__info'>
+                <Text className='ba-skill-dialog__info-label'>{getSkillName(releaseDialogSkill)}</Text>
+                <Text className='ba-skill-dialog__info-value'>{releaseDialogClaim.userNickname}</Text>
+              </View>
+            </View>
+            <View className='form-modal__actions'>
+              <View className='form-modal__cancel' onClick={handleReleaseCancel}>
+                <Text>{t('skillClaims.adjust.releaseCancel')}</Text>
+              </View>
+              <View className='form-modal__submit form-modal__submit--danger' onClick={handleReleaseConfirm}>
+                <Text>{t('skillClaims.adjust.releaseConfirmBtn')}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Assign UGL Selector Dialog */}
+      {assignDialogSkill && (
+        <View className='form-overlay'>
+          <View className='form-modal ba-assign-modal'>
+            <View className='form-modal__header'>
+              <Text className='form-modal__title'>{t('skillClaims.adjust.assignTitle')}</Text>
+              <View className='form-modal__close' onClick={handleAssignCancel}><Text>✕</Text></View>
+            </View>
+            <View className='form-modal__body'>
+              <Text className='ba-skill-dialog__message'>{t('skillClaims.adjust.assignSelectUser')}</Text>
+              {uglUsersLoading ? (
+                <View className='ba-assign-modal__loading'>
+                  <Text>{t('batchPoints.page.loading')}</Text>
+                </View>
+              ) : (
+                <View className='ba-assign-modal__list'>
+                  {uglUsers.map((user) => (
+                    <View
+                      key={user.userId}
+                      className='ba-assign-modal__item'
+                      onClick={() => handleAssignSelect(user)}
+                    >
+                      <View className='ba-assign-modal__item-info'>
+                        <Text className='ba-assign-modal__item-nickname'>{user.nickname}</Text>
+                        <Text className='ba-assign-modal__item-email'>{user.email}</Text>
+                      </View>
+                      <Text className='ba-assign-modal__item-points'>{user.points} {t('batchPoints.page.pointsUnit')}</Text>
+                    </View>
+                  ))}
+                  {uglUsers.length === 0 && (
+                    <View className='ba-assign-modal__empty'>
+                      <Text>{t('batchPoints.page.noUsersRole')}</Text>
+                    </View>
+                  )}
+                </View>
+              )}
+            </View>
+            <View className='form-modal__actions'>
+              <View className='form-modal__cancel' onClick={handleAssignCancel}>
+                <Text>{t('skillClaims.adjust.assignCancel')}</Text>
               </View>
             </View>
           </View>

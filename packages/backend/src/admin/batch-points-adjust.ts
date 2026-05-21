@@ -10,6 +10,8 @@ import type { DistributionRecord } from '@points-mall/shared';
 import { getFeatureToggles, DEFAULT_POINTS_RULE_CONFIG } from '../settings/feature-toggles';
 import type { PointsRuleConfig } from '../settings/feature-toggles';
 import { calculateExpectedPoints, chunkArray } from './batch-points';
+import type { SkillType, SkillClaimRecord } from './skill-claims';
+import { getSkillClaimsForActivity } from './skill-claims';
 
 // ============================================================
 // Interfaces
@@ -22,6 +24,12 @@ export interface AdjustmentInput {
   targetRole: 'UserGroupLeader' | 'Speaker' | 'Volunteer';
   speakerType?: 'typeA' | 'typeB' | 'roundtable';
   adjustedBy: string;
+  /** Caller's roles — used for SuperAdmin validation on skill lock operations */
+  callerRoles?: string[];
+  /** Release existing skill locks (SuperAdmin only) */
+  releaseSkills?: Array<{ skill: SkillType }>;
+  /** Add new skill lock claims (SuperAdmin only) */
+  addSkillClaims?: Array<{ skill: SkillType; userId: string }>;
 }
 
 /** 单用户调整金额 */
@@ -202,6 +210,7 @@ export async function executeAdjustment(
     usersTable: string;
     pointsRecordsTable: string;
     batchDistributionsTable: string;
+    activitySkillClaimsTable?: string;
   },
 ): Promise<AdjustmentResult> {
   // 1. Fetch original DistributionRecord
@@ -220,6 +229,20 @@ export async function executeAdjustment(
   }
 
   const original = distResult.Item as DistributionRecord;
+
+  // 1b. Validate SuperAdmin role for skill lock operations
+  const hasSkillOps =
+    (input.releaseSkills && input.releaseSkills.length > 0) ||
+    (input.addSkillClaims && input.addSkillClaims.length > 0);
+  if (hasSkillOps) {
+    const isSuperAdminCaller = input.callerRoles?.includes('SuperAdmin') ?? false;
+    if (!isSuperAdminCaller) {
+      return {
+        success: false,
+        error: { code: 'FORBIDDEN', message: '仅超级管理员可执行技能锁释放或指派操作' },
+      };
+    }
+  }
 
   // 2. Fetch PointsRuleConfig
   const toggles = await getFeatureToggles(client, tables.usersTable);
@@ -309,12 +332,265 @@ export async function executeAdjustment(
   const newRoleField = roleFieldMap[input.targetRole] ?? 'earnTotalSpeaker';
   const roleChanged = original.targetRole !== input.targetRole;
 
+  // 7a. Build releaseSkills transaction items (if any)
+  const releaseSkillItems: any[] = [];
+  if (input.releaseSkills && input.releaseSkills.length > 0) {
+    const activityId = original.activityId ?? '';
+    const skillClaimsTableName = tables.activitySkillClaimsTable ?? process.env.ACTIVITY_SKILL_CLAIMS_TABLE ?? '';
+
+    if (!activityId || !skillClaimsTableName) {
+      return {
+        success: false,
+        error: { code: 'INVALID_REQUEST', message: '缺少 activityId 或技能认领表配置' },
+      };
+    }
+
+    // Fetch existing skill claims for this activity
+    const existingClaims = await getSkillClaimsForActivity(activityId, client, skillClaimsTableName);
+    const claimsBySkill = new Map<string, SkillClaimRecord>();
+    for (const claim of existingClaims) {
+      claimsBySkill.set(claim.skill, claim);
+    }
+
+    for (const releaseItem of input.releaseSkills) {
+      const existingClaim = claimsBySkill.get(releaseItem.skill);
+      if (!existingClaim) {
+        // Skill not currently claimed — skip silently or return error
+        continue;
+      }
+
+      const { userId, pointsAwarded } = existingClaim;
+      const recordId = ulid();
+
+      // a. Delete the SkillClaim record
+      releaseSkillItems.push({
+        Delete: {
+          TableName: skillClaimsTableName,
+          Key: { activityId, skill: releaseItem.skill },
+        },
+      });
+
+      // b. Update user's balance: decrease points, earnTotal, earnTotalLeader by pointsAwarded
+      releaseSkillItems.push({
+        Update: {
+          TableName: tables.usersTable,
+          Key: { userId },
+          UpdateExpression: `SET points = points - :pts, earnTotal = if_not_exists(earnTotal, :zero) - :pts, earnTotalLeader = if_not_exists(earnTotalLeader, :zero) - :pts, updatedAt = :now`,
+          ExpressionAttributeValues: {
+            ':pts': pointsAwarded,
+            ':zero': 0,
+            ':now': now,
+          },
+        },
+      });
+
+      // c. Put a new PointsRecord with type: 'adjust', amount: -pointsAwarded
+      releaseSkillItems.push({
+        Put: {
+          TableName: tables.pointsRecordsTable,
+          Item: {
+            recordId,
+            userId,
+            type: 'adjust',
+            amount: -pointsAwarded,
+            source: `技能释放:${releaseItem.skill}|${original.activityUG ?? ''}|${original.activityTopic ?? ''}|${original.activityDate ?? ''}`,
+            createdAt: now,
+            activityId,
+            activityUG: original.activityUG ?? '',
+            activityTopic: original.activityTopic ?? '',
+            activityDate: original.activityDate ?? '',
+            targetRole: 'UserGroupLeader',
+            distributionId: input.distributionId,
+          },
+        },
+      });
+    }
+  }
+
+  // 7b. Build addSkillClaims transaction items (if any)
+  const addSkillClaimItems: any[] = [];
+  if (input.addSkillClaims && input.addSkillClaims.length > 0) {
+    const activityId = original.activityId ?? '';
+    const skillClaimsTableName = tables.activitySkillClaimsTable ?? process.env.ACTIVITY_SKILL_CLAIMS_TABLE ?? '';
+
+    if (!activityId || !skillClaimsTableName) {
+      return {
+        success: false,
+        error: { code: 'INVALID_REQUEST', message: '缺少 activityId 或技能认领表配置' },
+      };
+    }
+
+    // Fetch user nicknames for the skill claim targets
+    const addSkillUserIds = [...new Set(input.addSkillClaims.map(sc => sc.userId))];
+    const skillUserNicknameMap = new Map<string, string>();
+
+    // Check if we already have nicknames from the userDetailsMap
+    for (const uid of addSkillUserIds) {
+      const existing = userDetailsMap.get(uid);
+      if (existing) {
+        skillUserNicknameMap.set(uid, existing.nickname);
+      }
+    }
+
+    // Fetch any missing nicknames
+    const missingNicknameUserIds = addSkillUserIds.filter(uid => !skillUserNicknameMap.has(uid));
+    if (missingNicknameUserIds.length > 0) {
+      const nicknameChunks = chunkArray(missingNicknameUserIds, 100);
+      for (const chunk of nicknameChunks) {
+        const batchResult = await client.send(
+          new BatchGetCommand({
+            RequestItems: {
+              [tables.usersTable]: {
+                Keys: chunk.map(userId => ({ userId })),
+                ProjectionExpression: 'userId, nickname',
+              },
+            },
+          }),
+        );
+        const items = batchResult.Responses?.[tables.usersTable] ?? [];
+        for (const item of items) {
+          skillUserNicknameMap.set(item.userId as string, (item.nickname as string) ?? '');
+        }
+      }
+    }
+
+    for (const addItem of input.addSkillClaims) {
+      const pointsAwarded = addItem.skill === 'liveSupport'
+        ? config.liveSupportPoints
+        : config.promoWritingPoints;
+      const recordId = ulid();
+      const userNickname = skillUserNicknameMap.get(addItem.userId) ?? '';
+
+      // a. Put new SkillClaim with attribute_not_exists(activityId) condition
+      addSkillClaimItems.push({
+        Put: {
+          TableName: skillClaimsTableName,
+          Item: {
+            activityId,
+            skill: addItem.skill,
+            userId: addItem.userId,
+            userNickname,
+            claimedAt: now,
+            claimedBy: input.adjustedBy,
+            distributionId: input.distributionId,
+            pointsAwarded,
+          },
+          ConditionExpression: 'attribute_not_exists(activityId)',
+        },
+      });
+
+      // b. Update user's balance: increase points, earnTotal, earnTotalLeader by pointsAwarded
+      addSkillClaimItems.push({
+        Update: {
+          TableName: tables.usersTable,
+          Key: { userId: addItem.userId },
+          UpdateExpression: `SET points = points + :pts, earnTotal = if_not_exists(earnTotal, :zero) + :pts, earnTotalLeader = if_not_exists(earnTotalLeader, :zero) + :pts, updatedAt = :now`,
+          ExpressionAttributeValues: {
+            ':pts': pointsAwarded,
+            ':zero': 0,
+            ':now': now,
+          },
+        },
+      });
+
+      // c. Put a new PointsRecord with type: 'adjust', amount: +pointsAwarded
+      addSkillClaimItems.push({
+        Put: {
+          TableName: tables.pointsRecordsTable,
+          Item: {
+            recordId,
+            userId: addItem.userId,
+            type: 'adjust',
+            amount: pointsAwarded,
+            source: `技能指派:${addItem.skill}|${original.activityUG ?? ''}|${original.activityTopic ?? ''}|${original.activityDate ?? ''}`,
+            createdAt: now,
+            activityId,
+            activityUG: original.activityUG ?? '',
+            activityTopic: original.activityTopic ?? '',
+            activityDate: original.activityDate ?? '',
+            targetRole: 'UserGroupLeader',
+            distributionId: input.distributionId,
+          },
+        },
+      });
+    }
+  }
+
   // Build transaction items for all affected users
   const affectedUsers = diff.userAdjustments;
   const userBatches = chunkArray(affectedUsers, USERS_PER_BATCH);
 
+  // Include releaseSkillItems and addSkillClaimItems in the first transaction batch for atomicity
+  // Per requirement 12.9: releaseSkills first, then addSkillClaims
+  let skillItemsIncluded = false;
+
+  // If there are no user adjustments but there are skill items, execute them in a standalone transaction
+  if (userBatches.length === 0 && (releaseSkillItems.length > 0 || addSkillClaimItems.length > 0)) {
+    const transactItems: any[] = [...releaseSkillItems, ...addSkillClaimItems];
+    skillItemsIncluded = true;
+
+    try {
+      await client.send(
+        new TransactWriteCommand({ TransactItems: transactItems }),
+      );
+    } catch (err: any) {
+      // Handle TransactionCanceledException with ConditionalCheckFailed for addSkillClaims
+      if (
+        addSkillClaimItems.length > 0 &&
+        (err.name === 'TransactionCanceledException' || err.name === 'ConditionalCheckFailedException')
+      ) {
+        const cancellationReasons = err.CancellationReasons as Array<{ Code?: string }> | undefined;
+        const hasConditionalCheckFailed =
+          err.name === 'ConditionalCheckFailedException' ||
+          (cancellationReasons && cancellationReasons.some((r: { Code?: string }) => r.Code === 'ConditionalCheckFailed'));
+
+        if (hasConditionalCheckFailed) {
+          const activityId = original.activityId ?? '';
+          const skillClaimsTableName = tables.activitySkillClaimsTable ?? process.env.ACTIVITY_SKILL_CLAIMS_TABLE ?? '';
+
+          try {
+            const existingClaims = await getSkillClaimsForActivity(activityId, client, skillClaimsTableName);
+            const requestedSkills = input.addSkillClaims!.map(sc => sc.skill);
+            const conflictingClaim = existingClaims.find(c => requestedSkills.includes(c.skill));
+            const occupantNickname = conflictingClaim?.userNickname ?? '未知用户';
+            const conflictSkill = conflictingClaim?.skill ?? requestedSkills[0];
+
+            return {
+              success: false,
+              error: {
+                code: 'SKILL_ALREADY_CLAIMED',
+                message: `技能 ${conflictSkill} 已被 ${occupantNickname} 占用`,
+              },
+            };
+          } catch {
+            return {
+              success: false,
+              error: {
+                code: 'SKILL_ALREADY_CLAIMED',
+                message: '技能已被他人占用',
+              },
+            };
+          }
+        }
+      }
+
+      console.error('Skill operations transaction failed:', err);
+      return {
+        success: false,
+        error: { code: 'ADJUSTMENT_FAILED', message: '调整事务执行失败' },
+      };
+    }
+  }
+
   for (const batch of userBatches) {
     const transactItems: any[] = [];
+
+    // Prepend releaseSkillItems and addSkillClaimItems to the first batch (release first, then add)
+    if (!skillItemsIncluded && (releaseSkillItems.length > 0 || addSkillClaimItems.length > 0)) {
+      transactItems.push(...releaseSkillItems);
+      transactItems.push(...addSkillClaimItems);
+      skillItemsIncluded = true;
+    }
 
     for (const ua of batch) {
       const recordId = ulid();
@@ -387,7 +663,49 @@ export async function executeAdjustment(
       await client.send(
         new TransactWriteCommand({ TransactItems: transactItems }),
       );
-    } catch (err) {
+    } catch (err: any) {
+      // Handle TransactionCanceledException with ConditionalCheckFailed for addSkillClaims
+      if (
+        addSkillClaimItems.length > 0 &&
+        (err.name === 'TransactionCanceledException' || err.name === 'ConditionalCheckFailedException')
+      ) {
+        const cancellationReasons = err.CancellationReasons as Array<{ Code?: string }> | undefined;
+        const hasConditionalCheckFailed =
+          err.name === 'ConditionalCheckFailedException' ||
+          (cancellationReasons && cancellationReasons.some((r: { Code?: string }) => r.Code === 'ConditionalCheckFailed'));
+
+        if (hasConditionalCheckFailed) {
+          const activityId = original.activityId ?? '';
+          const skillClaimsTableName = tables.activitySkillClaimsTable ?? process.env.ACTIVITY_SKILL_CLAIMS_TABLE ?? '';
+
+          // Re-read existing claims to find the occupant
+          try {
+            const existingClaims = await getSkillClaimsForActivity(activityId, client, skillClaimsTableName);
+            const requestedSkills = input.addSkillClaims!.map(sc => sc.skill);
+            const conflictingClaim = existingClaims.find(c => requestedSkills.includes(c.skill));
+            const occupantNickname = conflictingClaim?.userNickname ?? '未知用户';
+            const conflictSkill = conflictingClaim?.skill ?? requestedSkills[0];
+
+            return {
+              success: false,
+              error: {
+                code: 'SKILL_ALREADY_CLAIMED',
+                message: `技能 ${conflictSkill} 已被 ${occupantNickname} 占用`,
+              },
+            };
+          } catch {
+            // If re-read fails, still return SKILL_ALREADY_CLAIMED with generic message
+            return {
+              success: false,
+              error: {
+                code: 'SKILL_ALREADY_CLAIMED',
+                message: '技能已被他人占用',
+              },
+            };
+          }
+        }
+      }
+
       console.error('Adjustment transaction batch failed:', err);
       return {
         success: false,

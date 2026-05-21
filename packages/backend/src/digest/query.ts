@@ -6,12 +6,14 @@ import type { EmailLocale } from '../email/send';
 // ============================================================
 
 export interface DigestProduct {
+  productId: string;
   name: string;
   pointsCost: number;
   createdAt: string;
 }
 
 export interface DigestContentItem {
+  contentId: string;
   title: string;
   authorName: string;
   createdAt: string;
@@ -143,7 +145,7 @@ export async function queryNewProducts(
         ExpressionAttributeValues: {
           ':since': since,
         },
-        ProjectionExpression: '#name, pointsCost, createdAt',
+        ProjectionExpression: 'productId, #name, pointsCost, createdAt',
         ExpressionAttributeNames: {
           '#name': 'name',
         },
@@ -153,6 +155,7 @@ export async function queryNewProducts(
 
     for (const item of result.Items ?? []) {
       items.push({
+        productId: (item.productId as string) ?? '',
         name: (item.name as string) ?? '',
         pointsCost: (item.pointsCost as number) ?? 0,
         createdAt: (item.createdAt as string) ?? '',
@@ -187,7 +190,7 @@ export async function queryNewContent(
           ':since': since,
           ':approved': 'approved',
         },
-        ProjectionExpression: 'title, authorName, createdAt, #status',
+        ProjectionExpression: 'contentId, title, authorName, createdAt, #status',
         ExpressionAttributeNames: {
           '#status': 'status',
         },
@@ -197,6 +200,7 @@ export async function queryNewContent(
 
     for (const item of result.Items ?? []) {
       items.push({
+        contentId: (item.contentId as string) ?? '',
         title: (item.title as string) ?? '',
         authorName: (item.authorName as string) ?? '',
         createdAt: (item.createdAt as string) ?? '',

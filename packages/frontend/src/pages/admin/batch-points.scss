@@ -425,6 +425,70 @@
   }
 }
 
+/* Skill Icons (UGL only, when activity selected) */
+.bp-skill-icons {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  margin-left: var(--space-2);
+
+  &__icon {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: color var(--transition-fast), background var(--transition-fast), opacity var(--transition-fast);
+    position: relative;
+
+    svg {
+      width: 24px;
+      height: 24px;
+    }
+
+    /* Normal (clickable) state */
+    &--normal {
+      color: var(--text-secondary);
+      cursor: pointer;
+
+      &:hover {
+        color: var(--accent-primary);
+        background: rgba(124, 109, 240, 0.08);
+      }
+    }
+
+    /* Selected state: highlighted fill color */
+    &--selected {
+      color: var(--accent-primary);
+      background: rgba(124, 109, 240, 0.12);
+      cursor: pointer;
+
+      &:hover {
+        color: var(--accent-hover);
+        background: rgba(124, 109, 240, 0.16);
+      }
+    }
+
+    /* Occupied state: from server data, another user owns this skill */
+    &--occupied {
+      color: var(--text-tertiary);
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Disabled state: mutex, another user selected in current session */
+    &--disabled {
+      color: var(--text-tertiary);
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+}
+
 /* Form Section */
 .bp-form {
   padding: var(--space-4) var(--space-5);
@@ -584,6 +648,48 @@
     border-radius: var(--radius-sm);
     font-size: var(--text-caption);
     color: var(--accent-primary);
+  }
+
+  &__skill-section {
+    margin-top: var(--space-2);
+    padding: var(--space-3);
+    background: var(--bg-elevated);
+    border: 1px solid rgba(45, 212, 168, 0.2);
+    border-radius: var(--radius-md);
+  }
+
+  &__skill-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) 0;
+
+    &:not(:last-child) {
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: var(--space-2);
+      margin-bottom: var(--space-1);
+    }
+  }
+
+  &__skill-name {
+    font-size: var(--text-caption);
+    color: var(--text-secondary);
+    flex-shrink: 0;
+  }
+
+  &__skill-user {
+    font-size: var(--text-caption);
+    font-weight: 600;
+    color: var(--accent-primary);
+    flex: 1;
+  }
+
+  &__skill-pts {
+    font-family: var(--font-display);
+    font-size: var(--text-caption);
+    font-weight: 700;
+    color: var(--success);
+    flex-shrink: 0;
   }
 }
 

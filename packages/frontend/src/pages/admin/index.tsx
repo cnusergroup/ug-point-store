@@ -191,6 +191,16 @@ const ADMIN_LINKS = [
     adminPermissionKey: 'adminEmailContentEnabled' as const,
   },
   {
+    key: 'wishes',
+    category: 'operations',
+    icon: GiftIcon,
+    titleKey: 'admin.dashboard.wishesTitle',
+    descKey: 'admin.dashboard.wishesDesc',
+    url: '/pages/admin/wishes',
+    featureToggleKey: 'wishPoolEnabled' as const,
+    superAdminOnly: true,
+  },
+  {
     key: 'settings',
     category: 'system-settings',
     icon: SettingsIcon,
@@ -271,7 +281,7 @@ export default function AdminDashboard() {
   const user = useAppStore((s) => s.user);
   const { t } = useTranslation();
   const [activeCategory, setActiveCategory] = useState<string>('product-management');
-  const [featureToggles, setFeatureToggles] = useState<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; adminProductsEnabled: boolean; adminOrdersEnabled: boolean; adminContentReviewEnabled: boolean; adminCategoriesEnabled: boolean; adminEmailProductsEnabled: boolean; adminEmailContentEnabled: boolean } | null>(null);
+  const [featureToggles, setFeatureToggles] = useState<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; adminProductsEnabled: boolean; adminOrdersEnabled: boolean; adminContentReviewEnabled: boolean; adminCategoriesEnabled: boolean; adminEmailProductsEnabled: boolean; adminEmailContentEnabled: boolean; wishPoolEnabled: boolean } | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -289,7 +299,7 @@ export default function AdminDashboard() {
     }
 
     // Fetch feature toggles (public endpoint, no auth needed)
-    request<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; adminProductsEnabled: boolean; adminOrdersEnabled: boolean; adminContentReviewEnabled: boolean; adminCategoriesEnabled: boolean; adminEmailProductsEnabled: boolean; adminEmailContentEnabled: boolean }>({
+    request<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; adminProductsEnabled: boolean; adminOrdersEnabled: boolean; adminContentReviewEnabled: boolean; adminCategoriesEnabled: boolean; adminEmailProductsEnabled: boolean; adminEmailContentEnabled: boolean; wishPoolEnabled: boolean }>({
       url: '/api/settings/feature-toggles',
       skipAuth: true,
     })
@@ -305,6 +315,7 @@ export default function AdminDashboard() {
           adminCategoriesEnabled: true,
           adminEmailProductsEnabled: true,
           adminEmailContentEnabled: true,
+          wishPoolEnabled: true,
         });
       });
   }, [isAuthenticated, user]);

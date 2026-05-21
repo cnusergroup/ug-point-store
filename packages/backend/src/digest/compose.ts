@@ -68,7 +68,7 @@ export function formatProductList(
   const items = products
     .map(
       (p) =>
-        `<li>${escapeHtml(p.name)} — ${p.pointsCost} pts</li>`,
+        `<li><a href="https://store.awscommunity.cn/#/pages/product/index?id=${encodeURIComponent(p.productId)}" style="color:#6366f1;text-decoration:underline;">${escapeHtml(p.name)}</a> — ${p.pointsCost} pts</li>`,
     )
     .join('');
 
@@ -90,7 +90,7 @@ export function formatContentList(
   const items = contentItems
     .map(
       (c) =>
-        `<li>${escapeHtml(c.title)} — ${escapeHtml(c.authorName)}</li>`,
+        `<li><a href="https://store.awscommunity.cn/#/pages/content/detail?id=${encodeURIComponent(c.contentId)}" style="color:#6366f1;text-decoration:underline;">${escapeHtml(c.title)}</a> — ${escapeHtml(c.authorName)}</li>`,
     )
     .join('');
 

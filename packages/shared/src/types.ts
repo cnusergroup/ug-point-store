@@ -629,6 +629,14 @@ export function isValidVideoUrl(url: string): boolean {
 // 批量积分发放相关类型定义
 // ============================================================
 
+/** 技能认领摘要（存储在 Distribution 记录中） */
+export interface SkillClaimSummary {
+  skill: 'liveSupport' | 'promoWriting';
+  userId: string;
+  userNickname: string;
+  pointsAwarded: number;
+}
+
 /** 批量发放记录 */
 export interface DistributionRecord {
   distributionId: string;
@@ -650,6 +658,8 @@ export interface DistributionRecord {
   activityDate?: string;
   adjustedAt?: string;
   adjustedBy?: string;
+  /** 技能认领摘要（仅 UGL 发放且含 skillClaims 时存在） */
+  skillClaims?: SkillClaimSummary[];
 }
 
 // ============================================================
@@ -756,4 +766,37 @@ export interface LeaderboardAnnouncementItem {
   activityTopic?: string;
   activityType?: string;
   distributorNickname?: string;
+}
+
+// ============================================================
+// 许愿池（Wish Pool）相关类型定义
+// ============================================================
+
+/** 许愿状态 */
+export type WishStatus = 'pending' | 'approved' | 'adopted' | 'fulfilled' | 'closed';
+
+/** 许愿记录 */
+export interface WishRecord {
+  wishId: string;
+  userId: string;
+  title: string;
+  description: string;
+  imageUrl?: string;
+  status: WishStatus;
+  voteCount: number;
+  productId?: string;
+  closeReason?: string;
+  priorityPurchase?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 许愿列表项（含投票状态） */
+export interface WishListItem extends WishRecord {
+  hasVoted?: boolean;
+}
+
+/** 我的许愿列表项（含剩余许愿次数） */
+export interface MyWishListItem extends WishRecord {
+  remainingWishes: number;
 }

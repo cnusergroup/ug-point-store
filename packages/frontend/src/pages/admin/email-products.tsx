@@ -135,7 +135,8 @@ export default function EmailProductsPage() {
           p.type === 'points' && p.pointsCost
             ? ` — ${p.pointsCost} ${t('emailNotification.pointsUnit')}`
             : '';
-        return `<p style="margin:4px 0;">• ${p.name}${cost}</p>`;
+        const url = `https://store.awscommunity.cn/#/pages/product/index?id=${p.productId}`;
+        return `<p style="margin:4px 0;">• <a href="${url}" style="color:#6366f1;text-decoration:underline;">${p.name}</a>${cost}</p>`;
       })
       .join('');
   };

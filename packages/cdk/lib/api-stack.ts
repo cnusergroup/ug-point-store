@@ -35,6 +35,9 @@ export interface ApiStackProps extends cdk.StackProps {
   activitiesTable: dynamodb.Table;
   credentialsTable: dynamodb.Table;
   credentialSequencesTable: dynamodb.Table;
+  wishesTable: dynamodb.Table;
+  wishVotesTable: dynamodb.Table;
+  activitySkillClaimsTable: dynamodb.Table;
   jwtSecret: string;
   wechatAppId: string;
   wechatAppSecret: string;
@@ -55,7 +58,7 @@ export class ApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
-    const { usersTable, productsTable, codesTable, redemptionsTable, pointsRecordsTable, cartTable, addressesTable, ordersTable, invitesTable, claimsTable, contentItemsTable, contentCategoriesTable, contentCommentsTable, contentLikesTable, contentReservationsTable, batchDistributionsTable, travelApplicationsTable, contentTagsTable, emailTemplatesTable, ugsTable, activitiesTable, credentialsTable, credentialSequencesTable } = props;
+    const { usersTable, productsTable, codesTable, redemptionsTable, pointsRecordsTable, cartTable, addressesTable, ordersTable, invitesTable, claimsTable, contentItemsTable, contentCategoriesTable, contentCommentsTable, contentLikesTable, contentReservationsTable, batchDistributionsTable, travelApplicationsTable, contentTagsTable, emailTemplatesTable, ugsTable, activitiesTable, credentialsTable, credentialSequencesTable, wishesTable, wishVotesTable, activitySkillClaimsTable } = props;
 
     // --- SSM Parameter for JWT Secret ---
     const jwtSecretParam = new ssm.StringParameter(this, 'JwtSecretParam', {
@@ -83,6 +86,8 @@ export class ApiStack extends cdk.Stack {
       ...(props.resetBaseUrl ? { RESET_BASE_URL: props.resetBaseUrl } : {}),
       INVITES_TABLE: invitesTable.tableName,
       CLAIMS_TABLE: claimsTable.tableName,
+      WISHES_TABLE: wishesTable.tableName,
+      WISH_VOTES_TABLE: wishVotesTable.tableName,
       ...(props.registerBaseUrl ? { REGISTER_BASE_URL: props.registerBaseUrl } : {}),
     };
 
@@ -151,6 +156,7 @@ export class ApiStack extends cdk.Stack {
     adminFn.addEnvironment('CONTENT_TAGS_TABLE', contentTagsTable.tableName);
     adminFn.addEnvironment('UGS_TABLE', ugsTable.tableName);
     adminFn.addEnvironment('ACTIVITIES_TABLE', activitiesTable.tableName);
+    adminFn.addEnvironment('ACTIVITY_SKILL_CLAIMS_TABLE', activitySkillClaimsTable.tableName);
 
     // Add travel table env var to Points Lambda
     pointsFn.addEnvironment('TRAVEL_APPLICATIONS_TABLE', travelApplicationsTable.tableName);
@@ -428,12 +434,35 @@ export class ApiStack extends cdk.Stack {
     emailTemplatesTable.grantReadData(orderFn);
     emailTemplatesTable.grantReadData(contentFn);
 
+    // --- Wishes Lambda (user-facing wish pool + admin review) ---
+    const wishesFn = new NodejsFunction(this, 'WishesFunction', {
+      ...commonFnProps,
+      functionName: 'PointsMall-Wishes',
+      entry: path.join(backendSrcPath, 'wishes/handler.ts'),
+      handler: 'handler',
+    } as NodejsFunctionProps);
+
+    // Wishes Lambda: Wishes, WishVotes, Users, PointsRecords tables
+    wishesTable.grantReadWriteData(wishesFn);
+    wishVotesTable.grantReadWriteData(wishesFn);
+    usersTable.grantReadWriteData(wishesFn);
+    pointsRecordsTable.grantReadWriteData(wishesFn);
+
+    // Wishes Lambda: SES permissions for email notifications
+    wishesFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+      resources: [
+        `arn:aws:ses:${this.region}:${this.account}:identity/*`,
+        `arn:aws:ses:${this.region}:${this.account}:configuration-set/*`,
+      ],
+    }));
+
     // Grant all Lambdas permission to read the JWT secret from SSM
     const ssmReadPolicy = new iam.PolicyStatement({
       actions: ['ssm:GetParameter'],
       resources: [jwtSecretParam.parameterArn],
     });
-    [authFn, productFn, pointsFn, redemptionFn, adminFn, cartFn, orderFn, contentFn, leaderboardFn, credentialFn].forEach(fn =>
+    [authFn, productFn, pointsFn, redemptionFn, adminFn, cartFn, orderFn, contentFn, leaderboardFn, credentialFn, wishesFn].forEach(fn =>
       fn.addToRolePolicy(ssmReadPolicy)
     );
 
@@ -519,6 +548,9 @@ export class ApiStack extends cdk.Stack {
     // Order Lambda integration — defined early because it's also used for admin order routes
     const orderInt = new apigateway.LambdaIntegration(orderFn);
 
+    // Wishes Lambda integration — defined early because it's also used for admin wishes routes
+    const wishesInt = new apigateway.LambdaIntegration(wishesFn);
+
     // Admin routes — use a single greedy proxy to avoid Lambda resource policy size limits.
     // Each explicit method registration adds a Lambda::Permission resource; with 30+ admin
     // routes the policy exceeds the 20 KB limit. A {proxy+} resource uses only 2 permissions
@@ -547,6 +579,16 @@ export class ApiStack extends cdk.Stack {
     const adminCredentialById = adminCredentials.addResource('{credentialId}');
     adminCredentialById.addMethod('GET', credentialInt);
     adminCredentialById.addResource('revoke').addMethod('PATCH', credentialInt);
+
+    // Admin wishes routes must be defined BEFORE addProxy to avoid CDK conflict with {proxy+}.
+    // These routes are handled by the independent Wishes Lambda, not the Admin Lambda.
+    const adminWishes = admin.addResource('wishes');
+    adminWishes.addMethod('GET', wishesInt);  // admin list wishes
+    const adminWishById = adminWishes.addResource('{wishId}');
+    const adminWishReview = adminWishById.addResource('review');
+    adminWishReview.addMethod('PATCH', wishesInt);  // review wish
+    const adminWishStatus = adminWishById.addResource('status');
+    adminWishStatus.addMethod('PATCH', wishesInt);  // update wish status
 
     // Catch-all proxy for all other /api/admin/* routes (handled by adminFn)
     admin.addMethod('ANY', adminInt);
@@ -607,6 +649,18 @@ export class ApiStack extends cdk.Stack {
     const leaderboard = api.addResource('leaderboard');
     leaderboard.addResource('ranking').addMethod('GET', leaderboardInt);
     leaderboard.addResource('announcements').addMethod('GET', leaderboardInt);
+
+    // Wishes routes (user-facing)
+    const wishes = api.addResource('wishes');
+    wishes.addMethod('POST', wishesInt);   // create wish
+    wishes.addMethod('GET', wishesInt);    // list wishes
+    const wishesMine = wishes.addResource('mine');
+    wishesMine.addMethod('GET', wishesInt);  // my wishes
+    wishesMine.addResource('monthly-count').addMethod('GET', wishesInt);  // monthly wish count
+    const wishById = wishes.addResource('{wishId}');
+    wishById.addMethod('PUT', wishesInt);    // edit wish
+    wishById.addMethod('DELETE', wishesInt);  // delete wish
+    wishById.addResource('vote').addMethod('POST', wishesInt);  // vote
 
     // Public credential page route: /c/{credentialId} (no auth required)
     // This is at the API root level, not under /api

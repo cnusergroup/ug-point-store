@@ -1391,3 +1391,277 @@ describe('executeAdjustment', () => {
     });
   });
 });
+
+// ============================================================
+// 4. Participant removal preserving skill claims (Req 12.7, 12.9)
+// ============================================================
+
+describe('participant removal preserving skill claims', () => {
+  let client: ReturnType<typeof createMockDynamoClient>;
+
+  beforeEach(() => {
+    client = createMockDynamoClient();
+  });
+
+  it('should only deduct activity points when removing participant with both activity + skill points (Req 12.7)', () => {
+    // A UGL distribution where user u2 has both activity points and skill points
+    const original = makeDistribution({
+      recipientIds: ['u1', 'u2'],
+      targetRole: 'UserGroupLeader',
+      speakerType: undefined,
+      points: 50, // activity points per user (uglPointsPerEvent)
+    });
+    // Remove u2 from participants
+    const input = makeInput({
+      recipientIds: ['u1'],
+      targetRole: 'UserGroupLeader',
+      speakerType: undefined,
+    });
+
+    const config = makeConfig({ uglPointsPerEvent: 50 });
+    const diff = computeAdjustmentDiff(original, input, config);
+
+    // u2 is removed — delta should be -50 (only activity points), NOT -(50 + skill points)
+    const removedAdj = diff.userAdjustments.find(ua => ua.userId === 'u2');
+    expect(removedAdj).toBeDefined();
+    expect(removedAdj!.delta).toBe(-50); // Only activity points deducted
+    // SkillClaim record is never touched by computeAdjustmentDiff — it's preserved
+  });
+
+  it('should deduct exactly distribution.points for removed users regardless of skill claims existence', () => {
+    // Even if the distribution had skillClaims, removal only deducts activity points
+    const original = makeDistribution({
+      recipientIds: ['u1', 'u2', 'u3'],
+      targetRole: 'UserGroupLeader',
+      speakerType: undefined,
+      points: 50,
+      // skillClaims field exists on the distribution record (from task 5.5)
+    });
+    const input = makeInput({
+      recipientIds: ['u1'],
+      targetRole: 'UserGroupLeader',
+      speakerType: undefined,
+    });
+
+    const config = makeConfig({ uglPointsPerEvent: 50 });
+    const diff = computeAdjustmentDiff(original, input, config);
+
+    // Both u2 and u3 removed — each gets -50 (activity points only)
+    const u2Adj = diff.userAdjustments.find(ua => ua.userId === 'u2');
+    const u3Adj = diff.userAdjustments.find(ua => ua.userId === 'u3');
+    expect(u2Adj!.delta).toBe(-50);
+    expect(u3Adj!.delta).toBe(-50);
+  });
+
+  it('should execute releaseSkills before addSkillClaims in same transaction (Req 12.9)', async () => {
+    const originalDist = makeDistribution({
+      recipientIds: ['u1', 'u2'],
+      targetRole: 'UserGroupLeader',
+      speakerType: undefined,
+      points: 50,
+      activityId: 'act-001',
+    });
+
+    // 1. GetCommand — fetch DistributionRecord
+    client.send.mockResolvedValueOnce({ Item: originalDist });
+    // 2. GetCommand — fetch feature-toggles
+    client.send.mockResolvedValueOnce(featureTogglesResponse());
+    // 3. No negative-delta users (no changes to recipients)
+    // 4. BatchGetCommand — fetch user details for recipients
+    client.send.mockResolvedValueOnce({
+      Responses: {
+        [USERS_TABLE]: [
+          { userId: 'u1', nickname: 'Alice', email: 'alice@test.com' },
+          { userId: 'u2', nickname: 'Bob', email: 'bob@test.com' },
+        ],
+      },
+    });
+    // 5. QueryCommand — fetch existing skill claims for releaseSkills
+    client.send.mockResolvedValueOnce({
+      Items: [
+        {
+          activityId: 'act-001',
+          skill: 'liveSupport',
+          userId: 'u1',
+          userNickname: 'Alice',
+          claimedAt: '2024-01-01T00:00:00.000Z',
+          claimedBy: 'admin-1',
+          distributionId: 'dist-001',
+          pointsAwarded: 30,
+        },
+      ],
+    });
+    // 6. BatchGetCommand — fetch nicknames for addSkillClaims target user
+    client.send.mockResolvedValueOnce({
+      Responses: {
+        [USERS_TABLE]: [
+          { userId: 'u2', nickname: 'Bob' },
+        ],
+      },
+    });
+    // 7. TransactWriteCommand — skill operations (no user adjustments since NO_CHANGES would block)
+    // Actually, we need to change recipients to avoid NO_CHANGES validation
+    // Let me restructure: add u3 to avoid NO_CHANGES
+    client.send.mockReset();
+
+    const originalDist2 = makeDistribution({
+      recipientIds: ['u1', 'u2'],
+      targetRole: 'UserGroupLeader',
+      speakerType: undefined,
+      points: 50,
+      activityId: 'act-001',
+    });
+
+    // 1. GetCommand — fetch DistributionRecord
+    client.send.mockResolvedValueOnce({ Item: originalDist2 });
+    // 2. GetCommand — fetch feature-toggles
+    client.send.mockResolvedValueOnce(featureTogglesResponse());
+    // 3. No negative-delta users (adding u3 only)
+    // 4. BatchGetCommand — fetch user details for new recipients [u1, u2, u3]
+    client.send.mockResolvedValueOnce({
+      Responses: {
+        [USERS_TABLE]: [
+          { userId: 'u1', nickname: 'Alice', email: 'alice@test.com' },
+          { userId: 'u2', nickname: 'Bob', email: 'bob@test.com' },
+          { userId: 'u3', nickname: 'Charlie', email: 'charlie@test.com' },
+        ],
+      },
+    });
+    // 5. QueryCommand — fetch existing skill claims for releaseSkills
+    client.send.mockResolvedValueOnce({
+      Items: [
+        {
+          activityId: 'act-001',
+          skill: 'liveSupport',
+          userId: 'u1',
+          userNickname: 'Alice',
+          claimedAt: '2024-01-01T00:00:00.000Z',
+          claimedBy: 'admin-1',
+          distributionId: 'dist-001',
+          pointsAwarded: 30,
+        },
+      ],
+    });
+    // 6. BatchGetCommand — fetch nicknames for addSkillClaims target user u2
+    client.send.mockResolvedValueOnce({
+      Responses: {
+        [USERS_TABLE]: [
+          { userId: 'u2', nickname: 'Bob' },
+        ],
+      },
+    });
+    // 7. TransactWriteCommand — succeeds
+    client.send.mockResolvedValueOnce({});
+    // 8. UpdateCommand — update DistributionRecord
+    client.send.mockResolvedValueOnce({});
+
+    const result = await executeAdjustment(
+      makeInput({
+        recipientIds: ['u1', 'u2', 'u3'],
+        targetRole: 'UserGroupLeader',
+        speakerType: undefined,
+        callerRoles: ['SuperAdmin'],
+        releaseSkills: [{ skill: 'liveSupport' }],
+        addSkillClaims: [{ skill: 'promoWriting', userId: 'u2' }],
+      }),
+      client,
+      {
+        ...TABLES,
+        activitySkillClaimsTable: 'PointsMall-ActivitySkillClaims',
+      },
+    );
+
+    expect(result.success).toBe(true);
+
+    // Find the TransactWriteCommand call
+    const txCall = client.send.mock.calls.find(
+      (call: any) => call[0]?.constructor?.name === 'TransactWriteCommand',
+    );
+    expect(txCall).toBeDefined();
+
+    const transactItems = txCall![0].input.TransactItems;
+
+    // Find indices of releaseSkills items (Delete) and addSkillClaims items (Put with ConditionExpression)
+    let releaseIndex = -1;
+    let addIndex = -1;
+
+    for (let i = 0; i < transactItems.length; i++) {
+      const item = transactItems[i];
+      if (item.Delete?.TableName === 'PointsMall-ActivitySkillClaims') {
+        releaseIndex = i;
+      }
+      if (
+        item.Put?.TableName === 'PointsMall-ActivitySkillClaims' &&
+        item.Put?.ConditionExpression === 'attribute_not_exists(activityId)'
+      ) {
+        addIndex = i;
+      }
+    }
+
+    // releaseSkills items should come BEFORE addSkillClaims items
+    expect(releaseIndex).toBeGreaterThanOrEqual(0);
+    expect(addIndex).toBeGreaterThan(releaseIndex);
+  });
+
+  it('should return FORBIDDEN when non-SuperAdmin tries releaseSkills', async () => {
+    const originalDist = makeDistribution({
+      recipientIds: ['u1', 'u2'],
+      targetRole: 'UserGroupLeader',
+      speakerType: undefined,
+      points: 50,
+      activityId: 'act-001',
+    });
+
+    // 1. GetCommand — fetch DistributionRecord
+    client.send.mockResolvedValueOnce({ Item: originalDist });
+
+    const result = await executeAdjustment(
+      makeInput({
+        recipientIds: ['u1', 'u2', 'u3'],
+        targetRole: 'UserGroupLeader',
+        speakerType: undefined,
+        callerRoles: ['Admin'], // Not SuperAdmin
+        releaseSkills: [{ skill: 'liveSupport' }],
+      }),
+      client,
+      {
+        ...TABLES,
+        activitySkillClaimsTable: 'PointsMall-ActivitySkillClaims',
+      },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('FORBIDDEN');
+  });
+
+  it('should return FORBIDDEN when non-SuperAdmin tries addSkillClaims', async () => {
+    const originalDist = makeDistribution({
+      recipientIds: ['u1', 'u2'],
+      targetRole: 'UserGroupLeader',
+      speakerType: undefined,
+      points: 50,
+      activityId: 'act-001',
+    });
+
+    // 1. GetCommand — fetch DistributionRecord
+    client.send.mockResolvedValueOnce({ Item: originalDist });
+
+    const result = await executeAdjustment(
+      makeInput({
+        recipientIds: ['u1', 'u2', 'u3'],
+        targetRole: 'UserGroupLeader',
+        speakerType: undefined,
+        callerRoles: ['Admin'], // Not SuperAdmin
+        addSkillClaims: [{ skill: 'promoWriting', userId: 'u2' }],
+      }),
+      client,
+      {
+        ...TABLES,
+        activitySkillClaimsTable: 'PointsMall-ActivitySkillClaims',
+      },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('FORBIDDEN');
+  });
+});

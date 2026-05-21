@@ -2,23 +2,23 @@ import { describe, it, expect, vi } from 'vitest';
 import { getDefaultTemplates, seedDefaultTemplates } from './seed';
 
 describe('getDefaultTemplates', () => {
-  it('should return exactly 35 templates (7 types × 5 locales)', () => {
+  it('should return exactly 50 templates (10 types × 5 locales)', () => {
     const templates = getDefaultTemplates();
-    expect(templates).toHaveLength(35);
+    expect(templates).toHaveLength(50);
   });
 
-  it('should cover all 7 notification types', () => {
+  it('should cover all 10 notification types', () => {
     const templates = getDefaultTemplates();
     const types = new Set(templates.map((t) => t.templateId));
     expect(types).toEqual(
-      new Set(['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest']),
+      new Set(['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest', 'wishAdopted', 'wishFulfilled', 'wishRejected']),
     );
   });
 
   it('should cover all 5 locales for each type', () => {
     const templates = getDefaultTemplates();
     const expectedLocales = ['zh', 'en', 'ja', 'ko', 'zh-TW'];
-    const types = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest'];
+    const types = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest', 'wishAdopted', 'wishFulfilled', 'wishRejected'];
 
     for (const type of types) {
       const locales = templates.filter((t) => t.templateId === type).map((t) => t.locale);
@@ -36,6 +36,9 @@ describe('getDefaultTemplates', () => {
       newContent: ['contentList'],
       contentUpdated: ['contentTitle', 'userName', 'activityTopic', 'activityDate'],
       weeklyDigest: ['nickname', 'productList', 'contentList', 'weekStart', 'weekEnd'],
+      wishAdopted: ['nickname', 'wishTitle'],
+      wishFulfilled: ['nickname', 'wishTitle', 'productUrl'],
+      wishRejected: ['nickname', 'wishTitle', 'closeReason'],
     };
 
     for (const template of templates) {
@@ -105,7 +108,7 @@ describe('getDefaultTemplates', () => {
 });
 
 describe('seedDefaultTemplates', () => {
-  it('should call BatchWriteCommand in batches of 25 for all 35 templates', async () => {
+  it('should call BatchWriteCommand in batches of 25 for all 50 templates', async () => {
     const mockSend = vi.fn().mockResolvedValue({});
     const mockClient = { send: mockSend } as any;
 
@@ -118,10 +121,10 @@ describe('seedDefaultTemplates', () => {
     expect(command1.constructor.name).toBe('BatchWriteCommand');
     expect(command1.input.RequestItems['TestTable']).toHaveLength(25);
 
-    // Second batch: 10 templates
+    // Second batch: 25 templates
     const command2 = mockSend.mock.calls[1][0];
     expect(command2.constructor.name).toBe('BatchWriteCommand');
-    expect(command2.input.RequestItems['TestTable']).toHaveLength(10);
+    expect(command2.input.RequestItems['TestTable']).toHaveLength(25);
 
     // Verify each item in both batches is a PutRequest
     for (const call of mockSend.mock.calls) {

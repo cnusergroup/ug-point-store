@@ -77,18 +77,19 @@ const CONTENT_DOWNLOAD_REGEX = /^\/api\/content\/([^/]+)\/download$/;
 /**
  * Fetch user nickname and first role from Users table.
  */
-async function getUserInfo(userId: string): Promise<{ nickname: string; role: string }> {
+async function getUserInfo(userId: string): Promise<{ nickname: string; role: string; isEmployee: boolean }> {
   const result = await dynamoClient.send(
     new GetCommand({
       TableName: USERS_TABLE,
       Key: { userId },
-      ProjectionExpression: 'nickname, #r',
+      ProjectionExpression: 'nickname, #r, isEmployee',
       ExpressionAttributeNames: { '#r': 'roles' },
     }),
   );
   const nickname = result.Item?.nickname ?? '';
   const roles = result.Item?.roles ?? [];
-  return { nickname, role: Array.isArray(roles) && roles.length > 0 ? roles[0] : '' };
+  const isEmployee = result.Item?.isEmployee === true;
+  return { nickname, role: Array.isArray(roles) && roles.length > 0 ? roles[0] : '', isEmployee };
 }
 
 const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise<APIGatewayProxyResult> => {
@@ -251,6 +252,8 @@ async function handleCreateContentItem(event: AuthenticatedEvent): Promise<APIGa
       fileSize: (body.fileSize as number) ?? 0,
       videoUrl: body.videoUrl as string | undefined,
       tags: body.tags as string[] | undefined,
+      isEmployee: userInfo.isEmployee === true,
+      employeeContentAutoApproved: toggles.employeeContentAutoApproved === true,
     },
     dynamoClient,
     { contentItemsTable: CONTENT_ITEMS_TABLE, categoriesTable: CONTENT_CATEGORIES_TABLE, contentTagsTable: CONTENT_TAGS_TABLE },

@@ -492,7 +492,14 @@ describe('listDistributionHistory', () => {
 
   it('should return encoded lastKey when LastEvaluatedKey is present', async () => {
     const lastEvalKey = { distributionId: 'd2', pk: 'ALL', createdAt: '2024-02-01T00:00:00Z' };
-    client.send.mockResolvedValueOnce({ Items: [], LastEvaluatedKey: lastEvalKey });
+    // Return exactly pageSize (20) items so the loop exits (collected.length >= pageSize)
+    // with cursor still set from LastEvaluatedKey
+    const fakeItems = Array.from({ length: 20 }, (_, i) => ({
+      distributionId: `d-${i}`,
+      pk: 'ALL',
+      createdAt: `2024-02-01T00:00:${String(i).padStart(2, '0')}Z`,
+    }));
+    client.send.mockResolvedValueOnce({ Items: fakeItems, LastEvaluatedKey: lastEvalKey });
 
     const result = await listDistributionHistory({}, client, BATCH_DISTRIBUTIONS_TABLE);
 

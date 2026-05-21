@@ -12,6 +12,9 @@ import {
   sendOrderShippedEmail,
   sendNewProductNotification,
   sendNewContentNotification,
+  sendWishAdoptedEmail,
+  sendWishFulfilledEmail,
+  sendWishRejectedEmail,
 } from './notifications';
 import type { NotificationContext } from './notifications';
 import { getFeatureToggles } from '../settings/feature-toggles';
@@ -775,5 +778,282 @@ describe('sendNewContentNotification', () => {
     expect(mockSes.send).toHaveBeenCalledOnce();
     const cmd = mockSes.send.mock.calls[0][0];
     expect(cmd.input.Message.Body.Html.Data).toContain('Blog Post, Tutorial');
+  });
+});
+
+
+// ============================================================
+// sendWishAdoptedEmail
+// ============================================================
+
+describe('sendWishAdoptedEmail', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('should send email with correct variables when user exists', async () => {
+    const mockSes = { send: vi.fn().mockResolvedValue({}) };
+    const mockDynamo = createSmartDynamoClient({
+      users: {
+        'user-wish-1': { email: 'wisher@test.com', nickname: 'Wisher', locale: 'zh' },
+      },
+      templates: {
+        'wishAdopted:zh': {
+          subject: '🎉 你的许愿 {{wishTitle}} 被采纳啦！',
+          body: '<p>Hi {{nickname}}，你的许愿 {{wishTitle}} 已被采纳！</p>',
+        },
+      },
+    });
+
+    const ctx = createMockContext({ sesClient: mockSes, dynamoClient: mockDynamo });
+
+    const p = sendWishAdoptedEmail(ctx, 'user-wish-1', '定制贴纸');
+    await vi.runAllTimersAsync();
+    await p;
+
+    expect(mockSes.send).toHaveBeenCalledOnce();
+    const cmd = mockSes.send.mock.calls[0][0];
+    expect(cmd.input.Destination.ToAddresses).toEqual(['wisher@test.com']);
+    expect(cmd.input.Message.Subject.Data).toBe('🎉 你的许愿 定制贴纸 被采纳啦！');
+    expect(cmd.input.Message.Body.Html.Data).toContain('Wisher');
+    expect(cmd.input.Message.Body.Html.Data).toContain('定制贴纸');
+  });
+
+  it('should skip sending when user not found', async () => {
+    const mockSes = { send: vi.fn() };
+    const mockDynamo = createSmartDynamoClient({ users: {} });
+
+    const ctx = createMockContext({ sesClient: mockSes, dynamoClient: mockDynamo });
+
+    const p = sendWishAdoptedEmail(ctx, 'nonexistent-user', '测试许愿');
+    await vi.runAllTimersAsync();
+    await p;
+
+    expect(mockSes.send).not.toHaveBeenCalled();
+  });
+
+  it('should fall back to zh template when user locale template is missing', async () => {
+    const mockSes = { send: vi.fn().mockResolvedValue({}) };
+    const mockDynamo = createSmartDynamoClient({
+      users: {
+        'user-ko': { email: 'ko@test.com', nickname: 'KoUser', locale: 'ko' },
+      },
+      templates: {
+        'wishAdopted:zh': {
+          subject: '许愿被采纳 {{wishTitle}}',
+          body: '<p>{{nickname}} 的许愿被采纳</p>',
+        },
+      },
+    });
+
+    const ctx = createMockContext({ sesClient: mockSes, dynamoClient: mockDynamo });
+
+    const p = sendWishAdoptedEmail(ctx, 'user-ko', '限定周边');
+    await vi.runAllTimersAsync();
+    await p;
+
+    expect(mockSes.send).toHaveBeenCalledOnce();
+    const cmd = mockSes.send.mock.calls[0][0];
+    expect(cmd.input.Message.Subject.Data).toBe('许愿被采纳 限定周边');
+  });
+
+  it('should not throw when SES fails (best-effort)', async () => {
+    const mockSes = { send: vi.fn().mockRejectedValue(new Error('SES down')) };
+    const mockDynamo = createSmartDynamoClient({
+      users: {
+        'user-1': { email: 'fail@test.com', nickname: 'Fail', locale: 'zh' },
+      },
+      templates: {
+        'wishAdopted:zh': { subject: 'Test', body: '<p>Test</p>' },
+      },
+    });
+
+    const ctx = createMockContext({ sesClient: mockSes, dynamoClient: mockDynamo });
+
+    const p = sendWishAdoptedEmail(ctx, 'user-1', '测试');
+    await vi.runAllTimersAsync();
+    await expect(p).resolves.toBeUndefined();
+  });
+});
+
+// ============================================================
+// sendWishFulfilledEmail
+// ============================================================
+
+describe('sendWishFulfilledEmail', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('should send email with product link when user exists', async () => {
+    const mockSes = { send: vi.fn().mockResolvedValue({}) };
+    const mockDynamo = createSmartDynamoClient({
+      users: {
+        'user-wish-2': { email: 'fulfilled@test.com', nickname: 'Lucky', locale: 'en' },
+      },
+      templates: {
+        'wishFulfilled:en': {
+          subject: '🎊 Your wish {{wishTitle}} came true!',
+          body: '<p>Hi {{nickname}}, your wish {{wishTitle}} is now available! <a href="{{productUrl}}">View</a></p>',
+        },
+      },
+    });
+
+    const ctx = createMockContext({ sesClient: mockSes, dynamoClient: mockDynamo });
+
+    const p = sendWishFulfilledEmail(ctx, 'user-wish-2', 'Custom Sticker', 'prod-123');
+    await vi.runAllTimersAsync();
+    await p;
+
+    expect(mockSes.send).toHaveBeenCalledOnce();
+    const cmd = mockSes.send.mock.calls[0][0];
+    expect(cmd.input.Destination.ToAddresses).toEqual(['fulfilled@test.com']);
+    expect(cmd.input.Message.Subject.Data).toBe('🎊 Your wish Custom Sticker came true!');
+    expect(cmd.input.Message.Body.Html.Data).toContain('Lucky');
+    expect(cmd.input.Message.Body.Html.Data).toContain('Custom Sticker');
+    expect(cmd.input.Message.Body.Html.Data).toContain('/products/prod-123');
+  });
+
+  it('should skip sending when user not found', async () => {
+    const mockSes = { send: vi.fn() };
+    const mockDynamo = createSmartDynamoClient({ users: {} });
+
+    const ctx = createMockContext({ sesClient: mockSes, dynamoClient: mockDynamo });
+
+    const p = sendWishFulfilledEmail(ctx, 'nonexistent', '测试', 'prod-1');
+    await vi.runAllTimersAsync();
+    await p;
+
+    expect(mockSes.send).not.toHaveBeenCalled();
+  });
+
+  it('should not throw when SES fails (best-effort)', async () => {
+    const mockSes = { send: vi.fn().mockRejectedValue(new Error('SES error')) };
+    const mockDynamo = createSmartDynamoClient({
+      users: {
+        'user-1': { email: 'err@test.com', nickname: 'Err', locale: 'zh' },
+      },
+      templates: {
+        'wishFulfilled:zh': { subject: 'Test', body: '<p>Test</p>' },
+      },
+    });
+
+    const ctx = createMockContext({ sesClient: mockSes, dynamoClient: mockDynamo });
+
+    const p = sendWishFulfilledEmail(ctx, 'user-1', '测试', 'prod-1');
+    await vi.runAllTimersAsync();
+    await expect(p).resolves.toBeUndefined();
+  });
+});
+
+// ============================================================
+// sendWishRejectedEmail
+// ============================================================
+
+describe('sendWishRejectedEmail', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('should send email with close reason when user exists', async () => {
+    const mockSes = { send: vi.fn().mockResolvedValue({}) };
+    const mockDynamo = createSmartDynamoClient({
+      users: {
+        'user-wish-3': { email: 'rejected@test.com', nickname: 'Sad', locale: 'ja' },
+      },
+      templates: {
+        'wishRejected:ja': {
+          subject: '💬 ウィッシュ {{wishTitle}} は審査を通過しませんでした',
+          body: '<p>{{nickname}} さん、ウィッシュ {{wishTitle}} は審査を通過しませんでした。理由：{{closeReason}}</p>',
+        },
+      },
+    });
+
+    const ctx = createMockContext({ sesClient: mockSes, dynamoClient: mockDynamo });
+
+    const p = sendWishRejectedEmail(ctx, 'user-wish-3', 'カスタムグッズ', '内容が不適切です');
+    await vi.runAllTimersAsync();
+    await p;
+
+    expect(mockSes.send).toHaveBeenCalledOnce();
+    const cmd = mockSes.send.mock.calls[0][0];
+    expect(cmd.input.Destination.ToAddresses).toEqual(['rejected@test.com']);
+    expect(cmd.input.Message.Subject.Data).toBe('💬 ウィッシュ カスタムグッズ は審査を通過しませんでした');
+    expect(cmd.input.Message.Body.Html.Data).toContain('Sad');
+    expect(cmd.input.Message.Body.Html.Data).toContain('カスタムグッズ');
+    expect(cmd.input.Message.Body.Html.Data).toContain('内容が不適切です');
+  });
+
+  it('should skip sending when user not found', async () => {
+    const mockSes = { send: vi.fn() };
+    const mockDynamo = createSmartDynamoClient({ users: {} });
+
+    const ctx = createMockContext({ sesClient: mockSes, dynamoClient: mockDynamo });
+
+    const p = sendWishRejectedEmail(ctx, 'nonexistent', '测试', '原因');
+    await vi.runAllTimersAsync();
+    await p;
+
+    expect(mockSes.send).not.toHaveBeenCalled();
+  });
+
+  it('should not throw when SES fails (best-effort)', async () => {
+    const mockSes = { send: vi.fn().mockRejectedValue(new Error('SES error')) };
+    const mockDynamo = createSmartDynamoClient({
+      users: {
+        'user-1': { email: 'err@test.com', nickname: 'Err', locale: 'zh' },
+      },
+      templates: {
+        'wishRejected:zh': { subject: 'Test', body: '<p>Test</p>' },
+      },
+    });
+
+    const ctx = createMockContext({ sesClient: mockSes, dynamoClient: mockDynamo });
+
+    const p = sendWishRejectedEmail(ctx, 'user-1', '测试', '不合适');
+    await vi.runAllTimersAsync();
+    await expect(p).resolves.toBeUndefined();
+  });
+
+  it('should use user locale preference for email language', async () => {
+    const mockSes = { send: vi.fn().mockResolvedValue({}) };
+    const mockDynamo = createSmartDynamoClient({
+      users: {
+        'user-tw': { email: 'tw@test.com', nickname: 'TWUser', locale: 'zh-TW' },
+      },
+      templates: {
+        'wishRejected:zh-TW': {
+          subject: '💬 你的許願 {{wishTitle}} 未通過審核',
+          body: '<p>Hi {{nickname}}，你的許願 {{wishTitle}} 未通過。原因：{{closeReason}}</p>',
+        },
+      },
+    });
+
+    const ctx = createMockContext({ sesClient: mockSes, dynamoClient: mockDynamo });
+
+    const p = sendWishRejectedEmail(ctx, 'user-tw', '限定周邊', '內容重複');
+    await vi.runAllTimersAsync();
+    await p;
+
+    expect(mockSes.send).toHaveBeenCalledOnce();
+    const cmd = mockSes.send.mock.calls[0][0];
+    expect(cmd.input.Message.Subject.Data).toBe('💬 你的許願 限定周邊 未通過審核');
+    expect(cmd.input.Message.Body.Html.Data).toContain('TWUser');
+    expect(cmd.input.Message.Body.Html.Data).toContain('內容重複');
   });
 });

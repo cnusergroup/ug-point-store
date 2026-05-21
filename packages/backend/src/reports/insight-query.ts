@@ -1039,7 +1039,7 @@ export interface EmployeeEngagementResult {
  * 返回每位员工的聚合数据（未排序、未赋排名）。
  */
 export function aggregateEmployeeEngagement(
-  records: { userId: string; amount: number; activityId?: string; createdAt: string; targetRole?: string; activityUG?: string }[],
+  records: { userId: string; amount: number; activityId?: string; createdAt: string; targetRole?: string; activityUG?: string; source?: string }[],
 ): {
   userId: string;
   totalPoints: number;
@@ -1058,9 +1058,11 @@ export function aggregateEmployeeEngagement(
 
   for (const record of records) {
     const existing = map.get(record.userId);
+    // Only count as "activity" if source starts with 批量发放 (batch points for activities)
+    const isActivityRecord = record.source?.startsWith('批量发放');
     if (existing) {
       existing.totalPoints += record.amount;
-      if (record.activityId) {
+      if (record.activityId && isActivityRecord) {
         existing.activityIds.add(record.activityId);
       }
       if (record.createdAt > existing.lastActiveTime) {
@@ -1074,7 +1076,7 @@ export function aggregateEmployeeEngagement(
       }
     } else {
       const activityIds = new Set<string>();
-      if (record.activityId) {
+      if (record.activityId && isActivityRecord) {
         activityIds.add(record.activityId);
       }
       const primaryRoles = new Set<string>();
@@ -1187,6 +1189,7 @@ export async function queryEmployeeEngagement(
       createdAt: (item.createdAt as string) ?? '',
       targetRole: (item.targetRole as string) ?? undefined,
       activityUG: (item.activityUG as string) ?? undefined,
+      source: (item.source as string) ?? undefined,
     }));
 
     const aggregated = aggregateEmployeeEngagement(inputRecords);
@@ -1222,7 +1225,8 @@ export async function queryEmployeeEngagement(
     const allActivityIds = new Set<string>();
     for (const record of employeeRecords) {
       const activityId = record.activityId as string;
-      if (activityId) {
+      const source = record.source as string;
+      if (activityId && source?.startsWith('批量发放')) {
         allActivityIds.add(activityId);
       }
     }

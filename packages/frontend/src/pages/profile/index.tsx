@@ -345,7 +345,7 @@ function ProfilePage() {
           {/* Quick Actions Grid (2×2) */}
           <View className='profile-actions-grid'>
             {QUICK_ACTIONS.filter((action) => {
-              if (action.key === 'redeem' && !featureToggles.codeRedemptionEnabled) return false;
+              if (action.key === 'redeem' && !featureToggles.pointsClaimEnabled) return false;
               if (action.key === 'claims' && !featureToggles.pointsClaimEnabled) return false;
               if ('speakerOnly' in action && action.speakerOnly && !userRoles.includes('Speaker')) return false;
               return true;
@@ -376,7 +376,7 @@ function ProfilePage() {
         >
           <Text>{t('profile.tabPoints')}</Text>
         </View>
-        {featureToggles.codeRedemptionEnabled && (
+        {featureToggles.pointsClaimEnabled && (
           <View
             className={`profile-tabs__item ${activeTab === 'redemptions' ? 'profile-tabs__item--active' : ''}`}
             onClick={() => handleTabSwitch('redemptions')}
@@ -430,7 +430,7 @@ function ProfilePage() {
       )}
 
       {/* Redemption Records Tab */}
-      {featureToggles.codeRedemptionEnabled && activeTab === 'redemptions' && (
+      {featureToggles.pointsClaimEnabled && activeTab === 'redemptions' && (
         <View className='record-list'>
           {redemptionRecords.length === 0 && !redemptionsLoading ? (
             <View className='record-list__empty'>

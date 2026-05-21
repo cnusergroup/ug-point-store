@@ -10,6 +10,8 @@ import { ulid } from 'ulid';
 import type { DistributionRecord } from '@points-mall/shared';
 import { getFeatureToggles, DEFAULT_POINTS_RULE_CONFIG } from '../settings/feature-toggles';
 import type { PointsRuleConfig } from '../settings/feature-toggles';
+import type { SkillClaimInput, SkillType } from './skill-claims';
+import { validateSkillClaimsInput, buildSkillClaimTransactItems, getSkillClaimsForActivity } from './skill-claims';
 
 // ============================================================
 // Interfaces
@@ -32,6 +34,8 @@ export interface BatchDistributionInput {
   activityDate: string;
   /** When true, skip POINTS_MISMATCH validation (used by SuperAdmin quarterly award) */
   skipPointsValidation?: boolean;
+  /** 技能认领列表（仅 UGL 角色适用） */
+  skillClaims?: SkillClaimInput[];
 }
 
 /** 批量发放结果 */
@@ -40,6 +44,10 @@ export interface BatchDistributionResult {
   distributionId?: string;
   successCount?: number;
   totalPoints?: number;
+  /** 实际写入的技能认领列表 */
+  skillClaims?: Array<{ skill: SkillType; userId: string; userNickname: string; pointsAwarded: number }>;
+  /** 技能分总额 */
+  totalSkillPoints?: number;
   error?: { code: string; message: string };
 }
 
@@ -108,9 +116,6 @@ export function validateBatchDistributionInput(body: unknown): ValidationResult 
 // ============================================================
 // Core batch distribution logic
 // ============================================================
-
-/** Max users per DynamoDB transaction batch (100 ops / 2 ops per user = 50, but design says 25) */
-const BATCH_SIZE = 25;
 
 /**
  * Calculate expected points per person based on role, speakerType, and config.
@@ -236,6 +241,68 @@ export async function executeBatchDistribution(
     }
   }
 
+  // 0d. Skill claims validation (early return if invalid)
+  const hasSkillClaims = input.skillClaims && input.skillClaims.length > 0;
+  if (hasSkillClaims) {
+    const skillValidation = validateSkillClaimsInput(input.skillClaims!, input.targetRole);
+    if (skillValidation) {
+      return {
+        success: false,
+        error: skillValidation,
+      };
+    }
+
+    // Validate each userId in skillClaims: must exist, be active, have UGL role
+    const skillUserIds = [...new Set(input.skillClaims!.map(c => c.userId))];
+
+    // Fetch all skill claim users to validate existence, status, and role
+    const skillUserChunks = chunkArray(skillUserIds, 100);
+    for (const chunk of skillUserChunks) {
+      const result = await dynamoClient.send(
+        new BatchGetCommand({
+          RequestItems: {
+            [tables.usersTable]: {
+              Keys: chunk.map(userId => ({ userId })),
+              ProjectionExpression: 'userId, #s, roles',
+              ExpressionAttributeNames: { '#s': 'status' },
+            },
+          },
+        }),
+      );
+
+      const items = result.Responses?.[tables.usersTable] ?? [];
+      const foundIds = new Set(items.map(item => item.userId as string));
+
+      // Check all skill claim users exist
+      for (const uid of chunk) {
+        if (!foundIds.has(uid)) {
+          return {
+            success: false,
+            error: { code: 'INVALID_REQUEST', message: `skillClaims 中的用户 ${uid} 不存在` },
+          };
+        }
+      }
+
+      // Check each user is active and has UGL role
+      for (const item of items) {
+        const userStatus = (item.status as string) ?? 'active';
+        if (userStatus !== 'active') {
+          return {
+            success: false,
+            error: { code: 'INVALID_REQUEST', message: `skillClaims 中的用户 ${item.userId} 不是活跃状态` },
+          };
+        }
+        const userRoles = (item.roles as string[]) ?? [];
+        if (!userRoles.includes('UserGroupLeader')) {
+          return {
+            success: false,
+            error: { code: 'INVALID_REQUEST', message: `skillClaims 中的用户 ${item.userId} 不具备 UserGroupLeader 角色` },
+          };
+        }
+      }
+    }
+  }
+
   // 1. Deduplicate userIds
   const uniqueUserIds = [...new Set(input.userIds)];
 
@@ -259,6 +326,20 @@ export async function executeBatchDistribution(
     };
   }
 
+  // 1c. Build union of all unique users: userIds ∪ skillClaims.userIds
+  const skillClaims = input.skillClaims ?? [];
+  const activityUserSet = new Set(uniqueUserIds);
+  const skillClaimUserIds = skillClaims.map(sc => sc.userId);
+  const allUniqueUserIds = [...new Set([...uniqueUserIds, ...skillClaimUserIds])];
+
+  // 1d. Build skill map: userId → list of skills claimed
+  const userSkillsMap = new Map<string, SkillType[]>();
+  for (const claim of skillClaims) {
+    const existing = userSkillsMap.get(claim.userId) ?? [];
+    existing.push(claim.skill);
+    userSkillsMap.set(claim.userId, existing);
+  }
+
   const distributionId = ulid();
   const now = new Date().toISOString();
 
@@ -266,7 +347,7 @@ export async function executeBatchDistribution(
   const userBalances = new Map<string, number>();
   const userDetails: { userId: string; nickname: string; email: string }[] = [];
 
-  const batchGetChunks = chunkArray(uniqueUserIds, 100);
+  const batchGetChunks = chunkArray(allUniqueUserIds, 100);
   for (const chunk of batchGetChunks) {
     const result = await dynamoClient.send(
       new BatchGetCommand({
@@ -290,78 +371,199 @@ export async function executeBatchDistribution(
     }
   }
 
-  // 3. Split into batches of BATCH_SIZE and execute transactions
-  const transactionBatches = chunkArray(uniqueUserIds, BATCH_SIZE);
+  // 3. Calculate merged points per user and build transaction items
+  const transactItems: any[] = [];
 
-  for (const batch of transactionBatches) {
-    const transactItems: any[] = [];
+  for (const userId of allUniqueUserIds) {
+    const isActivityUser = activityUserSet.has(userId);
+    const userSkills = userSkillsMap.get(userId);
+    const isSkillUser = userSkills && userSkills.length > 0;
 
-    for (const userId of batch) {
-      const currentBalance = userBalances.get(userId) ?? 0;
-      const newBalance = currentBalance + input.points;
-      const recordId = ulid();
+    // Calculate activityPoints (if in userIds)
+    const activityPoints = isActivityUser ? input.points : 0;
 
-      // a. Update user points — also increment earnTotal (all roles) and the role-specific earnTotal field
-      const roleFieldMap: Record<string, string> = {
-        Speaker: 'earnTotalSpeaker',
-        UserGroupLeader: 'earnTotalLeader',
-        Volunteer: 'earnTotalVolunteer',
-      };
-      const roleField = roleFieldMap[input.targetRole] ?? 'earnTotalSpeaker';
-
-      transactItems.push({
-        Update: {
-          TableName: tables.usersTable,
-          Key: { userId },
-          UpdateExpression: `SET points = points + :pv, earnTotal = if_not_exists(earnTotal, :zero) + :pv, #rf = if_not_exists(#rf, :zero) + :pv, updatedAt = :now`,
-          ExpressionAttributeNames: { '#rf': roleField },
-          ExpressionAttributeValues: {
-            ':pv': input.points,
-            ':zero': 0,
-            ':now': now,
-          },
-        },
-      });
-
-      // b. Write points record
-      transactItems.push({
-        Put: {
-          TableName: tables.pointsRecordsTable,
-          Item: {
-            recordId,
-            userId,
-            type: 'earn',
-            amount: input.points,
-            source: `批量发放:${input.targetRole}|${input.activityUG}|${input.activityTopic}|${input.activityDate}`,
-            balanceAfter: newBalance,
-            createdAt: now,
-            activityId: input.activityId,
-            activityType: input.activityType,
-            activityUG: input.activityUG,
-            activityTopic: input.activityTopic,
-            activityDate: input.activityDate,
-            targetRole: input.targetRole,
-          },
-        },
-      });
+    // Calculate skillPoints (sum of applicable skill config values)
+    let skillPoints = 0;
+    if (isSkillUser) {
+      for (const skill of userSkills) {
+        if (skill === 'liveSupport') {
+          skillPoints += config.liveSupportPoints;
+        } else if (skill === 'promoWriting') {
+          skillPoints += config.promoWritingPoints;
+        }
+      }
     }
 
-    try {
-      await dynamoClient.send(
-        new TransactWriteCommand({ TransactItems: transactItems }),
-      );
-    } catch (err) {
-      console.error('Batch transaction failed:', err);
-      return {
-        success: false,
-        error: { code: 'INTERNAL_ERROR', message: '批量发放事务执行失败' },
-      };
+    // Total = activityPoints + skillPoints
+    const totalUserPoints = activityPoints + skillPoints;
+    const currentBalance = userBalances.get(userId) ?? 0;
+    const newBalance = currentBalance + totalUserPoints;
+    const recordId = ulid();
+
+    // Build source string based on scenario
+    const source = buildMergedSource(
+      isActivityUser,
+      isSkillUser ? userSkills : undefined,
+      input.targetRole,
+      input.activityUG,
+      input.activityTopic,
+      input.activityDate,
+    );
+
+    // a. Update user points — increment points, earnTotal, earnTotalLeader by total amount
+    const roleFieldMap: Record<string, string> = {
+      Speaker: 'earnTotalSpeaker',
+      UserGroupLeader: 'earnTotalLeader',
+      Volunteer: 'earnTotalVolunteer',
+    };
+    const roleField = roleFieldMap[input.targetRole] ?? 'earnTotalSpeaker';
+
+    transactItems.push({
+      Update: {
+        TableName: tables.usersTable,
+        Key: { userId },
+        UpdateExpression: `SET points = points + :pv, earnTotal = if_not_exists(earnTotal, :zero) + :pv, #rf = if_not_exists(#rf, :zero) + :pv, updatedAt = :now`,
+        ExpressionAttributeNames: { '#rf': roleField },
+        ExpressionAttributeValues: {
+          ':pv': totalUserPoints,
+          ':zero': 0,
+          ':now': now,
+        },
+      },
+    });
+
+    // b. Write single merged PointsRecord
+    transactItems.push({
+      Put: {
+        TableName: tables.pointsRecordsTable,
+        Item: {
+          recordId,
+          userId,
+          type: 'earn',
+          amount: totalUserPoints,
+          source,
+          balanceAfter: newBalance,
+          createdAt: now,
+          activityId: input.activityId,
+          activityType: input.activityType,
+          activityUG: input.activityUG,
+          activityTopic: input.activityTopic,
+          activityDate: input.activityDate,
+          targetRole: input.targetRole,
+        },
+      },
+    });
+  }
+
+  // 3b. Build skill claim transact items and append to the same transaction
+  const skillClaimTableName = process.env.ACTIVITY_SKILL_CLAIMS_TABLE ?? '';
+  if (hasSkillClaims && skillClaimTableName) {
+    // Build nickname map from fetched user details
+    const userNicknameMap: Record<string, string> = {};
+    for (const detail of userDetails) {
+      userNicknameMap[detail.userId] = detail.nickname;
     }
+
+    const skillClaimItems = buildSkillClaimTransactItems(skillClaims, {
+      activityId: input.activityId,
+      claimedBy: input.distributorId,
+      distributionId,
+      tableName: skillClaimTableName,
+      userNicknameMap,
+      pointsConfig: {
+        liveSupportPoints: config.liveSupportPoints,
+        promoWritingPoints: config.promoWritingPoints,
+      },
+    });
+
+    transactItems.push(...skillClaimItems);
+  }
+
+  // 3c. Check total operation count ≤ 100 (DynamoDB TransactWrite limit)
+  if (transactItems.length > 100) {
+    return {
+      success: false,
+      error: {
+        code: 'BATCH_TOO_LARGE',
+        message: `事务操作数 ${transactItems.length} 超过 DynamoDB 上限 100`,
+      },
+    };
+  }
+
+  // 3d. Execute the single atomic transaction
+  try {
+    await dynamoClient.send(
+      new TransactWriteCommand({ TransactItems: transactItems }),
+    );
+  } catch (err: any) {
+    // Handle TransactionCanceledException with ConditionalCheckFailed reasons
+    // This indicates a skill lock conflict (skill already claimed by someone else)
+    if (
+      hasSkillClaims &&
+      skillClaimTableName &&
+      (err.name === 'TransactionCanceledException' || err.name === 'ConditionalCheckFailedException')
+    ) {
+      const cancellationReasons = err.CancellationReasons as Array<{ Code?: string }> | undefined;
+      const hasConditionalCheckFailed =
+        err.name === 'ConditionalCheckFailedException' ||
+        (cancellationReasons && cancellationReasons.some(r => r.Code === 'ConditionalCheckFailed'));
+
+      if (hasConditionalCheckFailed) {
+        // Re-read existing claims to find the occupant
+        try {
+          const existingClaims = await getSkillClaimsForActivity(
+            input.activityId,
+            dynamoClient,
+            skillClaimTableName,
+          );
+
+          // Find which skill was already claimed
+          const requestedSkills = skillClaims.map(sc => sc.skill);
+          const conflictingClaim = existingClaims.find(c => requestedSkills.includes(c.skill));
+          const occupantNickname = conflictingClaim?.userNickname ?? '未知用户';
+          const conflictSkill = conflictingClaim?.skill ?? requestedSkills[0];
+
+          return {
+            success: false,
+            error: {
+              code: 'SKILL_ALREADY_CLAIMED',
+              message: `技能 ${conflictSkill} 已被 ${occupantNickname} 占用`,
+            },
+          };
+        } catch {
+          // If re-read fails, still return SKILL_ALREADY_CLAIMED with generic message
+          return {
+            success: false,
+            error: {
+              code: 'SKILL_ALREADY_CLAIMED',
+              message: '技能已被他人占用',
+            },
+          };
+        }
+      }
+    }
+
+    console.error('Batch transaction failed:', err);
+    return {
+      success: false,
+      error: { code: 'INTERNAL_ERROR', message: '批量发放事务执行失败' },
+    };
   }
 
   // 4. All batches succeeded — write Distribution_Record
-  const successCount = uniqueUserIds.length;
-  const totalPoints = successCount * input.points;
+  const successCount = allUniqueUserIds.length;
+  const totalPoints = allUniqueUserIds.reduce((sum, userId) => {
+    const isActivityUser = activityUserSet.has(userId);
+    const userSkills = userSkillsMap.get(userId);
+    let userTotal = isActivityUser ? input.points : 0;
+    if (userSkills) {
+      for (const skill of userSkills) {
+        if (skill === 'liveSupport') userTotal += config.liveSupportPoints;
+        else if (skill === 'promoWriting') userTotal += config.promoWritingPoints;
+      }
+    }
+    return sum + userTotal;
+  }, 0);
 
   const distributionRecord: DistributionRecord & { pk: string } = {
     distributionId,
@@ -369,7 +571,7 @@ export async function executeBatchDistribution(
     distributorId: input.distributorId,
     distributorNickname: input.distributorNickname,
     targetRole: input.targetRole,
-    recipientIds: uniqueUserIds,
+    recipientIds: uniqueUserIds, // Only activity participants (not only-skill users)
     recipientDetails: userDetails,
     points: input.points,
     reason: input.reason,
@@ -382,6 +584,14 @@ export async function executeBatchDistribution(
     activityTopic: input.activityTopic,
     activityDate: input.activityDate,
     ...(input.speakerType && { speakerType: input.speakerType }),
+    ...(skillClaims.length > 0 && {
+      skillClaims: skillClaims.map(sc => ({
+        skill: sc.skill,
+        userId: sc.userId,
+        userNickname: userDetails.find(u => u.userId === sc.userId)?.nickname ?? '',
+        pointsAwarded: sc.skill === 'liveSupport' ? config.liveSupportPoints : config.promoWritingPoints,
+      })),
+    }),
   };
 
   await dynamoClient.send(
@@ -391,12 +601,66 @@ export async function executeBatchDistribution(
     }),
   );
 
+  // 4b. Build skill claims summary for response
+  const skillClaimsSummary = skillClaims.length > 0
+    ? skillClaims.map(sc => ({
+        skill: sc.skill,
+        userId: sc.userId,
+        userNickname: userDetails.find(u => u.userId === sc.userId)?.nickname ?? '',
+        pointsAwarded: sc.skill === 'liveSupport' ? config.liveSupportPoints : config.promoWritingPoints,
+      }))
+    : undefined;
+
+  const totalSkillPoints = skillClaims.length > 0
+    ? skillClaims.reduce((sum, sc) => {
+        return sum + (sc.skill === 'liveSupport' ? config.liveSupportPoints : config.promoWritingPoints);
+      }, 0)
+    : undefined;
+
   return {
     success: true,
     distributionId,
     successCount,
     totalPoints,
+    ...(skillClaimsSummary && { skillClaims: skillClaimsSummary }),
+    ...(totalSkillPoints !== undefined && { totalSkillPoints }),
   };
+}
+
+// ============================================================
+// Source string builder for merged PointsRecord
+// ============================================================
+
+/**
+ * Build the `source` field for a merged PointsRecord.
+ *
+ * Scenarios:
+ * - Only activity: "批量发放:{targetRole}|{ugName}|{topic}|{date}"
+ * - Only skill: "批量发放:技能:{skills joined by +}|{ugName}|{topic}|{date}"
+ * - Both: "批量发放:{targetRole}+技能:{skills joined by +}|{ugName}|{topic}|{date}"
+ */
+export function buildMergedSource(
+  isActivityUser: boolean,
+  skills: SkillType[] | undefined,
+  targetRole: string,
+  activityUG: string,
+  activityTopic: string,
+  activityDate: string,
+): string {
+  const suffix = `|${activityUG}|${activityTopic}|${activityDate}`;
+  const hasSkills = skills && skills.length > 0;
+  const skillPart = hasSkills ? `技能:${skills.join('+')}` : '';
+
+  if (isActivityUser && hasSkills) {
+    // Both activity + skill
+    return `批量发放:${targetRole}+${skillPart}${suffix}`;
+  } else if (isActivityUser) {
+    // Only activity
+    return `批量发放:${targetRole}${suffix}`;
+  } else {
+    // Only skill
+    return `批量发放:${skillPart}${suffix}`;
+  }
 }
 
 // ============================================================
@@ -429,6 +693,10 @@ export function clampPageSize(pageSize?: number): number {
 /**
  * List distribution history, sorted by createdAt descending.
  * Uses GSI createdAt-index (PK='ALL', SK=createdAt, ScanIndexForward=false).
+ *
+ * When distributorId filter is applied, the function loops querying additional
+ * pages until enough items match the filter (or no more data), so the caller
+ * always sees pageSize items per page (when available).
  */
 export async function listDistributionHistory(
   options: ListDistributionHistoryOptions,
@@ -449,28 +717,55 @@ export async function listDistributionHistory(
     }
   }
 
-  const result = await dynamoClient.send(
-    new QueryCommand({
-      TableName: batchDistributionsTable,
-      IndexName: 'createdAt-index',
-      KeyConditionExpression: 'pk = :pk',
-      ...(options.distributorId && {
-        FilterExpression: 'distributorId = :did',
-      }),
-      ExpressionAttributeValues: {
-        ':pk': 'ALL',
-        ...(options.distributorId && { ':did': options.distributorId }),
-      },
-      ScanIndexForward: false,
-      Limit: pageSize,
-      ...(exclusiveStartKey && { ExclusiveStartKey: exclusiveStartKey }),
-    }),
-  );
+  const collected: DistributionRecord[] = [];
+  let cursor = exclusiveStartKey;
+  // Loop until we collect pageSize items or run out of data.
+  // Cap at 10 iterations to avoid runaway scans.
+  const MAX_ITERATIONS = 10;
+  let iterations = 0;
 
-  const distributions = (result.Items ?? []) as DistributionRecord[];
+  while (collected.length < pageSize && iterations < MAX_ITERATIONS) {
+    iterations++;
+    const result = await dynamoClient.send(
+      new QueryCommand({
+        TableName: batchDistributionsTable,
+        IndexName: 'createdAt-index',
+        KeyConditionExpression: 'pk = :pk',
+        ...(options.distributorId && {
+          FilterExpression: 'distributorId = :did',
+        }),
+        ExpressionAttributeValues: {
+          ':pk': 'ALL',
+          ...(options.distributorId && { ':did': options.distributorId }),
+        },
+        ScanIndexForward: false,
+        Limit: pageSize,
+        ...(cursor && { ExclusiveStartKey: cursor }),
+      }),
+    );
+
+    const items = (result.Items ?? []) as DistributionRecord[];
+    collected.push(...items);
+    cursor = result.LastEvaluatedKey;
+
+    // No more data available
+    if (!cursor) break;
+  }
+
+  // Truncate to pageSize and update cursor accordingly
+  let distributions = collected;
   let lastKey: string | undefined;
-  if (result.LastEvaluatedKey) {
-    lastKey = Buffer.from(JSON.stringify(result.LastEvaluatedKey)).toString('base64');
+  if (collected.length > pageSize) {
+    distributions = collected.slice(0, pageSize);
+    // Build cursor from the last returned item to allow continuation
+    const lastItem = distributions[distributions.length - 1];
+    lastKey = Buffer.from(JSON.stringify({
+      distributionId: lastItem.distributionId,
+      pk: 'ALL',
+      createdAt: lastItem.createdAt,
+    })).toString('base64');
+  } else if (cursor) {
+    lastKey = Buffer.from(JSON.stringify(cursor)).toString('base64');
   }
 
   return { success: true, distributions, lastKey };
