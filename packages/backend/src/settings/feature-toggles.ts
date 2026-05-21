@@ -28,6 +28,8 @@ export interface PointsRuleConfig {
   speakerTypeAPoints: number;       // Speaker A类积分，默认 100
   speakerTypeBPoints: number;       // Speaker B类积分，默认 50
   speakerRoundtablePoints: number;  // 圆桌嘉宾积分，默认 50
+  liveSupportPoints: number;        // 直播支持技能分，默认 30
+  promoWritingPoints: number;       // 宣传文案创作技能分，默认 30
 }
 
 export const DEFAULT_POINTS_RULE_CONFIG: PointsRuleConfig = {
@@ -37,6 +39,8 @@ export const DEFAULT_POINTS_RULE_CONFIG: PointsRuleConfig = {
   speakerTypeAPoints: 100,
   speakerTypeBPoints: 50,
   speakerRoundtablePoints: 50,
+  liveSupportPoints: 30,
+  promoWritingPoints: 30,
 };
 
 export interface FeatureToggles {
@@ -66,6 +70,12 @@ export interface FeatureToggles {
   emailContentUpdatedEnabled: boolean;
   /** Whether weeklyDigest email notifications are enabled */
   emailWeeklyDigestEnabled: boolean;
+  /** Whether wishAdopted email notifications are enabled */
+  emailWishAdoptedEnabled: boolean;
+  /** Whether wishFulfilled email notifications are enabled */
+  emailWishFulfilledEnabled: boolean;
+  /** Whether wishRejected email notifications are enabled */
+  emailWishRejectedEnabled: boolean;
   /** Whether Admin (non-SuperAdmin) can trigger new product email notifications */
   adminEmailProductsEnabled: boolean;
   /** Whether Admin (non-SuperAdmin) can trigger new content email notifications */
@@ -90,6 +100,16 @@ export interface FeatureToggles {
   contentReviewMode: 'all' | 'specific';
   /** List of userId strings for specific content reviewers, only used when contentReviewMode is 'specific' */
   contentReviewerIds: string[];
+  /** Whether employee-uploaded content skips review and is auto-approved */
+  employeeContentAutoApproved: boolean;
+  /** Whether the wish pool feature is enabled */
+  wishPoolEnabled: boolean;
+  /** Points awarded when a wish is fulfilled (positive integer, default 50) */
+  wishFulfilledRewardPoints: number;
+  /** Product management mode: 'all' = all Admins, 'specific' = specific Admins only */
+  productManagementMode: 'all' | 'specific';
+  /** List of userId strings for specific product managers, only used when productManagementMode is 'specific' */
+  productManagerIds: string[];
 }
 
 export interface UpdateFeatureTogglesInput {
@@ -106,6 +126,9 @@ export interface UpdateFeatureTogglesInput {
   emailNewContentEnabled: boolean;
   emailContentUpdatedEnabled: boolean;
   emailWeeklyDigestEnabled: boolean;
+  emailWishAdoptedEnabled: boolean;
+  emailWishFulfilledEnabled: boolean;
+  emailWishRejectedEnabled: boolean;
   adminEmailProductsEnabled: boolean;
   adminEmailContentEnabled: boolean;
   reservationApprovalPoints: number;
@@ -118,6 +141,11 @@ export interface UpdateFeatureTogglesInput {
   employeeStoreEnabled: boolean;
   contentReviewMode: 'all' | 'specific';
   contentReviewerIds: string[];
+  employeeContentAutoApproved: boolean;
+  wishPoolEnabled: boolean;
+  wishFulfilledRewardPoints: number;
+  productManagementMode: 'all' | 'specific';
+  productManagerIds: string[];
   updatedBy: string;
 }
 
@@ -181,6 +209,9 @@ const DEFAULT_TOGGLES: FeatureToggles = {
   emailNewContentEnabled: false,
   emailContentUpdatedEnabled: false,         // default: contentUpdated email notifications disabled
   emailWeeklyDigestEnabled: false,           // default: weeklyDigest email notifications disabled
+  emailWishAdoptedEnabled: true,             // default: wishAdopted email notifications enabled
+  emailWishFulfilledEnabled: true,           // default: wishFulfilled email notifications enabled
+  emailWishRejectedEnabled: true,            // default: wishRejected email notifications enabled
   adminEmailProductsEnabled: false,          // default: Admin cannot trigger product email notifications
   adminEmailContentEnabled: false,           // default: Admin cannot trigger content email notifications
   reservationApprovalPoints: 10,             // default: 10 points for reservation approval
@@ -193,6 +224,11 @@ const DEFAULT_TOGGLES: FeatureToggles = {
   employeeStoreEnabled: true,                             // default: employees can use store
   contentReviewMode: 'all',                               // default: all Admins can review content
   contentReviewerIds: [],                                 // default: empty reviewer list
+  employeeContentAutoApproved: false,                     // default: employees need review
+  wishPoolEnabled: false,                                 // default: wish pool disabled
+  wishFulfilledRewardPoints: 20,                          // default: 20 points for wish fulfillment
+  productManagementMode: 'all',                           // default: all Admins can manage products
+  productManagerIds: [],                                  // default: empty product manager list
 };
 
 // ---- Core Functions ----
@@ -249,6 +285,9 @@ export async function getFeatureToggles(
       emailNewContentEnabled:   result.Item.emailNewContentEnabled === true,      // default false
       emailContentUpdatedEnabled: result.Item.emailContentUpdatedEnabled === true, // default false
       emailWeeklyDigestEnabled: result.Item.emailWeeklyDigestEnabled === true,   // default false
+      emailWishAdoptedEnabled:   result.Item.emailWishAdoptedEnabled !== false,   // default true
+      emailWishFulfilledEnabled: result.Item.emailWishFulfilledEnabled !== false, // default true
+      emailWishRejectedEnabled:  result.Item.emailWishRejectedEnabled !== false,  // default true
       adminEmailProductsEnabled: result.Item.adminEmailProductsEnabled === true,  // default false
       adminEmailContentEnabled:  result.Item.adminEmailContentEnabled === true,   // default false
       reservationApprovalPoints: typeof result.Item.reservationApprovalPoints === 'number' && result.Item.reservationApprovalPoints > 0
@@ -275,6 +314,20 @@ export async function getFeatureToggles(
         result.Item.contentReviewerIds.every((id: unknown) => typeof id === 'string')
           ? result.Item.contentReviewerIds as string[]
           : [],  // default []
+      employeeContentAutoApproved: result.Item.employeeContentAutoApproved === true, // default false
+      wishPoolEnabled: result.Item.wishPoolEnabled === true, // default false
+      wishFulfilledRewardPoints: typeof result.Item.wishFulfilledRewardPoints === 'number' && Number.isInteger(result.Item.wishFulfilledRewardPoints) && result.Item.wishFulfilledRewardPoints > 0
+        ? result.Item.wishFulfilledRewardPoints
+        : 50,  // default 50
+      productManagementMode:
+        result.Item.productManagementMode === 'all' || result.Item.productManagementMode === 'specific'
+          ? result.Item.productManagementMode
+          : 'all',  // default 'all'
+      productManagerIds:
+        Array.isArray(result.Item.productManagerIds) &&
+        result.Item.productManagerIds.every((id: unknown) => typeof id === 'string')
+          ? result.Item.productManagerIds as string[]
+          : [],  // default []
       pointsRuleConfig: (() => {
         const raw = result.Item.pointsRuleConfig as Record<string, unknown> | undefined;
         if (!raw || typeof raw !== 'object') return { ...DEFAULT_POINTS_RULE_CONFIG };
@@ -289,6 +342,8 @@ export async function getFeatureToggles(
           speakerTypeAPoints: safePositiveInt(raw.speakerTypeAPoints, DEFAULT_POINTS_RULE_CONFIG.speakerTypeAPoints),
           speakerTypeBPoints: safePositiveInt(raw.speakerTypeBPoints, DEFAULT_POINTS_RULE_CONFIG.speakerTypeBPoints),
           speakerRoundtablePoints: safePositiveInt(raw.speakerRoundtablePoints, DEFAULT_POINTS_RULE_CONFIG.speakerRoundtablePoints),
+          liveSupportPoints: safePositiveInt(raw.liveSupportPoints, DEFAULT_POINTS_RULE_CONFIG.liveSupportPoints),
+          promoWritingPoints: safePositiveInt(raw.promoWritingPoints, DEFAULT_POINTS_RULE_CONFIG.promoWritingPoints),
         };
       })(),
     };
@@ -323,6 +378,9 @@ export async function updateFeatureToggles(
     typeof input.emailNewContentEnabled !== 'boolean' ||
     typeof input.emailContentUpdatedEnabled !== 'boolean' ||
     typeof input.emailWeeklyDigestEnabled !== 'boolean' ||
+    typeof input.emailWishAdoptedEnabled !== 'boolean' ||
+    typeof input.emailWishFulfilledEnabled !== 'boolean' ||
+    typeof input.emailWishRejectedEnabled !== 'boolean' ||
     typeof input.adminEmailProductsEnabled !== 'boolean' ||
     typeof input.adminEmailContentEnabled !== 'boolean' ||
     typeof input.reservationApprovalPoints !== 'number' ||
@@ -332,7 +390,12 @@ export async function updateFeatureToggles(
     typeof input.leaderboardAnnouncementEnabled !== 'boolean' ||
     typeof input.brandLogoListEnabled !== 'boolean' ||
     typeof input.brandLogoDetailEnabled !== 'boolean' ||
-    typeof input.employeeStoreEnabled !== 'boolean'
+    typeof input.employeeStoreEnabled !== 'boolean' ||
+    typeof input.employeeContentAutoApproved !== 'boolean' ||
+    typeof input.wishPoolEnabled !== 'boolean' ||
+    typeof input.wishFulfilledRewardPoints !== 'number' ||
+    !Number.isInteger(input.wishFulfilledRewardPoints) ||
+    input.wishFulfilledRewardPoints < 1
   ) {
     return {
       success: false,
@@ -359,6 +422,25 @@ export async function updateFeatureToggles(
     };
   }
 
+  // Validate productManagementMode
+  if (input.productManagementMode !== 'all' && input.productManagementMode !== 'specific') {
+    return {
+      success: false,
+      error: { code: 'INVALID_REQUEST', message: '请求参数无效' },
+    };
+  }
+
+  // Validate productManagerIds
+  if (
+    !Array.isArray(input.productManagerIds) ||
+    !input.productManagerIds.every((id: unknown) => typeof id === 'string')
+  ) {
+    return {
+      success: false,
+      error: { code: 'INVALID_REQUEST', message: '请求参数无效' },
+    };
+  }
+
   // Validate leaderboardUpdateFrequency
   const validFrequencies = ['realtime', 'daily', 'weekly', 'monthly'];
   if (!validFrequencies.includes(input.leaderboardUpdateFrequency)) {
@@ -374,6 +456,7 @@ export async function updateFeatureToggles(
     const fields: (keyof PointsRuleConfig)[] = [
       'uglPointsPerEvent', 'volunteerPointsPerEvent', 'volunteerMaxPerEvent',
       'speakerTypeAPoints', 'speakerTypeBPoints', 'speakerRoundtablePoints',
+      'liveSupportPoints', 'promoWritingPoints',
     ];
     for (const field of fields) {
       const val = prc[field];
@@ -403,6 +486,9 @@ export async function updateFeatureToggles(
         emailNewContentEnabled = :enc,
         emailContentUpdatedEnabled = :ecu,
         emailWeeklyDigestEnabled = :ewde,
+        emailWishAdoptedEnabled = :ewade,
+        emailWishFulfilledEnabled = :ewfue,
+        emailWishRejectedEnabled = :ewrje,
         adminEmailProductsEnabled = :aepe,
         adminEmailContentEnabled = :aece,
         reservationApprovalPoints = :rap,
@@ -414,6 +500,11 @@ export async function updateFeatureToggles(
         employeeStoreEnabled = :ese,
         contentReviewMode = :crm,
         contentReviewerIds = :cri,
+        employeeContentAutoApproved = :ecaa,
+        wishPoolEnabled = :wpe,
+        wishFulfilledRewardPoints = :wfrp,
+        productManagementMode = :pmm,
+        productManagerIds = :pmi,
         updatedAt = :ua,
         updatedBy = :ub`;
 
@@ -431,6 +522,9 @@ export async function updateFeatureToggles(
         ':enc': input.emailNewContentEnabled,
         ':ecu': input.emailContentUpdatedEnabled,
         ':ewde': input.emailWeeklyDigestEnabled,
+        ':ewade': input.emailWishAdoptedEnabled,
+        ':ewfue': input.emailWishFulfilledEnabled,
+        ':ewrje': input.emailWishRejectedEnabled,
         ':aepe': input.adminEmailProductsEnabled,
         ':aece': input.adminEmailContentEnabled,
         ':rap': input.reservationApprovalPoints,
@@ -442,6 +536,11 @@ export async function updateFeatureToggles(
         ':ese': input.employeeStoreEnabled,
         ':crm': input.contentReviewMode,
         ':cri': input.contentReviewerIds,
+        ':ecaa': input.employeeContentAutoApproved,
+        ':wpe': input.wishPoolEnabled,
+        ':wfrp': input.wishFulfilledRewardPoints,
+        ':pmm': input.productManagementMode,
+        ':pmi': input.productManagerIds,
         ':ua': now,
         ':ub': input.updatedBy,
   };
@@ -501,6 +600,9 @@ export async function updateFeatureToggles(
       emailNewContentEnabled: input.emailNewContentEnabled,
       emailContentUpdatedEnabled: input.emailContentUpdatedEnabled,
       emailWeeklyDigestEnabled: input.emailWeeklyDigestEnabled,
+      emailWishAdoptedEnabled: input.emailWishAdoptedEnabled,
+      emailWishFulfilledEnabled: input.emailWishFulfilledEnabled,
+      emailWishRejectedEnabled: input.emailWishRejectedEnabled,
       adminEmailProductsEnabled: input.adminEmailProductsEnabled,
       adminEmailContentEnabled: input.adminEmailContentEnabled,
       reservationApprovalPoints: input.reservationApprovalPoints,
@@ -512,6 +614,11 @@ export async function updateFeatureToggles(
       employeeStoreEnabled: input.employeeStoreEnabled,
       contentReviewMode: input.contentReviewMode,
       contentReviewerIds: input.contentReviewerIds,
+      employeeContentAutoApproved: input.employeeContentAutoApproved,
+      wishPoolEnabled: input.wishPoolEnabled,
+      wishFulfilledRewardPoints: input.wishFulfilledRewardPoints,
+      productManagementMode: input.productManagementMode,
+      productManagerIds: input.productManagerIds,
       pointsRuleConfig: input.pointsRuleConfig ?? (item.pointsRuleConfig as PointsRuleConfig | undefined) ?? { ...DEFAULT_POINTS_RULE_CONFIG },
       updatedAt: now,
       updatedBy: input.updatedBy,
