@@ -199,6 +199,26 @@ export const ErrorCodes = {
   INVALID_BRAND: 'INVALID_BRAND',
   /** 员工商城功能暂时关闭 (403) - 需求 3.1, 3.2, 3.3, 3.4, 3.5 */
   EMPLOYEE_STORE_DISABLED: 'EMPLOYEE_STORE_DISABLED',
+  /** 许愿池每月提交上限已达 (400) - 需求 1.4 */
+  MONTHLY_LIMIT_EXCEEDED: 'MONTHLY_LIMIT_EXCEEDED',
+  /** 已对该许愿投过票 (400) - 需求 3.2, 3.3 */
+  ALREADY_VOTED: 'ALREADY_VOTED',
+  /** 许愿状态不允许投票 (400) - 需求 3.4 */
+  WISH_NOT_VOTABLE: 'WISH_NOT_VOTABLE',
+  /** 不能对自己的许愿投票 (400) - 需求 3.5 */
+  CANNOT_VOTE_OWN_WISH: 'CANNOT_VOTE_OWN_WISH',
+  /** 许愿不可编辑（非 pending 状态）(400) - 需求 11.2 */
+  WISH_NOT_EDITABLE: 'WISH_NOT_EDITABLE',
+  /** 许愿不可删除（非 pending 状态）(400) - 需求 11.4 */
+  WISH_NOT_DELETABLE: 'WISH_NOT_DELETABLE',
+  /** 许愿不存在 (404) - 需求 3.4 */
+  WISH_NOT_FOUND: 'WISH_NOT_FOUND',
+  /** 许愿标题格式无效 (400) - 需求 1.2 */
+  INVALID_WISH_TITLE: 'INVALID_WISH_TITLE',
+  /** 许愿描述格式无效 (400) - 需求 1.2 */
+  INVALID_WISH_DESCRIPTION: 'INVALID_WISH_DESCRIPTION',
+  /** 关闭原因格式无效 (400) - 需求 2.3 */
+  INVALID_CLOSE_REASON: 'INVALID_CLOSE_REASON',
 } as const;
 
 /** 错误码类型 */
@@ -304,6 +324,16 @@ export const ErrorHttpStatus: Record<ErrorCode, number> = {
   [ErrorCodes.ACTIVITY_NOT_FOUND]: 404,
   [ErrorCodes.INVALID_BRAND]: 400,
   [ErrorCodes.EMPLOYEE_STORE_DISABLED]: 403,
+  [ErrorCodes.MONTHLY_LIMIT_EXCEEDED]: 400,
+  [ErrorCodes.ALREADY_VOTED]: 400,
+  [ErrorCodes.WISH_NOT_VOTABLE]: 400,
+  [ErrorCodes.CANNOT_VOTE_OWN_WISH]: 400,
+  [ErrorCodes.WISH_NOT_EDITABLE]: 400,
+  [ErrorCodes.WISH_NOT_DELETABLE]: 400,
+  [ErrorCodes.WISH_NOT_FOUND]: 404,
+  [ErrorCodes.INVALID_WISH_TITLE]: 400,
+  [ErrorCodes.INVALID_WISH_DESCRIPTION]: 400,
+  [ErrorCodes.INVALID_CLOSE_REASON]: 400,
 };
 
 /** 错误码对应的默认错误消息 */
@@ -406,4 +436,14 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.ACTIVITY_NOT_FOUND]: '关联活动不存在',
   [ErrorCodes.INVALID_BRAND]: 'brand 值无效，仅允许 aws、ug、awscloud',
   [ErrorCodes.EMPLOYEE_STORE_DISABLED]: '员工商城功能暂时关闭',
+  [ErrorCodes.MONTHLY_LIMIT_EXCEEDED]: '本月许愿次数已达上限',
+  [ErrorCodes.ALREADY_VOTED]: '已对该许愿投过票',
+  [ErrorCodes.WISH_NOT_VOTABLE]: '该许愿当前不可投票',
+  [ErrorCodes.CANNOT_VOTE_OWN_WISH]: '不能对自己的许愿投票',
+  [ErrorCodes.WISH_NOT_EDITABLE]: '许愿不可编辑（仅 pending 状态可编辑）',
+  [ErrorCodes.WISH_NOT_DELETABLE]: '许愿不可删除（仅 pending 状态可删除）',
+  [ErrorCodes.WISH_NOT_FOUND]: '许愿不存在',
+  [ErrorCodes.INVALID_WISH_TITLE]: '许愿标题格式无效（1-50 字符）',
+  [ErrorCodes.INVALID_WISH_DESCRIPTION]: '许愿描述格式无效（1-500 字符）',
+  [ErrorCodes.INVALID_CLOSE_REASON]: '关闭原因格式无效（1-200 字符）',
 };

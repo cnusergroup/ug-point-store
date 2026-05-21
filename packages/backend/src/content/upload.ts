@@ -103,6 +103,10 @@ export interface CreateContentItemInput {
   fileSize: number;
   videoUrl?: string;
   tags?: string[];
+  /** Whether the uploader is an employee */
+  isEmployee?: boolean;
+  /** Whether employee content should skip review */
+  employeeContentAutoApproved?: boolean;
 }
 
 export interface CreateContentItemResult {
@@ -202,6 +206,10 @@ export async function createContentItem(
 
   const officeFile = isOfficeFile(input.fileName);
 
+  // Determine initial status: auto-approve for employees if toggle is on
+  const autoApprove = input.isEmployee === true && input.employeeContentAutoApproved === true;
+  const initialStatus = autoApprove ? 'approved' : 'pending';
+
   const item: ContentItem = {
     contentId,
     title: input.title,
@@ -215,13 +223,14 @@ export async function createContentItem(
     fileName: input.fileName,
     fileSize: input.fileSize,
     ...(input.videoUrl ? { videoUrl: input.videoUrl } : {}),
-    status: 'pending',
+    status: initialStatus,
     tags: normalizedTags,
     likeCount: 0,
     commentCount: 0,
     reservationCount: 0,
     createdAt: now,
     updatedAt: now,
+    ...(autoApprove ? { reviewerId: 'system', reviewedAt: now } : {}),
     ...(officeFile ? { previewStatus: 'pending' as const } : {}),
   };
 

@@ -20,6 +20,8 @@ const FOOTER_UNSUB_KO = '<p style="font-size:12px;color:#94a3b8;">이 이메일�
 const FOOTER_ZHTW = '<p style="font-size:12px;color:#94a3b8;">此郵件由 User Group 積分兌換廣場自動發送</p>';
 const FOOTER_UNSUB_ZHTW = '<p style="font-size:12px;color:#94a3b8;">此郵件由 User Group 積分兌換廣場自動發送。如不想收到此類郵件，請在設定中關閉訂閱。</p>';
 
+const STORE_LINK = '<p style="margin-top:16px;text-align:center;"><a href="https://store.awscommunity.cn" style="display:inline-block;padding:10px 24px;background:#6366f1;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">Visit Builder Store</a></p>';
+
 const HR = '<hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />';
 
 function wrap(inner: string, fontFamily = "'Noto Sans SC',sans-serif"): string {
@@ -40,6 +42,7 @@ const pointsEarnedTemplates: Record<EmailLocale, { subject: string; body: string
       '<p style="color:#64748b;">当前余额：<strong>{{balance}} 积分</strong></p>',
       '<p style="margin-top:24px;">快去积分兑换广场看看有什么好东西可以兑换吧～ 🛍️</p>',
       HR,
+      STORE_LINK,
       FOOTER_ZH,
     ].join('\n  ')),
   },
@@ -52,6 +55,7 @@ const pointsEarnedTemplates: Record<EmailLocale, { subject: string; body: string
       '<p style="color:#64748b;">Current balance: <strong>{{balance}} points</strong></p>',
       '<p style="margin-top:24px;">Head to the mall and see what you can redeem! 🛍️</p>',
       HR,
+      STORE_LINK,
       FOOTER_EN,
     ].join('\n  ')),
   },
@@ -64,6 +68,7 @@ const pointsEarnedTemplates: Record<EmailLocale, { subject: string; body: string
       '<p style="color:#64748b;">現在の残高：<strong>{{balance}} ポイント</strong></p>',
       '<p style="margin-top:24px;">ポイント交換広場で交換できるアイテムをチェックしましょう！ 🛍️</p>',
       HR,
+      STORE_LINK,
       FOOTER_JA,
     ].join('\n  ')),
   },
@@ -76,6 +81,7 @@ const pointsEarnedTemplates: Record<EmailLocale, { subject: string; body: string
       '<p style="color:#64748b;">현재 잔액: <strong>{{balance}} 포인트</strong></p>',
       '<p style="margin-top:24px;">몰에서 교환할 수 있는 굿즈를 확인해 보세요! 🛍️</p>',
       HR,
+      STORE_LINK,
       FOOTER_KO,
     ].join('\n  ')),
   },
@@ -88,6 +94,7 @@ const pointsEarnedTemplates: Record<EmailLocale, { subject: string; body: string
       '<p style="color:#64748b;">目前餘額：<strong>{{balance}} 積分</strong></p>',
       '<p style="margin-top:24px;">快去積分兌換廣場看看有什麼好東西可以兌換吧～ 🛍️</p>',
       HR,
+      STORE_LINK,
       FOOTER_ZHTW,
     ].join('\n  ')),
   },
@@ -115,6 +122,7 @@ const newOrderTemplates: Record<EmailLocale, { subject: string; body: string }> 
       '<tr><td style="padding:6px 12px 6px 0;color:#64748b;white-space:nowrap;">收件地址</td><td style="padding:6px 0;color:#0f172a;font-weight:600;">{{detailAddress}}</td></tr>',
       '</table>',
       HR,
+      STORE_LINK,
       FOOTER_ZH,
     ].join('\n  ')),
   },
@@ -135,6 +143,7 @@ const newOrderTemplates: Record<EmailLocale, { subject: string; body: string }> 
       '<tr><td style="padding:6px 12px 6px 0;color:#64748b;white-space:nowrap;">Address</td><td style="padding:6px 0;color:#0f172a;font-weight:600;">{{detailAddress}}</td></tr>',
       '</table>',
       HR,
+      STORE_LINK,
       FOOTER_EN,
     ].join('\n  ')),
   },
@@ -155,6 +164,7 @@ const newOrderTemplates: Record<EmailLocale, { subject: string; body: string }> 
       '<tr><td style="padding:6px 12px 6px 0;color:#64748b;white-space:nowrap;">住所</td><td style="padding:6px 0;color:#0f172a;font-weight:600;">{{detailAddress}}</td></tr>',
       '</table>',
       HR,
+      STORE_LINK,
       FOOTER_JA,
     ].join('\n  ')),
   },
@@ -175,6 +185,7 @@ const newOrderTemplates: Record<EmailLocale, { subject: string; body: string }> 
       '<tr><td style="padding:6px 12px 6px 0;color:#64748b;white-space:nowrap;">주소</td><td style="padding:6px 0;color:#0f172a;font-weight:600;">{{detailAddress}}</td></tr>',
       '</table>',
       HR,
+      STORE_LINK,
       FOOTER_KO,
     ].join('\n  ')),
   },
@@ -195,6 +206,7 @@ const newOrderTemplates: Record<EmailLocale, { subject: string; body: string }> 
       '<tr><td style="padding:6px 12px 6px 0;color:#64748b;white-space:nowrap;">收件地址</td><td style="padding:6px 0;color:#0f172a;font-weight:600;">{{detailAddress}}</td></tr>',
       '</table>',
       HR,
+      STORE_LINK,
       FOOTER_ZHTW,
     ].join('\n  ')),
   },
@@ -213,6 +225,7 @@ const orderShippedTemplates: Record<EmailLocale, { subject: string; body: string
       '<p style="color:#64748b;">物流单号：{{trackingNumber}}</p>',
       '<p style="margin-top:24px;">耐心等待，好物马上到手！ 📬</p>',
       HR,
+      STORE_LINK,
       FOOTER_ZH,
     ].join('\n  ')),
   },
@@ -224,6 +237,7 @@ const orderShippedTemplates: Record<EmailLocale, { subject: string; body: string
       '<p style="color:#64748b;">Tracking number: {{trackingNumber}}</p>',
       '<p style="margin-top:24px;">Hang tight, your goodies are on the way! 📬</p>',
       HR,
+      STORE_LINK,
       FOOTER_EN,
     ].join('\n  ')),
   },
@@ -235,6 +249,7 @@ const orderShippedTemplates: Record<EmailLocale, { subject: string; body: string
       '<p style="color:#64748b;">追跡番号：{{trackingNumber}}</p>',
       '<p style="margin-top:24px;">もうすぐ届きます、お楽しみに！ 📬</p>',
       HR,
+      STORE_LINK,
       FOOTER_JA,
     ].join('\n  ')),
   },
@@ -246,6 +261,7 @@ const orderShippedTemplates: Record<EmailLocale, { subject: string; body: string
       '<p style="color:#64748b;">운송장 번호: {{trackingNumber}}</p>',
       '<p style="margin-top:24px;">곧 도착할 예정이니 조금만 기다려 주세요! 📬</p>',
       HR,
+      STORE_LINK,
       FOOTER_KO,
     ].join('\n  ')),
   },
@@ -257,6 +273,7 @@ const orderShippedTemplates: Record<EmailLocale, { subject: string; body: string
       '<p style="color:#64748b;">物流單號：{{trackingNumber}}</p>',
       '<p style="margin-top:24px;">耐心等待，好物馬上到手！ 📬</p>',
       HR,
+      STORE_LINK,
       FOOTER_ZHTW,
     ].join('\n  ')),
   },
@@ -275,6 +292,7 @@ const newProductTemplates: Record<EmailLocale, { subject: string; body: string }
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:16px 0;">{{productList}}</div>',
       '<p style="margin-top:24px;">快去积分兑换广场逛逛吧～ 🛒</p>',
       HR,
+      STORE_LINK,
       FOOTER_UNSUB_ZH,
     ].join('\n  ')),
   },
@@ -286,6 +304,7 @@ const newProductTemplates: Record<EmailLocale, { subject: string; body: string }
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:16px 0;">{{productList}}</div>',
       '<p style="margin-top:24px;">Head to the mall and check them out! 🛒</p>',
       HR,
+      STORE_LINK,
       FOOTER_UNSUB_EN,
     ].join('\n  ')),
   },
@@ -297,6 +316,7 @@ const newProductTemplates: Record<EmailLocale, { subject: string; body: string }
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:16px 0;">{{productList}}</div>',
       '<p style="margin-top:24px;">ポイント交換広場でチェックしましょう！ 🛒</p>',
       HR,
+      STORE_LINK,
       FOOTER_UNSUB_JA,
     ].join('\n  ')),
   },
@@ -308,6 +328,7 @@ const newProductTemplates: Record<EmailLocale, { subject: string; body: string }
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:16px 0;">{{productList}}</div>',
       '<p style="margin-top:24px;">몰에서 확인해 보세요! 🛒</p>',
       HR,
+      STORE_LINK,
       FOOTER_UNSUB_KO,
     ].join('\n  ')),
   },
@@ -319,6 +340,7 @@ const newProductTemplates: Record<EmailLocale, { subject: string; body: string }
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:16px 0;">{{productList}}</div>',
       '<p style="margin-top:24px;">快去積分兌換廣場逛逛吧～ 🛒</p>',
       HR,
+      STORE_LINK,
       FOOTER_UNSUB_ZHTW,
     ].join('\n  ')),
   },
@@ -337,6 +359,7 @@ const newContentTemplates: Record<EmailLocale, { subject: string; body: string }
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:16px 0;">{{contentList}}</div>',
       '<p style="margin-top:24px;">快去内容中心看看吧～ 🎓</p>',
       HR,
+      STORE_LINK,
       FOOTER_UNSUB_ZH,
     ].join('\n  ')),
   },
@@ -348,6 +371,7 @@ const newContentTemplates: Record<EmailLocale, { subject: string; body: string }
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:16px 0;">{{contentList}}</div>',
       '<p style="margin-top:24px;">Head to the content hub and check it out! 🎓</p>',
       HR,
+      STORE_LINK,
       FOOTER_UNSUB_EN,
     ].join('\n  ')),
   },
@@ -359,6 +383,7 @@ const newContentTemplates: Record<EmailLocale, { subject: string; body: string }
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:16px 0;">{{contentList}}</div>',
       '<p style="margin-top:24px;">コンテンツセンターでチェックしましょう！ 🎓</p>',
       HR,
+      STORE_LINK,
       FOOTER_UNSUB_JA,
     ].join('\n  ')),
   },
@@ -370,6 +395,7 @@ const newContentTemplates: Record<EmailLocale, { subject: string; body: string }
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:16px 0;">{{contentList}}</div>',
       '<p style="margin-top:24px;">콘텐츠 센터에서 확인해 보세요! 🎓</p>',
       HR,
+      STORE_LINK,
       FOOTER_UNSUB_KO,
     ].join('\n  ')),
   },
@@ -381,6 +407,7 @@ const newContentTemplates: Record<EmailLocale, { subject: string; body: string }
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:16px 0;">{{contentList}}</div>',
       '<p style="margin-top:24px;">快去內容中心看看吧～ 🎓</p>',
       HR,
+      STORE_LINK,
       FOOTER_UNSUB_ZHTW,
     ].join('\n  ')),
   },
@@ -400,6 +427,7 @@ const contentUpdatedTemplates: Record<EmailLocale, { subject: string; body: stri
       '<p style="color:#64748b;">活动日期：{{activityDate}}</p>',
       '<p style="margin-top:24px;">请查看最新版本，确认内容变更～</p>',
       HR,
+      STORE_LINK,
       FOOTER_ZH,
     ].join('\n  ')),
   },
@@ -412,6 +440,7 @@ const contentUpdatedTemplates: Record<EmailLocale, { subject: string; body: stri
       '<p style="color:#64748b;">Activity date: {{activityDate}}</p>',
       '<p style="margin-top:24px;">Please review the latest version to confirm the changes.</p>',
       HR,
+      STORE_LINK,
       FOOTER_EN,
     ].join('\n  ')),
   },
@@ -424,6 +453,7 @@ const contentUpdatedTemplates: Record<EmailLocale, { subject: string; body: stri
       '<p style="color:#64748b;">活動日：{{activityDate}}</p>',
       '<p style="margin-top:24px;">最新版をご確認ください。</p>',
       HR,
+      STORE_LINK,
       FOOTER_JA,
     ].join('\n  ')),
   },
@@ -436,6 +466,7 @@ const contentUpdatedTemplates: Record<EmailLocale, { subject: string; body: stri
       '<p style="color:#64748b;">활동 날짜: {{activityDate}}</p>',
       '<p style="margin-top:24px;">최신 버전을 확인해 주세요.</p>',
       HR,
+      STORE_LINK,
       FOOTER_KO,
     ].join('\n  ')),
   },
@@ -448,6 +479,7 @@ const contentUpdatedTemplates: Record<EmailLocale, { subject: string; body: stri
       '<p style="color:#64748b;">活動日期：{{activityDate}}</p>',
       '<p style="margin-top:24px;">請查看最新版本，確認內容變更～</p>',
       HR,
+      STORE_LINK,
       FOOTER_ZHTW,
     ].join('\n  ')),
   },
@@ -469,6 +501,7 @@ const weeklyDigestTemplates: Record<EmailLocale, { subject: string; body: string
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;">{{contentList}}</div>',
       '<p style="margin-top:24px;">快去积分兑换广场逛逛吧～ 🎉</p>',
       HR,
+      STORE_LINK,
       FOOTER_UNSUB_ZH,
     ].join('\n  ')),
   },
@@ -483,6 +516,7 @@ const weeklyDigestTemplates: Record<EmailLocale, { subject: string; body: string
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;">{{contentList}}</div>',
       '<p style="margin-top:24px;">Head to the Builder Store and check it out! 🎉</p>',
       HR,
+      STORE_LINK,
       FOOTER_UNSUB_EN,
     ].join('\n  ')),
   },
@@ -497,6 +531,7 @@ const weeklyDigestTemplates: Record<EmailLocale, { subject: string; body: string
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;">{{contentList}}</div>',
       '<p style="margin-top:24px;">ポイント交換広場でチェックしましょう！ 🎉</p>',
       HR,
+      STORE_LINK,
       FOOTER_UNSUB_JA,
     ].join('\n  ')),
   },
@@ -511,6 +546,7 @@ const weeklyDigestTemplates: Record<EmailLocale, { subject: string; body: string
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;">{{contentList}}</div>',
       '<p style="margin-top:24px;">포인트 교환 광장에서 확인해 보세요! 🎉</p>',
       HR,
+      STORE_LINK,
       FOOTER_UNSUB_KO,
     ].join('\n  ')),
   },
@@ -525,8 +561,90 @@ const weeklyDigestTemplates: Record<EmailLocale, { subject: string; body: string
       '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;">{{contentList}}</div>',
       '<p style="margin-top:24px;">快去積分兌換廣場逛逛吧～ 🎉</p>',
       HR,
+      STORE_LINK,
       FOOTER_UNSUB_ZHTW,
     ].join('\n  ')),
+  },
+};
+
+// ============================================================
+// wishAdopted templates
+// ============================================================
+
+const wishAdoptedTemplates: Record<EmailLocale, { subject: string; body: string }> = {
+  zh: {
+    subject: '🎉 你的许愿被采纳啦！',
+    body: wrap(['<h2 style="color:#6366f1;">Hi {{nickname}}，好消息！</h2>','<p style="font-size:16px;color:#334155;">你的许愿 <strong style="color:#6366f1;">{{wishTitle}}</strong> 已被管理员采纳！</p>','<p style="color:#64748b;">我们正在努力为你实现这个愿望，请耐心等待上架通知～</p>',HR,STORE_LINK,FOOTER_ZH].join('\n  ')),
+  },
+  en: {
+    subject: '🎉 Your wish has been adopted!',
+    body: wrap(['<h2 style="color:#6366f1;">Hi {{nickname}}, great news!</h2>','<p style="font-size:16px;color:#334155;">Your wish <strong style="color:#6366f1;">{{wishTitle}}</strong> has been adopted by the admin!</p>','<p style="color:#64748b;">We are working on making it happen. Stay tuned for the product launch notification!</p>',HR,STORE_LINK,FOOTER_EN].join('\n  ')),
+  },
+  ja: {
+    subject: '🎉 あなたのウィッシュが採用されました！',
+    body: wrap(['<h2 style="color:#6366f1;">{{nickname}} さん、朗報です！</h2>','<p style="font-size:16px;color:#334155;">あなたのウィッシュ <strong style="color:#6366f1;">{{wishTitle}}</strong> が管理者に採用されました！</p>','<p style="color:#64748b;">商品化に向けて準備中です。入荷通知をお待ちください！</p>',HR,STORE_LINK,FOOTER_JA].join('\n  ')),
+  },
+  ko: {
+    subject: '🎉 당신의 위시가 채택되었습니다!',
+    body: wrap(['<h2 style="color:#6366f1;">{{nickname}} 님, 좋은 소식입니다!</h2>','<p style="font-size:16px;color:#334155;">당신의 위시 <strong style="color:#6366f1;">{{wishTitle}}</strong>이(가) 관리자에 의해 채택되었습니다!</p>','<p style="color:#64748b;">상품화를 위해 준비 중입니다. 출시 알림을 기다려 주세요!</p>',HR,STORE_LINK,FOOTER_KO].join('\n  ')),
+  },
+  'zh-TW': {
+    subject: '🎉 你的許願被採納啦！',
+    body: wrap(['<h2 style="color:#6366f1;">Hi {{nickname}}，好消息！</h2>','<p style="font-size:16px;color:#334155;">你的許願 <strong style="color:#6366f1;">{{wishTitle}}</strong> 已被管理員採納！</p>','<p style="color:#64748b;">我們正在努力為你實現這個願望，請耐心等待上架通知～</p>',HR,STORE_LINK,FOOTER_ZHTW].join('\n  ')),
+  },
+};
+
+// ============================================================
+// wishFulfilled templates
+// ============================================================
+
+const wishFulfilledTemplates: Record<EmailLocale, { subject: string; body: string }> = {
+  zh: {
+    subject: '🎊 你的许愿实现啦！商品已上架',
+    body: wrap(['<h2 style="color:#6366f1;">Hi {{nickname}}，愿望成真！ 🌟</h2>','<p style="font-size:16px;color:#334155;">你的许愿 <strong style="color:#6366f1;">{{wishTitle}}</strong> 已经实现，商品已上架！</p>','<p style="color:#64748b;">作为感谢，你已获得积分奖励，并拥有该商品的优先购买权。</p>','<p style="margin-top:24px;"><a href="{{productUrl}}" style="color:#6366f1;text-decoration:underline;">点击查看商品 →</a></p>',HR,STORE_LINK,FOOTER_ZH].join('\n  ')),
+  },
+  en: {
+    subject: '🎊 Your wish came true! Product is now available',
+    body: wrap(['<h2 style="color:#6366f1;">Hi {{nickname}}, your wish came true! 🌟</h2>','<p style="font-size:16px;color:#334155;">Your wish <strong style="color:#6366f1;">{{wishTitle}}</strong> has been fulfilled and the product is now available!</p>','<p style="color:#64748b;">As a thank you, you have received bonus points and priority purchase access.</p>','<p style="margin-top:24px;"><a href="{{productUrl}}" style="color:#6366f1;text-decoration:underline;">View the product →</a></p>',HR,STORE_LINK,FOOTER_EN].join('\n  ')),
+  },
+  ja: {
+    subject: '🎊 あなたのウィッシュが実現しました！商品が入荷しました',
+    body: wrap(['<h2 style="color:#6366f1;">{{nickname}} さん、ウィッシュが実現しました！ 🌟</h2>','<p style="font-size:16px;color:#334155;">あなたのウィッシュ <strong style="color:#6366f1;">{{wishTitle}}</strong> が実現し、商品が入荷しました！</p>','<p style="color:#64748b;">感謝の気持ちとして、ボーナスポイントと優先購入権が付与されました。</p>','<p style="margin-top:24px;"><a href="{{productUrl}}" style="color:#6366f1;text-decoration:underline;">商品を見る →</a></p>',HR,STORE_LINK,FOOTER_JA].join('\n  ')),
+  },
+  ko: {
+    subject: '🎊 당신의 위시가 실현되었습니다! 상품이 출시되었습니다',
+    body: wrap(['<h2 style="color:#6366f1;">{{nickname}} 님, 위시가 실현되었습니다! 🌟</h2>','<p style="font-size:16px;color:#334155;">당신의 위시 <strong style="color:#6366f1;">{{wishTitle}}</strong>이(가) 실현되어 상품이 출시되었습니다!</p>','<p style="color:#64748b;">감사의 의미로 보너스 포인트와 우선 구매권이 부여되었습니다.</p>','<p style="margin-top:24px;"><a href="{{productUrl}}" style="color:#6366f1;text-decoration:underline;">상품 보기 →</a></p>',HR,STORE_LINK,FOOTER_KO].join('\n  ')),
+  },
+  'zh-TW': {
+    subject: '🎊 你的許願實現啦！商品已上架',
+    body: wrap(['<h2 style="color:#6366f1;">Hi {{nickname}}，願望成真！ 🌟</h2>','<p style="font-size:16px;color:#334155;">你的許願 <strong style="color:#6366f1;">{{wishTitle}}</strong> 已經實現，商品已上架！</p>','<p style="color:#64748b;">作為感謝，你已獲得積分獎勵，並擁有該商品的優先購買權。</p>','<p style="margin-top:24px;"><a href="{{productUrl}}" style="color:#6366f1;text-decoration:underline;">點擊查看商品 →</a></p>',HR,STORE_LINK,FOOTER_ZHTW].join('\n  ')),
+  },
+};
+
+// ============================================================
+// wishRejected templates
+// ============================================================
+
+const wishRejectedTemplates: Record<EmailLocale, { subject: string; body: string }> = {
+  zh: {
+    subject: '💬 你的许愿未通过审核',
+    body: wrap(['<h2 style="color:#6366f1;">Hi {{nickname}}，关于你的许愿</h2>','<p style="font-size:16px;color:#334155;">很遗憾，你的许愿 <strong>{{wishTitle}}</strong> 未通过审核。</p>','<p style="color:#64748b;">原因：{{closeReason}}</p>','<p style="margin-top:24px;color:#64748b;">你可以修改后重新提交，期待你的下一个许愿～</p>',HR,STORE_LINK,FOOTER_ZH].join('\n  ')),
+  },
+  en: {
+    subject: '💬 Your wish was not approved',
+    body: wrap(['<h2 style="color:#6366f1;">Hi {{nickname}}, about your wish</h2>','<p style="font-size:16px;color:#334155;">Unfortunately, your wish <strong>{{wishTitle}}</strong> was not approved.</p>','<p style="color:#64748b;">Reason: {{closeReason}}</p>','<p style="margin-top:24px;color:#64748b;">You can revise and resubmit. We look forward to your next wish!</p>',HR,STORE_LINK,FOOTER_EN].join('\n  ')),
+  },
+  ja: {
+    subject: '💬 あなたのウィッシュは審査を通過しませんでした',
+    body: wrap(['<h2 style="color:#6366f1;">{{nickname}} さん、ウィッシュについて</h2>','<p style="font-size:16px;color:#334155;">残念ながら、あなたのウィッシュ <strong>{{wishTitle}}</strong> は審査を通過しませんでした。</p>','<p style="color:#64748b;">理由：{{closeReason}}</p>','<p style="margin-top:24px;color:#64748b;">修正して再提出できます。次のウィッシュをお待ちしています！</p>',HR,STORE_LINK,FOOTER_JA].join('\n  ')),
+  },
+  ko: {
+    subject: '💬 당신의 위시가 승인되지 않았습니다',
+    body: wrap(['<h2 style="color:#6366f1;">{{nickname}} 님, 위시에 대해</h2>','<p style="font-size:16px;color:#334155;">안타깝게도 당신의 위시 <strong>{{wishTitle}}</strong>이(가) 승인되지 않았습니다.</p>','<p style="color:#64748b;">사유: {{closeReason}}</p>','<p style="margin-top:24px;color:#64748b;">수정 후 다시 제출할 수 있습니다. 다음 위시를 기대합니다!</p>',HR,STORE_LINK,FOOTER_KO].join('\n  ')),
+  },
+  'zh-TW': {
+    subject: '💬 你的許願未通過審核',
+    body: wrap(['<h2 style="color:#6366f1;">Hi {{nickname}}，關於你的許願</h2>','<p style="font-size:16px;color:#334155;">很遺憾，你的許願 <strong>{{wishTitle}}</strong> 未通過審核。</p>','<p style="color:#64748b;">原因：{{closeReason}}</p>','<p style="margin-top:24px;color:#64748b;">你可以修改後重新提交，期待你的下一個許願～</p>',HR,STORE_LINK,FOOTER_ZHTW].join('\n  ')),
   },
 };
 
@@ -542,17 +660,20 @@ const TEMPLATE_MAP: Record<NotificationType, Record<EmailLocale, { subject: stri
   newContent: newContentTemplates,
   contentUpdated: contentUpdatedTemplates,
   weeklyDigest: weeklyDigestTemplates,
+  wishAdopted: wishAdoptedTemplates,
+  wishFulfilled: wishFulfilledTemplates,
+  wishRejected: wishRejectedTemplates,
 };
 
 const ALL_LOCALES: EmailLocale[] = ['zh', 'en', 'ja', 'ko', 'zh-TW'];
-const ALL_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest'];
+const ALL_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest', 'wishAdopted', 'wishFulfilled', 'wishRejected'];
 
 // ============================================================
 // Public API
 // ============================================================
 
 /**
- * Return all 35 default email templates (7 notification types × 5 locales).
+ * Return all 50 default email templates (10 notification types × 5 locales).
  */
 export function getDefaultTemplates(): EmailTemplate[] {
   const now = new Date().toISOString();
@@ -579,7 +700,7 @@ export function getDefaultTemplates(): EmailTemplate[] {
 const DYNAMO_BATCH_WRITE_LIMIT = 25;
 
 /**
- * Seed all 35 default templates into DynamoDB using BatchWriteCommand.
+ * Seed all 50 default templates into DynamoDB using BatchWriteCommand.
  * DynamoDB BatchWriteCommand supports max 25 items per request,
  * so we split into batches of 25.
  */

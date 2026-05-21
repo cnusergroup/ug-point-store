@@ -359,3 +359,289 @@
 }
 
 
+
+/* Skill Lock Panel (SuperAdmin only) */
+.ba-skill-locks {
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--card-border);
+  padding: var(--space-4) var(--space-5);
+
+  &__title {
+    font-family: var(--font-display);
+    font-size: var(--text-body-sm);
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-3);
+    display: block;
+  }
+
+  &__loading {
+    padding: var(--space-3);
+    text-align: center;
+  }
+
+  &__loading-text {
+    font-size: var(--text-body-sm);
+    color: var(--text-tertiary);
+  }
+
+  &__grid {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-4);
+    background: var(--bg-elevated);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+  }
+
+  &__right {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  &__btn {
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--text-caption);
+    border-radius: var(--radius-sm);
+  }
+
+  &__skill-label {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  &__occupant {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    font-weight: 600;
+
+    &--occupied {
+      color: var(--accent-primary);
+    }
+
+    &--empty {
+      color: var(--text-tertiary);
+      font-style: italic;
+    }
+  }
+}
+
+
+/* Skill Lock Diff Summary */
+.ba-skill-locks__diff {
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-elevated);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+
+  &-title {
+    font-family: var(--font-body);
+    font-size: var(--text-caption);
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-2);
+    display: block;
+  }
+
+  &-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--card-border);
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &--negative {
+      .ba-skill-locks__diff-text {
+        color: var(--error);
+      }
+    }
+
+    &--positive {
+      .ba-skill-locks__diff-text {
+        color: var(--success);
+      }
+    }
+  }
+
+  &-text {
+    font-size: var(--text-body-sm);
+    color: var(--text-primary);
+  }
+
+  &-amount {
+    font-family: var(--font-display);
+    font-size: var(--text-body-sm);
+    font-weight: 700;
+
+    &--negative {
+      color: var(--error);
+    }
+
+    &--positive {
+      color: var(--success);
+    }
+  }
+
+  &-total {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: var(--space-2);
+    margin-top: var(--space-2);
+    border-top: 1px solid var(--card-border);
+  }
+
+  &-total-label {
+    font-size: var(--text-body-sm);
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+
+  &-total-value {
+    font-family: var(--font-display);
+    font-size: var(--text-body);
+    font-weight: 700;
+    color: var(--text-primary);
+
+    &--positive {
+      color: var(--success);
+    }
+
+    &--negative {
+      color: var(--error);
+    }
+  }
+}
+
+/* Skill Dialog Styles */
+.ba-skill-dialog {
+  &__message {
+    font-size: var(--text-body);
+    color: var(--text-primary);
+    line-height: 1.5;
+    margin-bottom: var(--space-3);
+    display: block;
+  }
+
+  &__info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-4);
+    background: var(--bg-elevated);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+  }
+
+  &__info-label {
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  &__info-value {
+    font-size: var(--text-body-sm);
+    font-weight: 600;
+    color: var(--accent-primary);
+  }
+}
+
+/* Assign Modal */
+.ba-assign-modal {
+  max-height: 70vh;
+
+  &__loading {
+    padding: var(--space-4);
+    text-align: center;
+    color: var(--text-tertiary);
+    font-size: var(--text-body-sm);
+  }
+
+  &__list {
+    max-height: 300px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  &__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-4);
+    background: var(--bg-elevated);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+
+    &:hover {
+      background: var(--bg-hover);
+      border-color: var(--accent-primary);
+    }
+  }
+
+  &__item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__item-nickname {
+    font-size: var(--text-body-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  &__item-email {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+  }
+
+  &__item-points {
+    font-family: var(--font-display);
+    font-size: var(--text-body-sm);
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  &__empty {
+    padding: var(--space-4);
+    text-align: center;
+    color: var(--text-tertiary);
+    font-size: var(--text-body-sm);
+  }
+}
+
+/* Confirm dialog skill section */
+.ba-confirm__skill-section {
+  padding: var(--space-2) 0;
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--card-border);
+}
+
+/* Danger variant for form-modal submit */
+.form-modal__submit--danger {
+  background: var(--error);
+  color: var(--text-inverse);
+
+  &:hover {
+    opacity: 0.9;
+  }
+}

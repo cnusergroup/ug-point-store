@@ -1,0 +1,281 @@
+/* ============================================
+   Wish Pool Create Page
+   Uses design system CSS variables from app.scss
+   ============================================ */
+
+.wish-create-page {
+  min-height: 100vh;
+  background: var(--bg-base);
+}
+
+.wish-create-body {
+  padding: var(--space-20) var(--space-16);
+  max-width: 600px;
+  margin: 0 auto;
+
+  /* Subtle gradient header area */
+  &::before {
+    content: '';
+    display: block;
+    height: 4px;
+    margin: calc(-1 * var(--space-20)) calc(-1 * var(--space-16)) var(--space-24);
+    background: linear-gradient(90deg, var(--accent-primary), var(--accent-hover), var(--info));
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+    opacity: 0.7;
+  }
+}
+
+/* Remaining quota indicator */
+.wish-create-quota {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-12) var(--space-16);
+  background: var(--bg-surface);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--card-border);
+  margin-bottom: var(--space-20);
+  transition: border-color var(--transition-fast);
+
+  &:hover {
+    border-color: var(--card-border-hover);
+  }
+
+  &__label {
+    font-family: var(--font-body);
+    font-size: 14px;
+    color: var(--text-secondary);
+  }
+
+  &__count {
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--accent-primary);
+
+    &--zero {
+      color: var(--error);
+    }
+  }
+}
+
+/* Form fields */
+.wish-create-field {
+  margin-bottom: var(--space-20);
+
+  &__label {
+    display: block;
+    font-family: var(--font-body);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: var(--space-8);
+  }
+
+  &__required {
+    color: var(--error);
+  }
+
+  &__optional {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    font-weight: 400;
+  }
+
+  &__input {
+    width: 100%;
+    padding: var(--space-12) var(--space-12);
+    font-family: var(--font-body);
+    font-size: 14px;
+    color: var(--text-primary);
+    background: var(--bg-surface);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    outline: none;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    box-sizing: border-box;
+
+    &:focus {
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+    }
+
+    &--error {
+      border-color: var(--error);
+
+      &:focus {
+        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+      }
+    }
+
+    &::placeholder {
+      color: var(--text-tertiary);
+    }
+  }
+
+  &__textarea {
+    width: 100%;
+    min-height: 120px;
+    padding: var(--space-12);
+    font-family: var(--font-body);
+    font-size: 14px;
+    color: var(--text-primary);
+    background: var(--bg-surface);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    outline: none;
+    resize: vertical;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    box-sizing: border-box;
+
+    &:focus {
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+    }
+
+    &--error {
+      border-color: var(--error);
+
+      &:focus {
+        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+      }
+    }
+
+    &::placeholder {
+      color: var(--text-tertiary);
+    }
+  }
+
+  &__counter {
+    display: block;
+    text-align: right;
+    font-family: var(--font-body);
+    font-size: 12px;
+    color: var(--text-tertiary);
+    margin-top: var(--space-4);
+  }
+
+  &__error {
+    display: block;
+    font-family: var(--font-body);
+    font-size: 12px;
+    color: var(--error);
+    margin-top: var(--space-4);
+  }
+}
+
+/* Image upload area */
+.wish-create-image-area {
+  cursor: pointer;
+
+  &__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 120px;
+    height: 120px;
+    background: var(--bg-surface);
+    border: 2px dashed var(--card-border);
+    border-radius: var(--radius-md);
+    transition: border-color var(--transition-fast), background var(--transition-fast), transform var(--transition-fast);
+
+    &:hover {
+      border-color: var(--accent-primary);
+      background: var(--bg-hover);
+      transform: scale(1.02);
+      animation: dashPulse 1.5s ease-in-out infinite;
+    }
+  }
+
+  &__icon {
+    font-size: 28px;
+    color: var(--text-tertiary);
+    line-height: 1;
+    transition: color var(--transition-fast);
+
+    .wish-create-image-area__empty:hover & {
+      color: var(--accent-primary);
+    }
+  }
+
+  &__hint {
+    font-family: var(--font-body);
+    font-size: 12px;
+    color: var(--text-tertiary);
+    margin-top: var(--space-4);
+    transition: color var(--transition-fast);
+
+    .wish-create-image-area__empty:hover & {
+      color: var(--accent-primary);
+    }
+  }
+
+  &__preview {
+    position: relative;
+    display: inline-block;
+    width: 120px;
+    height: 120px;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    border: 1px solid var(--card-border);
+    transition: box-shadow var(--transition-fast);
+
+    &:hover {
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    }
+  }
+
+  &__img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  &__remove {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    color: var(--text-inverse);
+    font-size: 16px;
+    line-height: 1;
+    transition: background var(--transition-fast), transform var(--transition-fast);
+
+    &:hover {
+      background: var(--error);
+      transform: scale(1.1);
+    }
+  }
+}
+
+@keyframes dashPulse {
+  0%, 100% {
+    border-color: var(--accent-primary);
+  }
+  50% {
+    border-color: var(--accent-hover);
+  }
+}
+
+/* Limit error */
+.wish-create-limit-error {
+  margin-bottom: var(--space-16);
+}
+
+/* Submit button */
+.wish-create-submit {
+  margin-top: var(--space-24);
+
+  &__btn {
+    width: 100%;
+    text-align: center;
+  }
+}

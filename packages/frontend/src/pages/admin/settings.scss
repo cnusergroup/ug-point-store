@@ -360,6 +360,26 @@
   }
 }
 
+/* Number input for settings (e.g., reward points) */
+.settings-number-input {
+  width: 72px;
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-display);
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  outline: none;
+  transition: border-color var(--transition-fast);
+
+  &:focus {
+    border-color: var(--accent-primary);
+  }
+}
+
 /* Settings section header */
 .settings-section {
   padding: var(--space-5) var(--space-5) var(--space-1);

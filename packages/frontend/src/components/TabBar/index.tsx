@@ -4,6 +4,7 @@ import {
   CartIcon, CartActiveIcon,
   OrderIcon, OrderActiveIcon,
   ProfileIcon, ProfileActiveIcon,
+  WishIcon, WishActiveIcon,
 } from '../icons';
 import type { IconProps } from '../icons';
 import { useAppStore } from '../../store';
@@ -26,6 +27,7 @@ interface TabConfig {
 
 const TABS: TabConfig[] = [
   { key: 'home', labelKey: 'tabBar.mall', path: '/pages/index/index', icon: HomeIcon, activeIcon: HomeActiveIcon },
+  { key: 'wishes', labelKey: 'tabBar.wishes', path: '/pages/wishes/index', icon: WishIcon, activeIcon: WishActiveIcon },
   { key: 'cart', labelKey: 'tabBar.cart', path: '/pages/cart/index', icon: CartIcon, activeIcon: CartActiveIcon, badge: 'cart' },
   { key: 'orders', labelKey: 'tabBar.orders', path: '/pages/orders/index', icon: OrderIcon, activeIcon: OrderActiveIcon },
   { key: 'profile', labelKey: 'tabBar.profile', path: '/pages/profile/index', icon: ProfileIcon, activeIcon: ProfileActiveIcon },

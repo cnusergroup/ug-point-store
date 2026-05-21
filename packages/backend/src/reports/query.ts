@@ -407,9 +407,16 @@ async function queryByTypeAndDateRange(
     allItems.push(...(result.Items ?? []));
     lastEvaluatedKey = result.LastEvaluatedKey;
 
-    // If we have a page limit for cursor pagination, return after first query
+    // When using cursor pagination with filters, we need to keep querying
+    // until we have enough matching records or data is exhausted.
+    // DynamoDB Limit applies BEFORE FilterExpression, so a single query
+    // may return fewer matching records than the limit.
     if (pageLimit) {
-      return { items: allItems, lastEvaluatedKey: lastEvaluatedKey as Record<string, unknown> | undefined };
+      if (allItems.length >= pageLimit || !lastEvaluatedKey) {
+        return { items: allItems.slice(0, pageLimit), lastEvaluatedKey: lastEvaluatedKey as Record<string, unknown> | undefined };
+      }
+      // Not enough matching records yet and more data exists — continue loop
+      continue;
     }
   } while (lastEvaluatedKey);
 

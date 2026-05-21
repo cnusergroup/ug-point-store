@@ -390,6 +390,54 @@
   }
 }
 
+/* Skill Claims Detail in Expanded View */
+.bh-skill-claims {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--card-border);
+
+  &__header {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-2);
+  }
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--card-border);
+
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+
+  &__skill {
+    font-size: var(--text-body-sm);
+    font-weight: 500;
+    color: var(--accent-primary);
+    flex-shrink: 0;
+  }
+
+  &__nickname {
+    font-size: var(--text-body-sm);
+    color: var(--text-primary);
+    flex: 1;
+  }
+
+  &__points {
+    font-family: var(--font-display);
+    font-size: var(--text-body-sm);
+    font-weight: 600;
+    color: var(--success);
+    flex-shrink: 0;
+  }
+}
+
 /* Adjust Button - entry point in detail view for SuperAdmin */
 .bh-adjust-button {
   margin-top: var(--space-3);

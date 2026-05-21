@@ -1,0 +1,802 @@
+/* ============================================
+   Wish Pool List Page — Community + Gaming Dark
+   Design system: ui-ux-pro-max
+   Pattern: Community/Forum with voting engagement
+   Style: Gaming dark mode (OLED-optimized)
+   ============================================ */
+
+.wish-list-page {
+  min-height: 100vh;
+  background: var(--bg-void);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  padding-bottom: calc(56px + env(safe-area-inset-bottom));
+
+  /* Ambient gradient backdrop (subtle glow from top) */
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 320px;
+    background:
+      radial-gradient(ellipse at 20% 0%, rgba(124, 109, 240, 0.12), transparent 60%),
+      radial-gradient(ellipse at 80% 0%, rgba(240, 98, 146, 0.08), transparent 50%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  & > *:not(.tab-bar) {
+    position: relative;
+    z-index: 1;
+  }
+
+  &__toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  &__mine-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--space-2) var(--space-3);
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    font-weight: 500;
+    color: var(--accent-primary);
+    background: transparent;
+    border: 1px solid var(--accent-primary);
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+
+    &:hover {
+      background: var(--accent-primary);
+      color: var(--text-inverse);
+    }
+  }
+
+  &__create-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    font-weight: 600;
+    color: var(--text-inverse);
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-hover));
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+    box-shadow: 0 2px 8px rgba(124, 109, 240, 0.3);
+
+    &:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(124, 109, 240, 0.5);
+    }
+
+    &:active {
+      transform: scale(0.96);
+    }
+  }
+}
+
+/* ---- Hero Stats Bar ---- */
+.wish-hero {
+  padding: var(--space-5) var(--space-5) var(--space-4);
+
+  &__title {
+    font-family: var(--font-display);
+    font-size: var(--text-h2);
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+    margin-bottom: var(--space-1);
+
+    display: block;
+
+    background: linear-gradient(135deg, var(--text-primary), var(--accent-primary) 120%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  &__subtitle {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+    display: block;
+    margin-bottom: var(--space-4);
+  }
+
+  &__stats {
+    display: flex;
+    gap: var(--space-3);
+  }
+
+  &__stat {
+    flex: 1;
+    padding: var(--space-3) var(--space-4);
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    transition: border-color var(--transition-fast), transform var(--transition-fast);
+
+    &:hover {
+      border-color: var(--card-border-hover);
+      transform: translateY(-1px);
+    }
+  }
+
+  &__stat-value {
+    font-family: var(--font-display);
+    font-size: var(--text-h3);
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.1;
+
+    &--accent {
+      background: linear-gradient(135deg, var(--accent-primary), #a78bfa);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+  }
+
+  &__stat-label {
+    font-family: var(--font-body);
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+  }
+}
+
+/* ---- Sort Tabs (pill style) ---- */
+.wish-sort-tabs {
+  display: inline-flex;
+  padding: 4px;
+  margin: 0 var(--space-5) var(--space-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-full);
+  align-self: flex-start;
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-5);
+    cursor: pointer;
+    border-radius: var(--radius-full);
+    transition: background var(--transition-fast), color var(--transition-fast);
+
+    &:hover:not(&--active) {
+      background: var(--bg-hover);
+    }
+
+    &--active {
+      background: linear-gradient(135deg, var(--accent-primary), var(--accent-hover));
+      box-shadow: 0 2px 8px rgba(124, 109, 240, 0.35);
+
+      .wish-sort-tabs__label {
+        color: var(--text-inverse);
+        font-weight: 600;
+      }
+    }
+  }
+
+  &__icon {
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  &__label {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+    font-weight: 500;
+    transition: color var(--transition-fast);
+  }
+}
+
+/* ---- Wish List ---- */
+.wish-list {
+  flex: 1;
+  padding: 0 var(--space-5) var(--space-10);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* ---- Wish Card (Community voting layout) ---- */
+.wish-card {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-base),
+    transform var(--transition-fast);
+  animation: cardEnter 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  position: relative;
+  overflow: hidden;
+
+  &:nth-child(1) { animation-delay: 0s; }
+  &:nth-child(2) { animation-delay: 0.04s; }
+  &:nth-child(3) { animation-delay: 0.08s; }
+  &:nth-child(4) { animation-delay: 0.12s; }
+  &:nth-child(5) { animation-delay: 0.16s; }
+  &:nth-child(6) { animation-delay: 0.2s; }
+  &:nth-child(7) { animation-delay: 0.24s; }
+  &:nth-child(8) { animation-delay: 0.28s; }
+
+  &:hover {
+    border-color: var(--card-border-hover);
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-2px);
+
+    .wish-card__img {
+      transform: scale(1.05);
+    }
+  }
+
+  /* Status-based accent bar (left edge gradient) */
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 3px;
+    background: transparent;
+    transition: background var(--transition-fast);
+  }
+
+  &--approved::before {
+    background: linear-gradient(180deg, var(--accent-primary), var(--accent-hover));
+  }
+
+  &--adopted::before {
+    background: linear-gradient(180deg, var(--info), #60a5fa);
+  }
+
+  &--fulfilled::before {
+    background: linear-gradient(180deg, var(--success), #34d399);
+  }
+
+  /* Left: Vote column (vertical stack, like Reddit/ProductHunt) */
+  &__vote-col {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 56px;
+    padding: var(--space-2);
+    background: var(--bg-base);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition:
+      border-color var(--transition-fast),
+      background var(--transition-fast),
+      transform var(--transition-fast);
+
+    &:hover:not(&--voted):not(&--readonly):not(&--loading) {
+      border-color: var(--accent-primary);
+      background: rgba(124, 109, 240, 0.08);
+
+      .wish-card__vote-arrow {
+        color: var(--accent-primary);
+        transform: translateY(-2px);
+      }
+    }
+
+    &:active:not(&--voted):not(&--readonly):not(&--loading) {
+      transform: scale(0.95);
+    }
+
+    &--voted {
+      background: linear-gradient(135deg, var(--accent-primary), var(--accent-hover));
+      border-color: transparent;
+      cursor: default;
+      box-shadow: 0 2px 8px rgba(124, 109, 240, 0.4);
+
+      .wish-card__vote-arrow,
+      .wish-card__vote-count {
+        color: var(--text-inverse);
+      }
+    }
+
+    &--readonly {
+      cursor: default;
+      opacity: 0.7;
+    }
+
+    &--loading {
+      opacity: 0.6;
+      cursor: wait;
+
+      .wish-card__vote-arrow {
+        animation: voteSpin 0.8s linear infinite;
+      }
+    }
+  }
+
+  &__vote-arrow {
+    font-size: 14px;
+    line-height: 1;
+    color: var(--text-secondary);
+    transition: color var(--transition-fast), transform var(--transition-fast);
+    margin-bottom: 2px;
+  }
+
+  &__vote-count {
+    font-family: var(--font-display);
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
+    transition: color var(--transition-fast);
+  }
+
+  &__vote-label {
+    font-family: var(--font-body);
+    font-size: 10px;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* Middle: Thumbnail */
+  &__img-wrap {
+    flex-shrink: 0;
+    width: 64px;
+    height: 64px;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    cursor: pointer;
+    background: var(--bg-base);
+  }
+
+  &__img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform var(--transition-base);
+  }
+
+  /* Right: Content */
+  &__content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  &__header {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+
+  &__title {
+    flex: 1;
+    font-family: var(--font-body);
+    font-size: var(--text-body-lg);
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    cursor: pointer;
+    transition: color var(--transition-base);
+
+    &:hover {
+      color: var(--accent-primary);
+    }
+
+    &--expanded {
+      display: block;
+      -webkit-line-clamp: unset;
+      overflow: visible;
+      white-space: normal;
+      word-break: break-word;
+    }
+  }
+
+  &__desc {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    cursor: pointer;
+    transition: color var(--transition-base);
+
+    &:hover {
+      color: var(--text-primary);
+    }
+
+    &--expanded {
+      display: block;
+      -webkit-line-clamp: unset;
+      overflow: visible;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+  }
+
+  &__toggle {
+    margin-top: var(--space-1);
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--accent-primary);
+    cursor: pointer;
+    align-self: flex-start;
+    user-select: none;
+    transition: color var(--transition-base);
+
+    &:hover {
+      color: var(--accent-hover);
+    }
+  }
+
+  &__meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-top: auto;
+    padding-top: var(--space-1);
+  }
+
+  &__time {
+    font-family: var(--font-body);
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+
+    &::before {
+      content: '·';
+      color: var(--text-tertiary);
+      margin-right: var(--space-1);
+    }
+
+    &:first-child::before {
+      display: none;
+      margin-right: 0;
+    }
+  }
+}
+
+/* ---- Status Pill ---- */
+.wish-status {
+  flex-shrink: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-full);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+
+  &::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  &--approved {
+    color: var(--accent-primary);
+    background: rgba(124, 109, 240, 0.12);
+  }
+
+  &--adopted {
+    color: var(--info);
+    background: rgba(91, 141, 239, 0.12);
+  }
+
+  &--fulfilled {
+    color: var(--success);
+    background: rgba(45, 212, 168, 0.12);
+  }
+
+  &--pending {
+    color: var(--warning);
+    background: rgba(245, 166, 35, 0.12);
+  }
+
+  &--closed {
+    color: var(--text-tertiary);
+    background: var(--bg-hover);
+
+    &::before {
+      background: var(--text-tertiary);
+    }
+  }
+}
+
+@keyframes voteSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* ---- Empty State (Hero illustration) ---- */
+.wish-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-16) var(--space-5);
+  text-align: center;
+  min-height: 400px;
+
+  &__illustration {
+    position: relative;
+    width: 120px;
+    height: 120px;
+    margin-bottom: var(--space-6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    /* Soft glow behind the icon */
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle, rgba(124, 109, 240, 0.25) 0%, transparent 70%);
+      border-radius: 50%;
+      animation: glowPulse 3s ease-in-out infinite;
+    }
+  }
+
+  &__icon {
+    font-size: 72px;
+    line-height: 1;
+    animation: wishFloat 3s ease-in-out infinite;
+    filter: drop-shadow(0 4px 16px rgba(124, 109, 240, 0.4));
+    position: relative;
+  }
+
+  &__title {
+    font-family: var(--font-display);
+    font-size: var(--text-h3);
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: var(--space-2);
+    letter-spacing: -0.01em;
+  }
+
+  &__text {
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    color: var(--text-secondary);
+    margin-bottom: var(--space-6);
+    max-width: 280px;
+    line-height: 1.6;
+  }
+
+  &__cta {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-6);
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-hover));
+    color: var(--text-inverse);
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    font-weight: 600;
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+    box-shadow: 0 4px 16px rgba(124, 109, 240, 0.35);
+
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 24px rgba(124, 109, 240, 0.5);
+    }
+
+    &:active {
+      transform: scale(0.97);
+    }
+
+    &::after {
+      content: '→';
+      font-size: 18px;
+      transition: transform var(--transition-fast);
+    }
+
+    &:hover::after {
+      transform: translateX(3px);
+    }
+  }
+}
+
+@keyframes wishFloat {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes glowPulse {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+/* ---- Load More ---- */
+.wish-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5) 0;
+
+  &--btn {
+    cursor: pointer;
+
+    .wish-load-more__text {
+      padding: var(--space-2) var(--space-5);
+      border-radius: var(--radius-full);
+      background: var(--bg-surface);
+      border: 1px solid var(--card-border);
+      transition: all var(--transition-fast);
+    }
+
+    &:hover .wish-load-more__text {
+      background: var(--bg-hover);
+      border-color: var(--accent-primary);
+      color: var(--accent-primary);
+    }
+  }
+
+  &__text {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+    transition: color var(--transition-fast);
+
+    &--end {
+      font-size: var(--text-caption);
+      color: var(--text-tertiary);
+    }
+  }
+}
+
+/* ---- Skeleton ---- */
+.wish-skeleton {
+  padding: 0 var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+
+  &__item {
+    display: flex;
+    gap: var(--space-4);
+    padding: var(--space-4);
+    background: var(--bg-surface);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-lg);
+  }
+
+  &__vote {
+    flex-shrink: 0;
+    width: 56px;
+    height: 64px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(90deg, var(--bg-base) 0%, var(--bg-hover) 50%, var(--bg-base) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  &__img {
+    flex-shrink: 0;
+    width: 64px;
+    height: 64px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(90deg, var(--bg-base) 0%, var(--bg-hover) 50%, var(--bg-base) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  &__lines {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    justify-content: center;
+  }
+
+  &__line {
+    height: 12px;
+    border-radius: var(--radius-sm);
+    background: linear-gradient(90deg, var(--bg-base) 0%, var(--bg-hover) 50%, var(--bg-base) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+
+    &--title {
+      width: 60%;
+      height: 16px;
+    }
+
+    &--desc {
+      width: 90%;
+    }
+
+    &--meta {
+      width: 35%;
+      height: 10px;
+    }
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ---- Responsive (tablet+) ---- */
+@media (min-width: 768px) {
+  .wish-list {
+    max-width: 768px;
+    margin: 0 auto;
+    width: 100%;
+    padding-left: var(--space-6);
+    padding-right: var(--space-6);
+  }
+
+  .wish-hero {
+    max-width: 768px;
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .wish-sort-tabs {
+    margin-left: auto;
+    margin-right: auto;
+    align-self: center;
+  }
+
+  .wish-card {
+    padding: var(--space-5);
+
+    &__img-wrap {
+      width: 80px;
+      height: 80px;
+    }
+  }
+}

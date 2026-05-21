@@ -78,6 +78,18 @@ export default function BatchHistoryPage() {
     });
   }, [records, searchQuery]);
 
+  // Auto-load more pages when search query filters out most records
+  // so the user sees enough results without manually clicking "Load More"
+  useEffect(() => {
+    if (!searchQuery.trim()) return;
+    if (loading) return;
+    if (!lastKey) return;
+    // Auto-load next page if we have a search query but very few visible results
+    if (filteredRecords.length < 10) {
+      fetchHistory(true, lastKey);
+    }
+  }, [searchQuery, filteredRecords.length, lastKey, loading, fetchHistory]);
+
   const handleLoadMore = () => {
     if (lastKey) {
       fetchHistory(true, lastKey);
@@ -276,6 +288,26 @@ export default function BatchHistoryPage() {
                             </View>
                           </View>
                         ))}
+
+                        {/* Skill Claims Detail */}
+                        {(detail || record).skillClaims && (detail || record).skillClaims!.length > 0 && (
+                          <View className='bh-skill-claims'>
+                            <Text className='bh-skill-claims__header'>
+                              {t('skillClaims.history.skillDetailHeader')}
+                            </Text>
+                            {(detail || record).skillClaims!.map((claim) => (
+                              <View key={`${claim.skill}-${claim.userId}`} className='bh-skill-claims__item'>
+                                <Text className='bh-skill-claims__skill'>
+                                  {t(`skillClaims.skillName.${claim.skill}` as any)}
+                                </Text>
+                                <Text className='bh-skill-claims__nickname'>{claim.userNickname}</Text>
+                                <Text className='bh-skill-claims__points'>
+                                  +{claim.pointsAwarded} {t('skillClaims.history.pointsUnit')}
+                                </Text>
+                              </View>
+                            ))}
+                          </View>
+                        )}
 
                         {/* Adjustment metadata */}
                         {(detail || record).adjustedAt && (

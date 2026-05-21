@@ -1,0 +1,341 @@
+/* ============================================
+   My Wishes Page
+   Uses design system CSS variables from app.scss
+   ============================================ */
+
+.wish-mine-page {
+  min-height: 100vh;
+  background-color: var(--bg-base);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Remaining Quota ---- */
+.wish-mine-quota {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--card-border);
+
+  &__label {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+  }
+
+  &__value {
+    font-family: var(--font-display);
+    font-size: var(--text-body-lg);
+    font-weight: 700;
+    color: var(--accent-primary);
+  }
+
+  &__unit {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--text-tertiary);
+  }
+}
+
+/* ---- Wish List ---- */
+.wish-mine-list {
+  flex: 1;
+  height: calc(100vh - 140px);
+  padding: var(--space-3) var(--space-4);
+}
+
+/* ---- Wish Card ---- */
+.wish-mine-card {
+  padding: var(--space-4);
+  margin-bottom: var(--space-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  transition: border-color var(--transition-fast);
+
+  &:hover {
+    border-color: var(--card-border-hover);
+  }
+
+  &__header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+    flex-wrap: wrap;
+  }
+
+  &__title {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-body);
+    font-size: var(--text-body-lg);
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__edit-title {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    color: var(--text-primary);
+    background: var(--bg-base);
+    border: 1px solid var(--accent-primary);
+    border-radius: var(--radius-sm);
+    padding: var(--space-2) var(--space-3);
+    outline: none;
+  }
+
+  &__desc {
+    display: block;
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+    margin-bottom: var(--space-3);
+    line-height: 1.5;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+  }
+
+  &__edit-desc {
+    width: 100%;
+    min-height: 80px;
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--text-primary);
+    background: var(--bg-base);
+    border: 1px solid var(--accent-primary);
+    border-radius: var(--radius-sm);
+    padding: var(--space-2) var(--space-3);
+    margin-bottom: var(--space-3);
+    outline: none;
+    resize: vertical;
+    line-height: 1.5;
+  }
+
+  &__meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+    margin-bottom: var(--space-2);
+  }
+
+  &__stat {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  &__stat-label {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+  }
+
+  &__stat-value {
+    font-family: var(--font-display);
+    font-size: var(--text-body-sm);
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  &__close-reason {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-1);
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__close-reason-label {
+    font-size: var(--text-caption);
+    color: var(--error);
+    white-space: nowrap;
+  }
+
+  &__close-reason-text {
+    font-size: var(--text-caption);
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__time {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    margin-left: auto;
+  }
+
+  /* ---- Action Buttons ---- */
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--card-border);
+  }
+
+  &__btn {
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-body-sm);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+
+    &--edit {
+      color: var(--accent-primary);
+      background: rgba(124, 109, 240, 0.08);
+      border: 1px solid rgba(124, 109, 240, 0.2);
+
+      &:hover {
+        background: rgba(124, 109, 240, 0.15);
+      }
+    }
+
+    &--save {
+      color: var(--text-inverse);
+      background: var(--accent-primary);
+      border: 1px solid var(--accent-primary);
+
+      &:hover {
+        background: var(--accent-hover);
+      }
+    }
+
+    &--cancel {
+      color: var(--text-secondary);
+      background: var(--bg-base);
+      border: 1px solid var(--card-border);
+
+      &:hover {
+        border-color: var(--card-border-hover);
+      }
+    }
+
+    &--delete {
+      color: var(--error);
+      background: rgba(239, 68, 68, 0.08);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+
+      &:hover {
+        background: rgba(239, 68, 68, 0.15);
+      }
+    }
+  }
+}
+
+/* ---- Status Badges ---- */
+.wish-mine-status {
+  font-size: var(--text-overline);
+  font-weight: 600;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+  flex-shrink: 0;
+
+  &--pending {
+    background: rgba(245, 166, 35, 0.12);
+    color: var(--warning);
+  }
+
+  &--approved {
+    background: rgba(45, 212, 168, 0.12);
+    color: var(--success);
+  }
+
+  &--adopted {
+    background: rgba(124, 109, 240, 0.12);
+    color: var(--accent-primary);
+  }
+
+  &--fulfilled {
+    background: rgba(45, 212, 168, 0.12);
+    color: var(--success);
+  }
+
+  &--closed {
+    background: rgba(239, 68, 68, 0.08);
+    color: var(--text-tertiary);
+  }
+}
+
+/* ---- Loading State ---- */
+.wish-mine-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 80px var(--space-5);
+
+  &__text {
+    color: var(--text-tertiary);
+    font-size: var(--text-body);
+  }
+}
+
+/* ---- Empty State ---- */
+.wish-mine-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px var(--space-5);
+
+  &__text {
+    color: var(--text-tertiary);
+    font-size: var(--text-body);
+  }
+}
+
+/* ---- Loading More ---- */
+.wish-mine-loading-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+
+  &__text {
+    color: var(--text-tertiary);
+    font-size: var(--text-body-sm);
+  }
+}
+
+/* ---- No More ---- */
+.wish-mine-no-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+
+  &__text {
+    color: var(--text-tertiary);
+    font-size: var(--text-caption);
+  }
+}
+
+/* ---- Responsive ---- */
+@media (min-width: 768px) {
+  .wish-mine-list {
+    padding: var(--space-4) var(--space-6);
+    max-width: 800px;
+    margin: 0 auto;
+  }
+}
+
+@media (min-width: 1024px) {
+  .wish-mine-list {
+    padding: var(--space-5) var(--space-8);
+    max-width: 960px;
+  }
+}

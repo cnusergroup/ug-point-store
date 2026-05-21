@@ -37,6 +37,9 @@ const TEMPLATE_VARIABLE_MAP: Record<NotificationType, string[]> = {
   newContent: ['nickname', 'contentList'],
   contentUpdated: ['contentTitle', 'userName', 'activityTopic', 'activityDate'],
   weeklyDigest: ['nickname', 'productList', 'contentList', 'weekStart', 'weekEnd'],
+  wishAdopted: ['nickname', 'wishTitle'],
+  wishFulfilled: ['nickname', 'wishTitle', 'productUrl'],
+  wishRejected: ['nickname', 'wishTitle', 'closeReason'],
 };
 
 const SUBJECT_MAX_LENGTH = 200;

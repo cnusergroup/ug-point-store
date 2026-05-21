@@ -40,6 +40,9 @@ const TOGGLE_MAP: Record<NotificationType, string> = {
   newContent: 'emailNewContentEnabled',
   contentUpdated: 'emailContentUpdatedEnabled',
   weeklyDigest: 'emailWeeklyDigestEnabled',
+  wishAdopted: 'emailWishAdoptedEnabled',
+  wishFulfilled: 'emailWishFulfilledEnabled',
+  wishRejected: 'emailWishRejectedEnabled',
 };
 
 const ADMIN_ROLES = ['Admin', 'SuperAdmin', 'OrderAdmin'];
@@ -544,5 +547,139 @@ export async function sendContentUpdatedEmail(
     console.log(`[Notification] contentUpdated email sent to ${user.email}`);
   } catch (err) {
     console.error('[Notification] Failed to send contentUpdated email:', err);
+  }
+}
+
+// ============================================================
+// Wish Pool notification functions
+// ============================================================
+
+/**
+ * Send a "wish adopted" email to the wish author.
+ * Best-effort: failure does not block the main operation.
+ */
+export async function sendWishAdoptedEmail(
+  ctx: NotificationContext,
+  userId: string,
+  wishTitle: string,
+): Promise<void> {
+  try {
+    if (!(await isEmailEnabled(ctx, 'wishAdopted'))) {
+      return;
+    }
+
+    const user = await loadUser(ctx, userId);
+    if (!user) {
+      console.warn(`[Notification] Skipping wishAdopted: user ${userId} not found or no email`);
+      return;
+    }
+
+    const template = await loadTemplateWithFallback(ctx, 'wishAdopted', user.locale);
+    if (!template) {
+      console.error('[Notification] wishAdopted template not found');
+      return;
+    }
+
+    const variables: Record<string, string> = {
+      nickname: user.nickname,
+      wishTitle,
+    };
+
+    const subject = replaceVariables(template.subject, variables);
+    const htmlBody = replaceVariables(template.body, variables);
+
+    await sendEmail(ctx.sesClient, { to: user.email, subject, htmlBody }, ctx.senderEmail);
+    console.log(`[Notification] wishAdopted email sent to ${user.email}`);
+  } catch (err) {
+    console.error('[Notification] Failed to send wishAdopted email:', err);
+  }
+}
+
+/**
+ * Send a "wish fulfilled" email to the wish author with product link.
+ * Best-effort: failure does not block the main operation.
+ */
+export async function sendWishFulfilledEmail(
+  ctx: NotificationContext,
+  userId: string,
+  wishTitle: string,
+  productId: string,
+): Promise<void> {
+  try {
+    if (!(await isEmailEnabled(ctx, 'wishFulfilled'))) {
+      return;
+    }
+
+    const user = await loadUser(ctx, userId);
+    if (!user) {
+      console.warn(`[Notification] Skipping wishFulfilled: user ${userId} not found or no email`);
+      return;
+    }
+
+    const template = await loadTemplateWithFallback(ctx, 'wishFulfilled', user.locale);
+    if (!template) {
+      console.error('[Notification] wishFulfilled template not found');
+      return;
+    }
+
+    // Construct product URL — relative path that works with the frontend
+    const productUrl = `/products/${productId}`;
+
+    const variables: Record<string, string> = {
+      nickname: user.nickname,
+      wishTitle,
+      productUrl,
+    };
+
+    const subject = replaceVariables(template.subject, variables);
+    const htmlBody = replaceVariables(template.body, variables);
+
+    await sendEmail(ctx.sesClient, { to: user.email, subject, htmlBody }, ctx.senderEmail);
+    console.log(`[Notification] wishFulfilled email sent to ${user.email}`);
+  } catch (err) {
+    console.error('[Notification] Failed to send wishFulfilled email:', err);
+  }
+}
+
+/**
+ * Send a "wish rejected" email to the wish author with close reason.
+ * Best-effort: failure does not block the main operation.
+ */
+export async function sendWishRejectedEmail(
+  ctx: NotificationContext,
+  userId: string,
+  wishTitle: string,
+  closeReason: string,
+): Promise<void> {
+  try {
+    if (!(await isEmailEnabled(ctx, 'wishRejected'))) {
+      return;
+    }
+
+    const user = await loadUser(ctx, userId);
+    if (!user) {
+      console.warn(`[Notification] Skipping wishRejected: user ${userId} not found or no email`);
+      return;
+    }
+
+    const template = await loadTemplateWithFallback(ctx, 'wishRejected', user.locale);
+    if (!template) {
+      console.error('[Notification] wishRejected template not found');
+      return;
+    }
+
+    const variables: Record<string, string> = {
+      nickname: user.nickname,
+      wishTitle,
+      closeReason,
+    };
+
+    const subject = replaceVariables(template.subject, variables);
+    const htmlBody = replaceVariables(template.body, variables);
+
+    await sendEmail(ctx.sesClient, { to: user.email, subject, htmlBody }, ctx.senderEmail);
+    console.log(`[Notification] wishRejected email sent to ${user.email}`);
+  } catch (err) {
+    console.error('[Notification] Failed to send wishRejected email:', err);
   }
 }

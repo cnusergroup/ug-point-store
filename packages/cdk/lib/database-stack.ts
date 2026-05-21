@@ -26,6 +26,9 @@ export class DatabaseStack extends cdk.Stack {
   public readonly activitiesTable: dynamodb.Table;
   public readonly credentialsTable: dynamodb.Table;
   public readonly credentialSequencesTable: dynamodb.Table;
+  public readonly wishesTable: dynamodb.Table;
+  public readonly wishVotesTable: dynamodb.Table;
+  public readonly activitySkillClaimsTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -496,5 +499,52 @@ export class DatabaseStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'CredentialSequencesTableName', { value: this.credentialSequencesTable.tableName, exportName: 'PointsMall-CredentialSequencesTableName' });
     new cdk.CfnOutput(this, 'CredentialSequencesTableArn', { value: this.credentialSequencesTable.tableArn, exportName: 'PointsMall-CredentialSequencesTableArn' });
+
+    // Wishes table: PK=wishId, GSIs: StatusVoteIndex (PK=status, SK=voteCount), UserWishIndex (PK=userId, SK=createdAt)
+    this.wishesTable = new dynamodb.Table(this, 'WishesTable', {
+      tableName: 'PointsMall-Wishes',
+      partitionKey: { name: 'wishId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.wishesTable.addGlobalSecondaryIndex({
+      indexName: 'StatusVoteIndex',
+      partitionKey: { name: 'status', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'voteCount', type: dynamodb.AttributeType.NUMBER },
+    });
+
+    this.wishesTable.addGlobalSecondaryIndex({
+      indexName: 'UserWishIndex',
+      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+    });
+
+    new cdk.CfnOutput(this, 'WishesTableName', { value: this.wishesTable.tableName, exportName: 'PointsMall-WishesTableName' });
+    new cdk.CfnOutput(this, 'WishesTableArn', { value: this.wishesTable.tableArn, exportName: 'PointsMall-WishesTableArn' });
+
+    // WishVotes table: PK=wishId, SK=voterId (composite key prevents duplicate votes)
+    this.wishVotesTable = new dynamodb.Table(this, 'WishVotesTable', {
+      tableName: 'PointsMall-WishVotes',
+      partitionKey: { name: 'wishId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'voterId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    new cdk.CfnOutput(this, 'WishVotesTableName', { value: this.wishVotesTable.tableName, exportName: 'PointsMall-WishVotesTableName' });
+    new cdk.CfnOutput(this, 'WishVotesTableArn', { value: this.wishVotesTable.tableArn, exportName: 'PointsMall-WishVotesTableArn' });
+
+    // ActivitySkillClaims table: PK=activityId, SK=skill (global mutex on skill per activity)
+    this.activitySkillClaimsTable = new dynamodb.Table(this, 'ActivitySkillClaimsTable', {
+      tableName: 'PointsMall-ActivitySkillClaims',
+      partitionKey: { name: 'activityId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'skill', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    new cdk.CfnOutput(this, 'ActivitySkillClaimsTableName', { value: this.activitySkillClaimsTable.tableName, exportName: 'PointsMall-ActivitySkillClaimsTableName' });
+    new cdk.CfnOutput(this, 'ActivitySkillClaimsTableArn', { value: this.activitySkillClaimsTable.tableArn, exportName: 'PointsMall-ActivitySkillClaimsTableArn' });
   }
 }

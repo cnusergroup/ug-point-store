@@ -129,7 +129,8 @@ export default function EmailContentPage() {
     return selected
       .map((c) => {
         const author = c.authorNickname ? ` — ${c.authorNickname}` : '';
-        return `<p style="margin:4px 0;">• ${c.title}${author}</p>`;
+        const url = `https://store.awscommunity.cn/#/pages/content/detail?id=${c.contentId}`;
+        return `<p style="margin:4px 0;">• <a href="${url}" style="color:#6366f1;text-decoration:underline;">${c.title}</a>${author}</p>`;
       })
       .join('');
   };

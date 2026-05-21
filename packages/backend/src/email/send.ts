@@ -11,7 +11,10 @@ export type NotificationType =
   | 'newProduct'
   | 'newContent'
   | 'contentUpdated'
-  | 'weeklyDigest';
+  | 'weeklyDigest'
+  | 'wishAdopted'
+  | 'wishFulfilled'
+  | 'wishRejected';
 
 export type EmailLocale = 'zh' | 'en' | 'ja' | 'ko' | 'zh-TW';
 
