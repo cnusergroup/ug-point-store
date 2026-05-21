@@ -14,13 +14,14 @@ import { getUploadUrl, getTempUploadUrl, deleteImage } from './images';
 import { batchGenerateInvites, listInvites, revokeInvite } from './invites';
 import { listUsers, setUserStatus, deleteUser, unlockUser } from './users';
 import { executeBatchDistribution, validateBatchDistributionInput, listDistributionHistory, getDistributionDetail, getAwardedUserIds } from './batch-points';
-import { executeAdjustment } from './batch-points-adjust';
+import { executeAdjustment, type AdjustmentInput } from './batch-points-adjust';
 import { reviewClaim, listAllClaims } from '../claims/review';
 import { reviewContent, listAllContent, deleteContent, createCategory, updateCategory, deleteCategory } from '../content/admin';
 import { listAllTags, mergeTags, deleteTag } from '../content/admin-tags';
 import { updateFeatureToggles, getFeatureToggles, updateContentRolePermissions } from '../settings/feature-toggles';
 import type { PointsRuleConfig } from '../settings/feature-toggles';
 import { checkReviewPermission } from '../content/content-permission';
+import { checkProductPermission } from './product-permission';
 import { getInviteSettings, updateInviteSettings } from '../settings/invite-settings';
 import { transferSuperAdmin } from './superadmin-transfer';
 import { updateTravelSettings, validateTravelSettingsInput } from '../travel/settings';
@@ -32,6 +33,7 @@ import type { NotificationContext, SubscribedUser } from '../email/notifications
 import type { NotificationType, EmailLocale } from '../email/send';
 import { createUG, deleteUG, updateUGStatus, updateUGName, listUGs, assignLeader, removeLeader, getMyUGs } from './ug';
 import { listActivities } from './activities';
+import { getSkillClaimsForActivity } from './skill-claims';
 import { reviewReservation, listReservationApprovals, getVisibleUGNames } from '../content/reservation-approval';
 import { queryPointsDetail, queryUGActivitySummary, queryUserPointsRanking, queryActivityPointsSummary } from '../reports/query';
 import { executeExport, validateExportInput } from '../reports/export';
@@ -75,6 +77,7 @@ const EMAIL_TEMPLATES_TABLE = process.env.EMAIL_TEMPLATES_TABLE ?? '';
 const UGS_TABLE = process.env.UGS_TABLE ?? '';
 const ACTIVITIES_TABLE = process.env.ACTIVITIES_TABLE ?? '';
 const SYNC_FUNCTION_NAME = process.env.SYNC_FUNCTION_NAME ?? '';
+const ACTIVITY_SKILL_CLAIMS_TABLE = process.env.ACTIVITY_SKILL_CLAIMS_TABLE ?? '';
 
 const CORS_HEADERS = {
   'Content-Type': 'application/json',
@@ -175,7 +178,9 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     if (productsMatch) {
       if (!isSuperAdmin(event.user.roles as UserRole[])) {
         const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
-        if (!toggles.adminProductsEnabled) return errorResponse('FORBIDDEN', '管理员暂无商品管理权限', 403);
+        if (!checkProductPermission(event.user.roles, toggles.adminProductsEnabled, event.user.userId, toggles.productManagementMode, toggles.productManagerIds)) {
+          return errorResponse('FORBIDDEN', '管理员暂无商品管理权限', 403);
+        }
       }
       return await handleUpdateProduct(productsMatch[1], event);
     }
@@ -285,7 +290,9 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     if (path === '/api/admin/images/upload-url') {
       if (!isSuperAdmin(event.user.roles as UserRole[])) {
         const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
-        if (!toggles.adminProductsEnabled) return errorResponse('FORBIDDEN', '管理员暂无商品管理权限', 403);
+        if (!checkProductPermission(event.user.roles, toggles.adminProductsEnabled, event.user.userId, toggles.productManagementMode, toggles.productManagerIds)) {
+          return errorResponse('FORBIDDEN', '管理员暂无商品管理权限', 403);
+        }
       }
       return await handleGetTempUploadUrl(event);
     }
@@ -294,7 +301,9 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     if (uploadUrlMatch) {
       if (!isSuperAdmin(event.user.roles as UserRole[])) {
         const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
-        if (!toggles.adminProductsEnabled) return errorResponse('FORBIDDEN', '管理员暂无商品管理权限', 403);
+        if (!checkProductPermission(event.user.roles, toggles.adminProductsEnabled, event.user.userId, toggles.productManagementMode, toggles.productManagerIds)) {
+          return errorResponse('FORBIDDEN', '管理员暂无商品管理权限', 403);
+        }
       }
       return await handleGetUploadUrl(uploadUrlMatch[1], event);
     }
@@ -307,7 +316,9 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     if (path === '/api/admin/products') {
       if (!isSuperAdmin(event.user.roles as UserRole[])) {
         const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
-        if (!toggles.adminProductsEnabled) return errorResponse('FORBIDDEN', '管理员暂无商品管理权限', 403);
+        if (!checkProductPermission(event.user.roles, toggles.adminProductsEnabled, event.user.userId, toggles.productManagementMode, toggles.productManagerIds)) {
+          return errorResponse('FORBIDDEN', '管理员暂无商品管理权限', 403);
+        }
       }
       return await handleCreateProduct(event);
     }
@@ -475,6 +486,11 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     return await handleListActivities(event);
   }
 
+  // GET /api/admin/skill-claims — Admin/SuperAdmin
+  if (method === 'GET' && path === '/api/admin/skill-claims') {
+    return await handleGetSkillClaims(event);
+  }
+
   // GET /api/admin/reservation-approvals — Admin/SuperAdmin
   if (method === 'GET' && path === '/api/admin/reservation-approvals') {
     return await handleListReservationApprovals(event);
@@ -613,7 +629,9 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     if (statusMatch) {
       if (!isSuperAdmin(event.user.roles as UserRole[])) {
         const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
-        if (!toggles.adminProductsEnabled) return errorResponse('FORBIDDEN', '管理员暂无商品管理权限', 403);
+        if (!checkProductPermission(event.user.roles, toggles.adminProductsEnabled, event.user.userId, toggles.productManagementMode, toggles.productManagerIds)) {
+          return errorResponse('FORBIDDEN', '管理员暂无商品管理权限', 403);
+        }
       }
       return await handleSetProductStatus(statusMatch[1], event);
     }
@@ -683,7 +701,9 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     if (deleteImageMatch) {
       if (!isSuperAdmin(event.user.roles as UserRole[])) {
         const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
-        if (!toggles.adminProductsEnabled) return errorResponse('FORBIDDEN', '管理员暂无商品管理权限', 403);
+        if (!checkProductPermission(event.user.roles, toggles.adminProductsEnabled, event.user.userId, toggles.productManagementMode, toggles.productManagerIds)) {
+          return errorResponse('FORBIDDEN', '管理员暂无商品管理权限', 403);
+        }
       }
       return await handleDeleteImage(deleteImageMatch[1], deleteImageMatch[2]);
     }
@@ -1334,7 +1354,7 @@ async function handleBatchPointsAdjust(distributionId: string, event: Authentica
     return errorResponse('INVALID_REQUEST', '请求体无效', 400);
   }
 
-  const { recipientIds, targetRole, speakerType } = body as Record<string, unknown>;
+  const { recipientIds, targetRole, speakerType, releaseSkills, addSkillClaims } = body as Record<string, unknown>;
 
   if (!Array.isArray(recipientIds) || !targetRole) {
     return errorResponse('INVALID_REQUEST', '缺少必填字段: recipientIds, targetRole', 400);
@@ -1347,12 +1367,16 @@ async function handleBatchPointsAdjust(distributionId: string, event: Authentica
       targetRole: targetRole as 'UserGroupLeader' | 'Speaker' | 'Volunteer',
       speakerType: speakerType as 'typeA' | 'typeB' | 'roundtable' | undefined,
       adjustedBy: event.user.userId,
+      callerRoles: event.user.roles as string[],
+      releaseSkills: releaseSkills as AdjustmentInput['releaseSkills'],
+      addSkillClaims: addSkillClaims as AdjustmentInput['addSkillClaims'],
     },
     dynamoClient,
     {
       usersTable: USERS_TABLE,
       pointsRecordsTable: POINTS_RECORDS_TABLE,
       batchDistributionsTable: BATCH_DISTRIBUTIONS_TABLE,
+      activitySkillClaimsTable: ACTIVITY_SKILL_CLAIMS_TABLE,
     },
   );
 
@@ -1667,8 +1691,8 @@ async function handleUpdateFeatureToggles(event: AuthenticatedEvent): Promise<AP
 
   const result = await updateFeatureToggles(
     {
-      codeRedemptionEnabled: body.codeRedemptionEnabled as boolean,
-      pointsClaimEnabled: body.pointsClaimEnabled as boolean,
+      codeRedemptionEnabled: body.codeRedemptionEnabled === true,
+      pointsClaimEnabled: body.pointsClaimEnabled === true,
       adminProductsEnabled: body.adminProductsEnabled !== false, // default true if not provided
       adminOrdersEnabled: body.adminOrdersEnabled !== false,     // default true if not provided
       adminContentReviewEnabled: body.adminContentReviewEnabled === true, // default false
@@ -1680,6 +1704,9 @@ async function handleUpdateFeatureToggles(event: AuthenticatedEvent): Promise<AP
       emailNewContentEnabled: body.emailNewContentEnabled === true,        // default false
       emailContentUpdatedEnabled: body.emailContentUpdatedEnabled === true, // default false
       emailWeeklyDigestEnabled: body.emailWeeklyDigestEnabled === true,     // default false
+      emailWishAdoptedEnabled: body.emailWishAdoptedEnabled === true,       // default false
+      emailWishFulfilledEnabled: body.emailWishFulfilledEnabled === true,   // default false
+      emailWishRejectedEnabled: body.emailWishRejectedEnabled === true,     // default false
       adminEmailProductsEnabled: body.adminEmailProductsEnabled === true,  // default false
       adminEmailContentEnabled: body.adminEmailContentEnabled === true,    // default false
       reservationApprovalPoints: typeof body.reservationApprovalPoints === 'number' && Number.isInteger(body.reservationApprovalPoints) && body.reservationApprovalPoints >= 1
@@ -1698,6 +1725,17 @@ async function handleUpdateFeatureToggles(event: AuthenticatedEvent): Promise<AP
       contentReviewerIds: Array.isArray(body.contentReviewerIds) && body.contentReviewerIds.every((id: unknown) => typeof id === 'string')
         ? body.contentReviewerIds as string[]
         : [],  // default []
+      productManagementMode: (body.productManagementMode === 'all' || body.productManagementMode === 'specific')
+        ? body.productManagementMode
+        : 'all',  // default 'all'
+      productManagerIds: Array.isArray(body.productManagerIds) && body.productManagerIds.every((id: unknown) => typeof id === 'string')
+        ? body.productManagerIds as string[]
+        : [],  // default []
+      employeeContentAutoApproved: body.employeeContentAutoApproved === true, // default false
+      wishPoolEnabled: body.wishPoolEnabled === true, // default false
+      wishFulfilledRewardPoints: typeof body.wishFulfilledRewardPoints === 'number' && Number.isInteger(body.wishFulfilledRewardPoints) && body.wishFulfilledRewardPoints >= 1
+        ? body.wishFulfilledRewardPoints
+        : 50,  // default 50
       updatedBy: event.user.userId,
     },
     dynamoClient,
@@ -2096,7 +2134,7 @@ async function handleSendContentNotification(event: AuthenticatedEvent): Promise
 
 // ---- Email Template Route Handlers ----
 
-const VALID_NOTIFICATION_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest'];
+const VALID_NOTIFICATION_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest', 'wishAdopted', 'wishFulfilled', 'wishRejected'];
 const VALID_LOCALES: EmailLocale[] = ['zh', 'en', 'ja', 'ko', 'zh-TW'];
 
 async function handleListEmailTemplates(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
@@ -2331,6 +2369,19 @@ async function handleListActivities(event: AuthenticatedEvent): Promise<APIGatew
   }
 
   return jsonResponse(200, { activities: result.activities, lastKey: result.lastKey });
+}
+
+// ---- Skill Claims Route Handler ----
+
+async function handleGetSkillClaims(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const activityId = event.queryStringParameters?.activityId;
+
+  if (!activityId) {
+    return errorResponse('INVALID_REQUEST', 'activityId 为必填参数', 400);
+  }
+
+  const claims = await getSkillClaimsForActivity(activityId, dynamoClient, ACTIVITY_SKILL_CLAIMS_TABLE);
+  return jsonResponse(200, claims);
 }
 
 // ---- Manual Sync Route Handler ----

@@ -54,6 +54,7 @@ export interface TranslationDict {
     cart: string;
     orders: string;
     profile: string;
+    wishes: string;
   };
   login: {
     title: string;
@@ -754,6 +755,42 @@ export interface TranslationDict {
       statusTransitionInvalid: string;
       updateFailed: string;
     };
+    wishes: {
+      title: string;
+      filterAll: string;
+      statusPending: string;
+      statusApproved: string;
+      statusAdopted: string;
+      statusFulfilled: string;
+      statusClosed: string;
+      approveButton: string;
+      rejectButton: string;
+      adoptButton: string;
+      fulfillButton: string;
+      closeButton: string;
+      approveTitle: string;
+      rejectTitle: string;
+      adoptTitle: string;
+      fulfillTitle: string;
+      closeTitle: string;
+      approveConfirmText: string;
+      rejectConfirmText: string;
+      adoptConfirmText: string;
+      fulfillConfirmText: string;
+      closeConfirmText: string;
+      closeReasonLabel: string;
+      closeReasonPlaceholder: string;
+      closeReasonRequired: string;
+      productIdLabel: string;
+      productIdPlaceholder: string;
+      productIdRequired: string;
+      productSearchPlaceholder: string;
+      productPickerEmpty: string;
+      productSelected: string;
+      approveSuccess: string;
+      rejectSuccess: string;
+      statusUpdateSuccess: string;
+    };
     invites: {
       title: string;
       backButton: string;
@@ -880,6 +917,11 @@ export interface TranslationDict {
       contentReviewModeSpecific: string;
       contentReviewSearchPlaceholder: string;
       contentReviewSelectedCount: string;
+      productManagementModeLabel: string;
+      productManagementModeAll: string;
+      productManagementModeSpecific: string;
+      productManagerSearchPlaceholder: string;
+      productManagerSelectedCount: string;
       adminCategoriesLabel: string;
       adminCategoriesDesc: string;
       adminEmailProductsLabel: string;
@@ -953,6 +995,12 @@ export interface TranslationDict {
         contentUpdatedDesc: string;
         weeklyDigestLabel: string;
         weeklyDigestDesc: string;
+        wishAdoptedLabel: string;
+        wishAdoptedDesc: string;
+        wishFulfilledLabel: string;
+        wishFulfilledDesc: string;
+        wishRejectedLabel: string;
+        wishRejectedDesc: string;
         editTemplateButton: string;
         templateEditorTitle: string;
         templateSubjectLabel: string;
@@ -1904,5 +1952,115 @@ export interface TranslationDict {
     effectiveItem2: string;
     effectiveItem3: string;
     understood: string;
+  };
+  wishPool: {
+    title: string;
+    submitWish: string;
+    sortByVotes: string;
+    sortByTime: string;
+    emptyList: string;
+    emptyTitle: string;
+    emptyText: string;
+    heroTitle: string;
+    heroSubtitle: string;
+    statTotal: string;
+    statVotes: string;
+    statFulfilled: string;
+    voteLabel: string;
+    noMoreWishes: string;
+    expand: string;
+    collapse: string;
+    myWishesBtn: string;
+    voteFailed: string;
+    status_pending: string;
+    status_approved: string;
+    status_adopted: string;
+    status_fulfilled: string;
+    status_closed: string;
+    statusPending: string;
+    statusApproved: string;
+    statusAdopted: string;
+    statusFulfilled: string;
+    statusClosed: string;
+    myWishesTitle: string;
+    myWishesEmpty: string;
+    remainingLabel: string;
+    remainingUnit: string;
+    voteCount: string;
+    closeReasonLabel: string;
+    deleteConfirmTitle: string;
+    deleteConfirmContent: string;
+    errorTitleLength: string;
+    errorDescLength: string;
+    create: {
+      title: string;
+      remainingLabel: string;
+      titleLabel: string;
+      titlePlaceholder: string;
+      titleRequired: string;
+      titleTooLong: string;
+      titleInvalid: string;
+      descriptionLabel: string;
+      descriptionPlaceholder: string;
+      descriptionRequired: string;
+      descriptionTooLong: string;
+      descriptionInvalid: string;
+      imageLabel: string;
+      imageOptional: string;
+      imageHint: string;
+      imageFormatError: string;
+      imageLost: string;
+      imageUploadFailed: string;
+      submitButton: string;
+      submitSuccess: string;
+      monthlyLimitReached: string;
+      featureDisabled: string;
+    };
+  };
+  skillClaims: {
+    skillName: {
+      liveSupport: string;
+      promoWriting: string;
+    };
+    skillIcon: {
+      liveSupport: {
+        tooltip: string;
+      };
+      promoWriting: {
+        tooltip: string;
+      };
+      occupied: string;
+    };
+    batchPoints: {
+      skillSuccess: string;
+      skillAlreadyClaimed: string;
+      batchTooLarge: string;
+    };
+    adjust: {
+      skillLockSection: string;
+      release: string;
+      assign: string;
+      releaseConfirm: string;
+      notOccupied: string;
+      assignTitle: string;
+      assignSelectUser: string;
+      assignCancel: string;
+      assignConfirm: string;
+      releaseTitle: string;
+      releaseCancel: string;
+      releaseConfirmBtn: string;
+      diffReleaseSkill: string;
+      diffAddSkill: string;
+      skillPointsDelta: string;
+    };
+    settings: {
+      liveSupportPoints: string;
+      promoWritingPoints: string;
+      skillPointsHelp: string;
+    };
+    history: {
+      skillDetailHeader: string;
+      pointsUnit: string;
+    };
   };
 }

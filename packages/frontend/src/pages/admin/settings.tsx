@@ -51,6 +51,9 @@ interface FeatureToggles {
   emailNewContentEnabled: boolean;
   emailContentUpdatedEnabled: boolean;
   emailWeeklyDigestEnabled: boolean;
+  emailWishAdoptedEnabled: boolean;
+  emailWishFulfilledEnabled: boolean;
+  emailWishRejectedEnabled: boolean;
   reservationApprovalPoints: number;
   leaderboardRankingEnabled: boolean;
   leaderboardAnnouncementEnabled: boolean;
@@ -59,8 +62,13 @@ interface FeatureToggles {
   brandLogoListEnabled: boolean;
   brandLogoDetailEnabled: boolean;
   employeeStoreEnabled: boolean;
+  employeeContentAutoApproved: boolean;
+  wishPoolEnabled: boolean;
+  wishFulfilledRewardPoints: number;
   contentReviewMode: 'all' | 'specific';
   contentReviewerIds: string[];
+  productManagementMode: 'all' | 'specific';
+  productManagerIds: string[];
 }
 
 interface PointsRuleConfig {
@@ -70,9 +78,11 @@ interface PointsRuleConfig {
   speakerTypeAPoints: number;
   speakerTypeBPoints: number;
   speakerRoundtablePoints: number;
+  liveSupportPoints: number;
+  promoWritingPoints: number;
 }
 
-type NotificationType = 'pointsEarned' | 'newOrder' | 'orderShipped' | 'newProduct' | 'newContent' | 'contentUpdated' | 'weeklyDigest';
+type NotificationType = 'pointsEarned' | 'newOrder' | 'orderShipped' | 'newProduct' | 'newContent' | 'contentUpdated' | 'weeklyDigest' | 'wishAdopted' | 'wishFulfilled' | 'wishRejected';
 
 interface EmailToggleConfig {
   key: keyof FeatureToggles;
@@ -114,6 +124,9 @@ const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   newContent: 'admin.settings.email.newContentLabel',
   contentUpdated: 'admin.settings.email.contentUpdatedLabel',
   weeklyDigest: 'admin.settings.email.weeklyDigestLabel',
+  wishAdopted: 'admin.settings.email.wishAdoptedLabel',
+  wishFulfilled: 'admin.settings.email.wishFulfilledLabel',
+  wishRejected: 'admin.settings.email.wishRejectedLabel',
 };
 
 interface MeetupSyncConfigState {
@@ -468,6 +481,9 @@ export default function AdminSettingsPage() {
     emailNewContentEnabled: false,
     emailContentUpdatedEnabled: false,
     emailWeeklyDigestEnabled: false,
+    emailWishAdoptedEnabled: true,
+    emailWishFulfilledEnabled: true,
+    emailWishRejectedEnabled: true,
     reservationApprovalPoints: 10,
     leaderboardRankingEnabled: false,
     leaderboardAnnouncementEnabled: false,
@@ -475,8 +491,13 @@ export default function AdminSettingsPage() {
     brandLogoListEnabled: true,
     brandLogoDetailEnabled: true,
     employeeStoreEnabled: true,
+    employeeContentAutoApproved: false,
+    wishPoolEnabled: false,
+    wishFulfilledRewardPoints: 20,
     contentReviewMode: 'all',
     contentReviewerIds: [],
+    productManagementMode: 'all',
+    productManagerIds: [],
   });
 
 
@@ -495,6 +516,9 @@ export default function AdminSettingsPage() {
   const [domesticInput, setDomesticInput] = useState('');
   const [internationalInput, setInternationalInput] = useState('');
 
+  // Local state for wish reward points input (controlled while editing)
+  const [wishRewardInput, setWishRewardInput] = useState('');
+
   const [inviteSettings, setInviteSettings] = useState<InviteSettings>({ inviteExpiryDays: 1 });
 
   const [adminUsers, setAdminUsers] = useState<AdminUserItem[]>([]);
@@ -505,6 +529,9 @@ export default function AdminSettingsPage() {
 
   // Content reviewer checklist search state
   const [reviewerSearch, setReviewerSearch] = useState('');
+
+  // Product manager checklist search state
+  const [productManagerSearch, setProductManagerSearch] = useState('');
 
   // Email template editor state
   const [editingTemplateType, setEditingTemplateType] = useState<NotificationType | null>(null);
@@ -592,6 +619,8 @@ export default function AdminSettingsPage() {
     speakerTypeAPoints: 100,
     speakerTypeBPoints: 50,
     speakerRoundtablePoints: 50,
+    liveSupportPoints: 30,
+    promoWritingPoints: 30,
   });
   const [pointsRuleSaving, setPointsRuleSaving] = useState(false);
 
@@ -623,6 +652,10 @@ export default function AdminSettingsPage() {
       }
       if (res.pointsRuleConfig) {
         setPointsRuleConfig(res.pointsRuleConfig);
+      }
+      // Sync wish reward input with loaded value
+      if (res.wishFulfilledRewardPoints !== undefined) {
+        setWishRewardInput(String(res.wishFulfilledRewardPoints));
       }
     } catch {
       // On failure, keep defaults (false)
@@ -1105,6 +1138,9 @@ export default function AdminSettingsPage() {
           emailNewContentEnabled: updated.emailNewContentEnabled,
           emailContentUpdatedEnabled: updated.emailContentUpdatedEnabled,
           emailWeeklyDigestEnabled: updated.emailWeeklyDigestEnabled,
+          emailWishAdoptedEnabled: updated.emailWishAdoptedEnabled,
+          emailWishFulfilledEnabled: updated.emailWishFulfilledEnabled,
+          emailWishRejectedEnabled: updated.emailWishRejectedEnabled,
           reservationApprovalPoints: updated.reservationApprovalPoints,
           leaderboardRankingEnabled: updated.leaderboardRankingEnabled,
           leaderboardAnnouncementEnabled: updated.leaderboardAnnouncementEnabled,
@@ -1112,8 +1148,13 @@ export default function AdminSettingsPage() {
           brandLogoListEnabled: updated.brandLogoListEnabled,
           brandLogoDetailEnabled: updated.brandLogoDetailEnabled,
           employeeStoreEnabled: updated.employeeStoreEnabled,
+          employeeContentAutoApproved: updated.employeeContentAutoApproved,
+          wishPoolEnabled: updated.wishPoolEnabled,
+          wishFulfilledRewardPoints: updated.wishFulfilledRewardPoints,
           contentReviewMode: updated.contentReviewMode,
           contentReviewerIds: updated.contentReviewerIds,
+          productManagementMode: updated.productManagementMode,
+          productManagerIds: updated.productManagerIds,
         },
       });
       Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
@@ -1150,6 +1191,9 @@ export default function AdminSettingsPage() {
           emailNewContentEnabled: updated.emailNewContentEnabled,
           emailContentUpdatedEnabled: updated.emailContentUpdatedEnabled,
           emailWeeklyDigestEnabled: updated.emailWeeklyDigestEnabled,
+          emailWishAdoptedEnabled: updated.emailWishAdoptedEnabled,
+          emailWishFulfilledEnabled: updated.emailWishFulfilledEnabled,
+          emailWishRejectedEnabled: updated.emailWishRejectedEnabled,
           reservationApprovalPoints: updated.reservationApprovalPoints,
           leaderboardRankingEnabled: updated.leaderboardRankingEnabled,
           leaderboardAnnouncementEnabled: updated.leaderboardAnnouncementEnabled,
@@ -1157,8 +1201,13 @@ export default function AdminSettingsPage() {
           brandLogoListEnabled: updated.brandLogoListEnabled,
           brandLogoDetailEnabled: updated.brandLogoDetailEnabled,
           employeeStoreEnabled: updated.employeeStoreEnabled,
+          employeeContentAutoApproved: updated.employeeContentAutoApproved,
+          wishPoolEnabled: updated.wishPoolEnabled,
+          wishFulfilledRewardPoints: updated.wishFulfilledRewardPoints,
           contentReviewMode: updated.contentReviewMode,
           contentReviewerIds: updated.contentReviewerIds,
+          productManagementMode: updated.productManagementMode,
+          productManagerIds: updated.productManagerIds,
         },
       });
       Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
@@ -1197,6 +1246,9 @@ export default function AdminSettingsPage() {
           emailNewContentEnabled: updated.emailNewContentEnabled,
           emailContentUpdatedEnabled: updated.emailContentUpdatedEnabled,
           emailWeeklyDigestEnabled: updated.emailWeeklyDigestEnabled,
+          emailWishAdoptedEnabled: updated.emailWishAdoptedEnabled,
+          emailWishFulfilledEnabled: updated.emailWishFulfilledEnabled,
+          emailWishRejectedEnabled: updated.emailWishRejectedEnabled,
           reservationApprovalPoints: updated.reservationApprovalPoints,
           leaderboardRankingEnabled: updated.leaderboardRankingEnabled,
           leaderboardAnnouncementEnabled: updated.leaderboardAnnouncementEnabled,
@@ -1204,8 +1256,120 @@ export default function AdminSettingsPage() {
           brandLogoListEnabled: updated.brandLogoListEnabled,
           brandLogoDetailEnabled: updated.brandLogoDetailEnabled,
           employeeStoreEnabled: updated.employeeStoreEnabled,
+          employeeContentAutoApproved: updated.employeeContentAutoApproved,
+          wishPoolEnabled: updated.wishPoolEnabled,
+          wishFulfilledRewardPoints: updated.wishFulfilledRewardPoints,
           contentReviewMode: updated.contentReviewMode,
           contentReviewerIds: updated.contentReviewerIds,
+          productManagementMode: updated.productManagementMode,
+          productManagerIds: updated.productManagerIds,
+        },
+      });
+      Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
+    } catch {
+      setSettings(prev);
+      Taro.showToast({ title: t('admin.settings.updateFailed'), icon: 'none' });
+    }
+  };
+
+  const handleProductModeChange = async (newMode: 'all' | 'specific') => {
+    if (newMode === settings.productManagementMode) return;
+    const prev = { ...settings };
+    const updated = { ...settings, productManagementMode: newMode };
+    setSettings(updated);
+
+    try {
+      await request({
+        url: '/api/admin/settings/feature-toggles',
+        method: 'PUT',
+        data: {
+          codeRedemptionEnabled: updated.codeRedemptionEnabled,
+          pointsClaimEnabled: updated.pointsClaimEnabled,
+          adminProductsEnabled: updated.adminProductsEnabled,
+          adminOrdersEnabled: updated.adminOrdersEnabled,
+          adminContentReviewEnabled: updated.adminContentReviewEnabled,
+          adminCategoriesEnabled: updated.adminCategoriesEnabled,
+          adminEmailProductsEnabled: updated.adminEmailProductsEnabled,
+          adminEmailContentEnabled: updated.adminEmailContentEnabled,
+          emailPointsEarnedEnabled: updated.emailPointsEarnedEnabled,
+          emailNewOrderEnabled: updated.emailNewOrderEnabled,
+          emailOrderShippedEnabled: updated.emailOrderShippedEnabled,
+          emailNewProductEnabled: updated.emailNewProductEnabled,
+          emailNewContentEnabled: updated.emailNewContentEnabled,
+          emailContentUpdatedEnabled: updated.emailContentUpdatedEnabled,
+          emailWeeklyDigestEnabled: updated.emailWeeklyDigestEnabled,
+          emailWishAdoptedEnabled: updated.emailWishAdoptedEnabled,
+          emailWishFulfilledEnabled: updated.emailWishFulfilledEnabled,
+          emailWishRejectedEnabled: updated.emailWishRejectedEnabled,
+          reservationApprovalPoints: updated.reservationApprovalPoints,
+          leaderboardRankingEnabled: updated.leaderboardRankingEnabled,
+          leaderboardAnnouncementEnabled: updated.leaderboardAnnouncementEnabled,
+          leaderboardUpdateFrequency: updated.leaderboardUpdateFrequency,
+          brandLogoListEnabled: updated.brandLogoListEnabled,
+          brandLogoDetailEnabled: updated.brandLogoDetailEnabled,
+          employeeStoreEnabled: updated.employeeStoreEnabled,
+          employeeContentAutoApproved: updated.employeeContentAutoApproved,
+          wishPoolEnabled: updated.wishPoolEnabled,
+          wishFulfilledRewardPoints: updated.wishFulfilledRewardPoints,
+          contentReviewMode: updated.contentReviewMode,
+          contentReviewerIds: updated.contentReviewerIds,
+          productManagementMode: updated.productManagementMode,
+          productManagerIds: updated.productManagerIds,
+        },
+      });
+      Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
+    } catch {
+      setSettings(prev);
+      Taro.showToast({ title: t('admin.settings.updateFailed'), icon: 'none' });
+    }
+  };
+
+  const handleProductManagerToggle = async (userId: string) => {
+    const prev = { ...settings };
+    const isSelected = settings.productManagerIds.includes(userId);
+    const newIds = isSelected
+      ? settings.productManagerIds.filter((id) => id !== userId)
+      : [...settings.productManagerIds, userId];
+    const updated = { ...settings, productManagerIds: newIds };
+    setSettings(updated);
+
+    try {
+      await request({
+        url: '/api/admin/settings/feature-toggles',
+        method: 'PUT',
+        data: {
+          codeRedemptionEnabled: updated.codeRedemptionEnabled,
+          pointsClaimEnabled: updated.pointsClaimEnabled,
+          adminProductsEnabled: updated.adminProductsEnabled,
+          adminOrdersEnabled: updated.adminOrdersEnabled,
+          adminContentReviewEnabled: updated.adminContentReviewEnabled,
+          adminCategoriesEnabled: updated.adminCategoriesEnabled,
+          adminEmailProductsEnabled: updated.adminEmailProductsEnabled,
+          adminEmailContentEnabled: updated.adminEmailContentEnabled,
+          emailPointsEarnedEnabled: updated.emailPointsEarnedEnabled,
+          emailNewOrderEnabled: updated.emailNewOrderEnabled,
+          emailOrderShippedEnabled: updated.emailOrderShippedEnabled,
+          emailNewProductEnabled: updated.emailNewProductEnabled,
+          emailNewContentEnabled: updated.emailNewContentEnabled,
+          emailContentUpdatedEnabled: updated.emailContentUpdatedEnabled,
+          emailWeeklyDigestEnabled: updated.emailWeeklyDigestEnabled,
+          emailWishAdoptedEnabled: updated.emailWishAdoptedEnabled,
+          emailWishFulfilledEnabled: updated.emailWishFulfilledEnabled,
+          emailWishRejectedEnabled: updated.emailWishRejectedEnabled,
+          reservationApprovalPoints: updated.reservationApprovalPoints,
+          leaderboardRankingEnabled: updated.leaderboardRankingEnabled,
+          leaderboardAnnouncementEnabled: updated.leaderboardAnnouncementEnabled,
+          leaderboardUpdateFrequency: updated.leaderboardUpdateFrequency,
+          brandLogoListEnabled: updated.brandLogoListEnabled,
+          brandLogoDetailEnabled: updated.brandLogoDetailEnabled,
+          employeeStoreEnabled: updated.employeeStoreEnabled,
+          employeeContentAutoApproved: updated.employeeContentAutoApproved,
+          wishPoolEnabled: updated.wishPoolEnabled,
+          wishFulfilledRewardPoints: updated.wishFulfilledRewardPoints,
+          contentReviewMode: updated.contentReviewMode,
+          contentReviewerIds: updated.contentReviewerIds,
+          productManagementMode: updated.productManagementMode,
+          productManagerIds: updated.productManagerIds,
         },
       });
       Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
@@ -1241,6 +1405,9 @@ export default function AdminSettingsPage() {
           emailNewContentEnabled: updated.emailNewContentEnabled,
           emailContentUpdatedEnabled: updated.emailContentUpdatedEnabled,
           emailWeeklyDigestEnabled: updated.emailWeeklyDigestEnabled,
+          emailWishAdoptedEnabled: updated.emailWishAdoptedEnabled,
+          emailWishFulfilledEnabled: updated.emailWishFulfilledEnabled,
+          emailWishRejectedEnabled: updated.emailWishRejectedEnabled,
           reservationApprovalPoints: updated.reservationApprovalPoints,
           leaderboardRankingEnabled: updated.leaderboardRankingEnabled,
           leaderboardAnnouncementEnabled: updated.leaderboardAnnouncementEnabled,
@@ -1248,8 +1415,13 @@ export default function AdminSettingsPage() {
           brandLogoListEnabled: updated.brandLogoListEnabled,
           brandLogoDetailEnabled: updated.brandLogoDetailEnabled,
           employeeStoreEnabled: updated.employeeStoreEnabled,
+          employeeContentAutoApproved: updated.employeeContentAutoApproved,
+          wishPoolEnabled: updated.wishPoolEnabled,
+          wishFulfilledRewardPoints: updated.wishFulfilledRewardPoints,
           contentReviewMode: updated.contentReviewMode,
           contentReviewerIds: updated.contentReviewerIds,
+          productManagementMode: updated.productManagementMode,
+          productManagerIds: updated.productManagerIds,
         },
       });
       Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
@@ -1445,6 +1617,8 @@ export default function AdminSettingsPage() {
       pointsRuleConfig.speakerTypeAPoints,
       pointsRuleConfig.speakerTypeBPoints,
       pointsRuleConfig.speakerRoundtablePoints,
+      pointsRuleConfig.liveSupportPoints,
+      pointsRuleConfig.promoWritingPoints,
     ];
     if (fields.some(v => !Number.isInteger(v) || v < 1)) {
       Taro.showToast({ title: t('admin.settings.pointsRuleValidationError' as any), icon: 'none' });
@@ -1471,6 +1645,9 @@ export default function AdminSettingsPage() {
           emailNewContentEnabled: settings.emailNewContentEnabled,
           emailContentUpdatedEnabled: settings.emailContentUpdatedEnabled,
           emailWeeklyDigestEnabled: settings.emailWeeklyDigestEnabled,
+          emailWishAdoptedEnabled: settings.emailWishAdoptedEnabled,
+          emailWishFulfilledEnabled: settings.emailWishFulfilledEnabled,
+          emailWishRejectedEnabled: settings.emailWishRejectedEnabled,
           reservationApprovalPoints: settings.reservationApprovalPoints,
           leaderboardRankingEnabled: settings.leaderboardRankingEnabled,
           leaderboardAnnouncementEnabled: settings.leaderboardAnnouncementEnabled,
@@ -1478,8 +1655,13 @@ export default function AdminSettingsPage() {
           brandLogoListEnabled: settings.brandLogoListEnabled,
           brandLogoDetailEnabled: settings.brandLogoDetailEnabled,
           employeeStoreEnabled: settings.employeeStoreEnabled,
+          employeeContentAutoApproved: settings.employeeContentAutoApproved,
+          wishPoolEnabled: settings.wishPoolEnabled,
+          wishFulfilledRewardPoints: settings.wishFulfilledRewardPoints,
           contentReviewMode: settings.contentReviewMode,
           contentReviewerIds: settings.contentReviewerIds,
+          productManagementMode: settings.productManagementMode,
+          productManagerIds: settings.productManagerIds,
           pointsRuleConfig,
         },
       });
@@ -1657,6 +1839,47 @@ export default function AdminSettingsPage() {
                     </View>
                   </View>
                 </CollapsibleSection>
+
+                <CollapsibleSection title={t('admin.settings.wishPoolLabel' as any)} description={t('admin.settings.wishPoolDesc' as any)}>
+                  <View className='toggle-list'>
+                    <View className='toggle-item'>
+                      <View className='toggle-item__info'>
+                        <Text className='toggle-item__label'>{t('admin.settings.wishPoolLabel' as any)}</Text>
+                        <Text className='toggle-item__desc'>{t('admin.settings.wishPoolDesc' as any)}</Text>
+                      </View>
+                      <View className='toggle-item__switch'>
+                        <Switch
+                          checked={settings.wishPoolEnabled}
+                          onChange={(e) => handleToggle('wishPoolEnabled', e.detail.value)}
+                          color='var(--accent-primary)'
+                        />
+                      </View>
+                    </View>
+                    <View className='toggle-item'>
+                      <View className='toggle-item__info'>
+                        <Text className='toggle-item__label'>{t('admin.settings.wishRewardPointsLabel' as any)}</Text>
+                        <Text className='toggle-item__desc'>{t('admin.settings.wishRewardPointsDesc' as any)}</Text>
+                      </View>
+                      <View className='toggle-item__switch'>
+                        <Input
+                          className='settings-number-input'
+                          type='number'
+                          value={wishRewardInput}
+                          onInput={(e) => setWishRewardInput(e.detail.value)}
+                          onBlur={(e) => {
+                            const val = parseInt(e.detail.value, 10);
+                            if (val > 0 && val !== settings.wishFulfilledRewardPoints) {
+                              handleToggle('wishFulfilledRewardPoints', val);
+                            } else if (isNaN(val) || val <= 0) {
+                              // Revert to last saved value on invalid input
+                              setWishRewardInput(String(settings.wishFulfilledRewardPoints));
+                            }
+                          }}
+                        />
+                      </View>
+                    </View>
+                  </View>
+                </CollapsibleSection>
               </>
             )}
 
@@ -1679,6 +1902,76 @@ export default function AdminSettingsPage() {
                         />
                       </View>
                     </View>
+                    {settings.adminProductsEnabled && (
+                      <View className='review-mode-expand'>
+                        <Text className='review-mode-expand__label'>{t('admin.settings.productManagementModeLabel' as any)}</Text>
+                        <View className='review-mode-expand__options'>
+                          {(['all', 'specific'] as const).map((mode) => (
+                            <View
+                              key={mode}
+                              className={`review-mode-option${settings.productManagementMode === mode ? ' review-mode-option--active' : ''}`}
+                              onClick={() => handleProductModeChange(mode)}
+                            >
+                              <View className='review-mode-option__radio'>
+                                {settings.productManagementMode === mode && (
+                                  <View className='review-mode-option__radio-dot' />
+                                )}
+                              </View>
+                              <Text className='review-mode-option__label'>
+                                {t(`admin.settings.productManagementMode${mode === 'all' ? 'All' : 'Specific'}` as any)}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                        {settings.productManagementMode === 'specific' && (
+                          <View className='reviewer-checklist'>
+                            <Input
+                              className='reviewer-checklist__search'
+                              value={productManagerSearch}
+                              onInput={(e) => setProductManagerSearch(e.detail.value)}
+                              placeholder={t('admin.settings.productManagerSearchPlaceholder' as any)}
+                            />
+                            <View className='reviewer-checklist__list'>
+                              {adminUsers
+                                .filter((u) => {
+                                  if (!productManagerSearch.trim()) return true;
+                                  const q = productManagerSearch.trim().toLowerCase();
+                                  return u.nickname.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+                                })
+                                .map((user) => {
+                                  const isChecked = settings.productManagerIds.includes(user.userId);
+                                  return (
+                                    <View
+                                      key={user.userId}
+                                      className={`reviewer-checklist__item${isChecked ? ' reviewer-checklist__item--selected' : ''}`}
+                                      onClick={() => handleProductManagerToggle(user.userId)}
+                                    >
+                                      <View className={`reviewer-checklist__checkbox${isChecked ? ' reviewer-checklist__checkbox--checked' : ''}`}>
+                                        {isChecked && <Text className='reviewer-checklist__check-icon'>✓</Text>}
+                                      </View>
+                                      <View className='reviewer-checklist__user-info'>
+                                        <Text className='reviewer-checklist__nickname'>{user.nickname}</Text>
+                                        <Text className='reviewer-checklist__email'>{user.email}</Text>
+                                      </View>
+                                      {user.roles && user.roles.map((role) => (
+                                        <Text
+                                          key={role}
+                                          className={`role-badge role-badge--${role === 'Admin' ? 'admin' : role === 'SuperAdmin' ? 'superadmin' : role === 'OrderAdmin' ? 'order-admin' : role === 'UserGroupLeader' ? 'leader' : role === 'Speaker' ? 'speaker' : role === 'Volunteer' ? 'volunteer' : 'admin'}`}
+                                        >
+                                          {role}
+                                        </Text>
+                                      ))}
+                                    </View>
+                                  );
+                                })}
+                            </View>
+                            <Text className='reviewer-checklist__count'>
+                              {(t('admin.settings.productManagerSelectedCount' as any) as string).replace('{count}', String(settings.productManagerIds.length))}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
                     <View className='toggle-item'>
                       <View className='toggle-item__info'>
                         <Text className='toggle-item__label'>{t('admin.settings.adminOrdersLabel')}</Text>
@@ -1908,6 +2201,24 @@ export default function AdminSettingsPage() {
                         notificationType: 'weeklyDigest' as NotificationType,
                         labelKey: 'admin.settings.email.weeklyDigestLabel',
                         descKey: 'admin.settings.email.weeklyDigestDesc',
+                      },
+                      {
+                        key: 'emailWishAdoptedEnabled' as keyof FeatureToggles,
+                        notificationType: 'wishAdopted' as NotificationType,
+                        labelKey: 'admin.settings.email.wishAdoptedLabel',
+                        descKey: 'admin.settings.email.wishAdoptedDesc',
+                      },
+                      {
+                        key: 'emailWishFulfilledEnabled' as keyof FeatureToggles,
+                        notificationType: 'wishFulfilled' as NotificationType,
+                        labelKey: 'admin.settings.email.wishFulfilledLabel',
+                        descKey: 'admin.settings.email.wishFulfilledDesc',
+                      },
+                      {
+                        key: 'emailWishRejectedEnabled' as keyof FeatureToggles,
+                        notificationType: 'wishRejected' as NotificationType,
+                        labelKey: 'admin.settings.email.wishRejectedLabel',
+                        descKey: 'admin.settings.email.wishRejectedDesc',
                       },
                     ] as { key: keyof FeatureToggles; notificationType: NotificationType; labelKey: string; descKey: string }[]).map((item) => (
                       <View key={item.key} className='email-toggle-item'>
@@ -2587,10 +2898,15 @@ export default function AdminSettingsPage() {
                       { key: 'speakerTypeAPoints', labelKey: 'admin.settings.speakerTypeAPoints' },
                       { key: 'speakerTypeBPoints', labelKey: 'admin.settings.speakerTypeBPoints' },
                       { key: 'speakerRoundtablePoints', labelKey: 'admin.settings.speakerRoundtablePoints' },
+                      { key: 'liveSupportPoints', labelKey: 'skillClaims.settings.liveSupportPoints', helpKey: 'skillClaims.settings.skillPointsHelp' },
+                      { key: 'promoWritingPoints', labelKey: 'skillClaims.settings.promoWritingPoints', helpKey: 'skillClaims.settings.skillPointsHelp' },
                     ] as const).map((field) => (
                       <View key={field.key} className='toggle-item'>
                         <View className='toggle-item__info'>
                           <Text className='toggle-item__label'>{t(field.labelKey as any)}</Text>
+                          {'helpKey' in field && field.helpKey && (
+                            <Text className='toggle-item__desc'>{t(field.helpKey as any)}</Text>
+                          )}
                         </View>
                         <Input
                           type='number'

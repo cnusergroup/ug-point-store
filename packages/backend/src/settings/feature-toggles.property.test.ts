@@ -49,6 +49,12 @@ function createInMemoryClient() {
           ':enc': 'emailNewContentEnabled',
           ':ecu': 'emailContentUpdatedEnabled',
           ':ewde': 'emailWeeklyDigestEnabled',
+          ':ewade': 'emailWishAdoptedEnabled',
+          ':ewfue': 'emailWishFulfilledEnabled',
+          ':ewrje': 'emailWishRejectedEnabled',
+          ':ewade': 'emailWishAdoptedEnabled',
+          ':ewfue': 'emailWishFulfilledEnabled',
+          ':ewrje': 'emailWishRejectedEnabled',
           ':aepe': 'adminEmailProductsEnabled',
           ':aece': 'adminEmailContentEnabled',
           ':rap': 'reservationApprovalPoints',
@@ -58,8 +64,13 @@ function createInMemoryClient() {
           ':blle': 'brandLogoListEnabled',
           ':blde': 'brandLogoDetailEnabled',
           ':ese': 'employeeStoreEnabled',
+          ':ecaa': 'employeeContentAutoApproved',
           ':crm': 'contentReviewMode',
           ':cri': 'contentReviewerIds',
+          ':wpe': 'wishPoolEnabled',
+          ':wfrp': 'wishFulfilledRewardPoints',
+          ':pmm': 'productManagementMode',
+          ':pmi': 'productManagerIds',
           ':ua': 'updatedAt',
           ':ub': 'updatedBy',
           ':crp': 'contentRolePermissions',
@@ -96,7 +107,7 @@ const TABLE = 'users-table';
 // ============================================================================
 // Property 1: ?????????
 // Feature: feature-toggle-settings, Property 1: ?????????
-// ?????¦Ê¦Â????? Settings_Record ??????????????? getFeatureToggles ?????
+// ?????ï¿½Ê¦ï¿½????? Settings_Record ??????????????? getFeatureToggles ?????
 // { codeRedemptionEnabled: false, pointsClaimEnabled: false }
 // **Validates: Requirements 1.3, 2.2**
 // ============================================================================
@@ -133,9 +144,9 @@ describe('Property 1: ?????????', () => {
 });
 
 // ============================================================================
-// Property 3: ????????§µ???????
-// Feature: feature-toggle-settings, Property 3: ????????§µ???????
-// ?????¦Ê??????ÈÉ??? codeRedemptionEnabled ?? pointsClaimEnabled ????????
+// Property 3: ????????ï¿½ï¿½???????
+// Feature: feature-toggle-settings, Property 3: ????????ï¿½ï¿½???????
+// ?????ï¿½ï¿½??????ï¿½ï¿½??? codeRedemptionEnabled ?? pointsClaimEnabled ????????
 // ?????? undefined??null?????????????????????????????????????? INVALID_REQUEST??
 // **Validates: Requirements 3.3, 3.4**
 // ============================================================================
@@ -151,7 +162,7 @@ const nonBooleanArb = fc.oneof(
   fc.array(fc.integer(), { maxLength: 5 }),
 );
 
-describe('Property 3: ????????§µ???????', () => {
+describe('Property 3: ????????ï¿½ï¿½???????', () => {
   it(
     'should reject with INVALID_REQUEST when codeRedemptionEnabled is not boolean',
     async () => {
@@ -173,6 +184,9 @@ describe('Property 3: ????????§µ???????', () => {
               emailNewContentEnabled: false,
               emailContentUpdatedEnabled: false,
               emailWeeklyDigestEnabled: false,
+              emailWishAdoptedEnabled: true,
+              emailWishFulfilledEnabled: true,
+              emailWishRejectedEnabled: true,
               adminEmailProductsEnabled: false,
               adminEmailContentEnabled: false,
               reservationApprovalPoints: 10,
@@ -182,8 +196,13 @@ describe('Property 3: ????????§µ???????', () => {
               brandLogoListEnabled: true,
               brandLogoDetailEnabled: true,
               employeeStoreEnabled: true,
+              employeeContentAutoApproved: false,
               contentReviewMode: 'all',
               contentReviewerIds: [],
+              wishPoolEnabled: false,
+              wishFulfilledRewardPoints: 50,
+              productManagementMode: 'all',
+              productManagerIds: [],
               updatedBy: 'test-user',
             },
             client,
@@ -219,6 +238,9 @@ describe('Property 3: ????????§µ???????', () => {
               emailNewContentEnabled: false,
               emailContentUpdatedEnabled: false,
               emailWeeklyDigestEnabled: false,
+              emailWishAdoptedEnabled: true,
+              emailWishFulfilledEnabled: true,
+              emailWishRejectedEnabled: true,
               adminEmailProductsEnabled: false,
               adminEmailContentEnabled: false,
               reservationApprovalPoints: 10,
@@ -228,8 +250,13 @@ describe('Property 3: ????????§µ???????', () => {
               brandLogoListEnabled: true,
               brandLogoDetailEnabled: true,
               employeeStoreEnabled: true,
+              employeeContentAutoApproved: false,
               contentReviewMode: 'all',
               contentReviewerIds: [],
+              wishPoolEnabled: false,
+              wishFulfilledRewardPoints: 50,
+              productManagementMode: 'all',
+              productManagerIds: [],
               updatedBy: 'test-user',
             },
             client,
@@ -265,6 +292,9 @@ describe('Property 3: ????????§µ???????', () => {
               emailNewContentEnabled: false,
               emailContentUpdatedEnabled: false,
               emailWeeklyDigestEnabled: false,
+              emailWishAdoptedEnabled: true,
+              emailWishFulfilledEnabled: true,
+              emailWishRejectedEnabled: true,
               adminEmailProductsEnabled: false,
               adminEmailContentEnabled: false,
               reservationApprovalPoints: 10,
@@ -274,8 +304,13 @@ describe('Property 3: ????????§µ???????', () => {
               brandLogoListEnabled: true,
               brandLogoDetailEnabled: true,
               employeeStoreEnabled: true,
+              employeeContentAutoApproved: false,
               contentReviewMode: 'all',
               contentReviewerIds: [],
+              wishPoolEnabled: false,
+              wishFulfilledRewardPoints: 50,
+              productManagementMode: 'all',
+              productManagerIds: [],
               updatedBy: 'test-user',
             },
             client,
@@ -294,8 +329,8 @@ describe('Property 3: ????????§µ???????', () => {
 // ============================================================================
 // Property 4: ?????????
 // Feature: feature-toggle-settings, Property 4: ?????????
-// ?????¦Ê???§¹?????????????????????????????????? updateFeatureToggles??
-// ????¦Å??¨²???????????????¦Å??¨²??????????? codeRedemptionEnabled ??
+// ?????ï¿½ï¿½???ï¿½ï¿½?????????????????????????????????? updateFeatureToggles??
+// ????ï¿½ï¿½??ï¿½ï¿½???????????????ï¿½ï¿½??ï¿½ï¿½??????????? codeRedemptionEnabled ??
 // pointsClaimEnabled ????????????
 // **Validates: Requirements 3.6**
 // ============================================================================
@@ -329,6 +364,9 @@ describe('Property 4: ?????????', () => {
                 emailNewContentEnabled: false,
                 emailContentUpdatedEnabled: false,
                 emailWeeklyDigestEnabled: false,
+                emailWishAdoptedEnabled: true,
+                emailWishFulfilledEnabled: true,
+                emailWishRejectedEnabled: true,
                 adminEmailProductsEnabled: false,
                 adminEmailContentEnabled: false,
                 reservationApprovalPoints: 10,
@@ -338,8 +376,13 @@ describe('Property 4: ?????????', () => {
                 brandLogoListEnabled: true,
                 brandLogoDetailEnabled: true,
                 employeeStoreEnabled: true,
+                employeeContentAutoApproved: false,
                 contentReviewMode: 'all',
                 contentReviewerIds: [],
+                wishPoolEnabled: false,
+                wishFulfilledRewardPoints: 50,
+                productManagementMode: 'all',
+                productManagerIds: [],
                 updatedBy: 'admin-1',
               },
               client,
@@ -366,6 +409,9 @@ describe('Property 4: ?????????', () => {
                 emailNewContentEnabled: false,
                 emailContentUpdatedEnabled: false,
                 emailWeeklyDigestEnabled: false,
+                emailWishAdoptedEnabled: true,
+                emailWishFulfilledEnabled: true,
+                emailWishRejectedEnabled: true,
                 adminEmailProductsEnabled: false,
                 adminEmailContentEnabled: false,
                 reservationApprovalPoints: 10,
@@ -375,8 +421,13 @@ describe('Property 4: ?????????', () => {
                 brandLogoListEnabled: true,
                 brandLogoDetailEnabled: true,
                 employeeStoreEnabled: true,
+                employeeContentAutoApproved: false,
                 contentReviewMode: 'all',
                 contentReviewerIds: [],
+                wishPoolEnabled: false,
+                wishFulfilledRewardPoints: 50,
+                productManagementMode: 'all',
+                productManagerIds: [],
                 updatedBy: 'admin-1',
               },
               client,
@@ -401,15 +452,15 @@ describe('Property 4: ?????????', () => {
 });
 
 // ============================================================================
-// Property 6: ??§Õ??????Round-trip??
-// Feature: feature-toggle-settings, Property 6: ??§Õ?????
-// ?????¦Ê???§¹?????????????? updateFeatureToggles §Õ???????????
+// Property 6: ??ï¿½ï¿½??????Round-trip??
+// Feature: feature-toggle-settings, Property 6: ??ï¿½ï¿½?????
+// ?????ï¿½ï¿½???ï¿½ï¿½?????????????? updateFeatureToggles ï¿½ï¿½???????????
 // getFeatureToggles ?????????? codeRedemptionEnabled ?? pointsClaimEnabled
-// ???§Õ??????????
+// ???ï¿½ï¿½??????????
 // **Validates: Requirements 1.1, 1.2, 2.1**
 // ============================================================================
 
-describe('Property 6: ??§Õ??????Round-trip??', () => {
+describe('Property 6: ??ï¿½ï¿½??????Round-trip??', () => {
   it(
     'getFeatureToggles should return the same values that were written by updateFeatureToggles',
     async () => {
@@ -438,6 +489,9 @@ describe('Property 6: ??§Õ??????Round-trip??', () => {
                 emailNewContentEnabled: false,
                 emailContentUpdatedEnabled: false,
                 emailWeeklyDigestEnabled: false,
+                emailWishAdoptedEnabled: true,
+                emailWishFulfilledEnabled: true,
+                emailWishRejectedEnabled: true,
                 adminEmailProductsEnabled: false,
                 adminEmailContentEnabled: false,
                 reservationApprovalPoints: 10,
@@ -447,8 +501,13 @@ describe('Property 6: ??§Õ??????Round-trip??', () => {
                 brandLogoListEnabled: true,
                 brandLogoDetailEnabled: true,
                 employeeStoreEnabled: true,
+                employeeContentAutoApproved: false,
                 contentReviewMode: 'all',
                 contentReviewerIds: [],
+                wishPoolEnabled: false,
+                wishFulfilledRewardPoints: 50,
+                productManagementMode: 'all',
+                productManagerIds: [],
                 updatedBy: 'admin-1',
               },
               client,
@@ -476,10 +535,10 @@ describe('Property 6: ??§Õ??????Round-trip??', () => {
 // ============================================================================
 // Property 5: ????????????????
 // Feature: feature-toggle-settings, Property 5: ????????????????
-// ?????¦Ê¦É????????????codeRedemptionEnabled: true/false, pointsClaimEnabled:
+// ?????ï¿½Ê¦ï¿½????????????codeRedemptionEnabled: true/false, pointsClaimEnabled:
 // true/false?????? codeRedemptionEnabled ? false ? POST /api/points/redeem-code
 // ????? FEATURE_DISABLED???? pointsClaimEnabled ? false ? POST /api/claims
-// ????? FEATURE_DISABLED???????????? true ???????????????????????î•
+// ????? FEATURE_DISABLED???????????? true ???????????????????????ï¿?
 // **Validates: Requirements 4.1, 4.2, 4.3**
 // ============================================================================
 
@@ -535,6 +594,9 @@ describe('Property 5: ????????????????', () => {
                 emailNewContentEnabled: false,
                 emailContentUpdatedEnabled: false,
                 emailWeeklyDigestEnabled: false,
+                emailWishAdoptedEnabled: true,
+                emailWishFulfilledEnabled: true,
+                emailWishRejectedEnabled: true,
                 adminEmailProductsEnabled: false,
                 adminEmailContentEnabled: false,
                 reservationApprovalPoints: 10,
@@ -544,8 +606,13 @@ describe('Property 5: ????????????????', () => {
                 brandLogoListEnabled: true,
                 brandLogoDetailEnabled: true,
                 employeeStoreEnabled: true,
+                employeeContentAutoApproved: false,
                 contentReviewMode: 'all',
                 contentReviewerIds: [],
+                wishPoolEnabled: false,
+                wishFulfilledRewardPoints: 50,
+                productManagementMode: 'all',
+                productManagerIds: [],
                 updatedBy: 'admin',
               },
               client,
@@ -596,6 +663,9 @@ describe('Property 5: ????????????????', () => {
                 emailNewContentEnabled: false,
                 emailContentUpdatedEnabled: false,
                 emailWeeklyDigestEnabled: false,
+                emailWishAdoptedEnabled: true,
+                emailWishFulfilledEnabled: true,
+                emailWishRejectedEnabled: true,
                 adminEmailProductsEnabled: false,
                 adminEmailContentEnabled: false,
                 reservationApprovalPoints: 10,
@@ -605,8 +675,13 @@ describe('Property 5: ????????????????', () => {
                 brandLogoListEnabled: true,
                 brandLogoDetailEnabled: true,
                 employeeStoreEnabled: true,
+                employeeContentAutoApproved: false,
                 contentReviewMode: 'all',
                 contentReviewerIds: [],
+                wishPoolEnabled: false,
+                wishFulfilledRewardPoints: 50,
+                productManagementMode: 'all',
+                productManagerIds: [],
                 updatedBy: 'admin',
               },
               client,
@@ -658,10 +733,10 @@ describe('Property 5: ????????????????', () => {
 });
 
 // ============================================================================
-// Property 2: ???????§µ???????
-// Feature: feature-toggle-settings, Property 2: ???????§µ???????
-// ?????¦Ê????????????????¨¹???????? SuperAdmin??????1????????????????
-// ?????? FORBIDDEN????????? SuperAdmin???????§µ????????
+// Property 2: ???????ï¿½ï¿½???????
+// Feature: feature-toggle-settings, Property 2: ???????ï¿½ï¿½???????
+// ?????ï¿½ï¿½????????????????ï¿½ï¿½???????? SuperAdmin??????1????????????????
+// ?????? FORBIDDEN????????? SuperAdmin???????ï¿½ï¿½????????
 // **Validates: Requirements 3.1, 3.2**
 // ============================================================================
 
@@ -671,7 +746,7 @@ const ALL_VALID_ROLES: UserRole[] = ['UserGroupLeader', 'Speaker', 'Volunteer', 
 /** Arbitrary that generates a random subset of valid roles */
 const roleSubsetArb = fc.subarray(ALL_VALID_ROLES, { minLength: 0, maxLength: ALL_VALID_ROLES.length });
 
-describe('Property 2: ???????§µ???????', () => {
+describe('Property 2: ???????ï¿½ï¿½???????', () => {
   it(
     'should reject (FORBIDDEN) when role set does NOT contain SuperAdmin',
     async () => {
@@ -776,6 +851,12 @@ function createInMemoryClientWithUpdate(initialItem?: Record<string, unknown>) {
           ':enc': 'emailNewContentEnabled',
           ':ecu': 'emailContentUpdatedEnabled',
           ':ewde': 'emailWeeklyDigestEnabled',
+          ':ewade': 'emailWishAdoptedEnabled',
+          ':ewfue': 'emailWishFulfilledEnabled',
+          ':ewrje': 'emailWishRejectedEnabled',
+          ':ewade': 'emailWishAdoptedEnabled',
+          ':ewfue': 'emailWishFulfilledEnabled',
+          ':ewrje': 'emailWishRejectedEnabled',
           ':aepe': 'adminEmailProductsEnabled',
           ':aece': 'adminEmailContentEnabled',
           ':rap': 'reservationApprovalPoints',
@@ -785,8 +866,13 @@ function createInMemoryClientWithUpdate(initialItem?: Record<string, unknown>) {
           ':blle': 'brandLogoListEnabled',
           ':blde': 'brandLogoDetailEnabled',
           ':ese': 'employeeStoreEnabled',
+          ':ecaa': 'employeeContentAutoApproved',
           ':crm': 'contentReviewMode',
           ':cri': 'contentReviewerIds',
+          ':wpe': 'wishPoolEnabled',
+          ':wfrp': 'wishFulfilledRewardPoints',
+          ':pmm': 'productManagementMode',
+          ':pmi': 'productManagerIds',
           ':ua': 'updatedAt',
           ':ub': 'updatedBy',
           ':crp': 'contentRolePermissions',
@@ -946,14 +1032,14 @@ describe('Property 1 (content-role-settings): getFeatureToggles ????????????????
 });
 
 // ============================================================================
-// Property 2 (content-role-settings): adminContentReviewEnabled §Õ????????
-// Feature: content-role-settings, Property 2: adminContentReviewEnabled §Õ????????
+// Property 2 (content-role-settings): adminContentReviewEnabled ï¿½ï¿½????????
+// Feature: content-role-settings, Property 2: adminContentReviewEnabled ï¿½ï¿½????????
 // For any boolean v, write updateFeatureToggles({ adminContentReviewEnabled: v, ... }),
 // then read with getFeatureToggles, the returned adminContentReviewEnabled should equal v.
 // **Validates: Requirements 1.4, 4.1, 4.3**
 // ============================================================================
 
-describe('Property 2 (content-role-settings): adminContentReviewEnabled §Õ????????', () => {
+describe('Property 2 (content-role-settings): adminContentReviewEnabled ï¿½ï¿½????????', () => {
   it('adminContentReviewEnabled round-trips correctly for any boolean value', async () => {
     await fc.assert(
       fc.asyncProperty(
@@ -977,6 +1063,9 @@ describe('Property 2 (content-role-settings): adminContentReviewEnabled §Õ??????
               emailNewContentEnabled: false,
               emailContentUpdatedEnabled: false,
               emailWeeklyDigestEnabled: false,
+              emailWishAdoptedEnabled: true,
+              emailWishFulfilledEnabled: true,
+              emailWishRejectedEnabled: true,
               adminEmailProductsEnabled: false,
               adminEmailContentEnabled: false,
               reservationApprovalPoints: 10,
@@ -986,8 +1075,13 @@ describe('Property 2 (content-role-settings): adminContentReviewEnabled §Õ??????
               brandLogoListEnabled: true,
               brandLogoDetailEnabled: true,
               employeeStoreEnabled: true,
+              employeeContentAutoApproved: false,
               contentReviewMode: 'all',
               contentReviewerIds: [],
+              wishPoolEnabled: false,
+              wishFulfilledRewardPoints: 50,
+              productManagementMode: 'all',
+              productManagerIds: [],
               updatedBy: 'test-user',
             },
             client,
@@ -1005,8 +1099,8 @@ describe('Property 2 (content-role-settings): adminContentReviewEnabled §Õ??????
 });
 
 // ============================================================================
-// Property 3 (content-role-settings): contentRolePermissions §Õ????????
-// Feature: content-role-settings, Property 3: contentRolePermissions §Õ????????
+// Property 3 (content-role-settings): contentRolePermissions ï¿½ï¿½????????
+// Feature: content-role-settings, Property 3: contentRolePermissions ï¿½ï¿½????????
 // For any valid 12-boolean ContentRolePermissions matrix, call
 // updateContentRolePermissions, then read with getFeatureToggles, the returned
 // contentRolePermissions should equal the written value.
@@ -1015,7 +1109,7 @@ describe('Property 2 (content-role-settings): adminContentReviewEnabled §Õ??????
 
 import { updateContentRolePermissions } from './feature-toggles';
 
-describe('Property 3 (content-role-settings): contentRolePermissions §Õ????????', () => {
+describe('Property 3 (content-role-settings): contentRolePermissions ï¿½ï¿½????????', () => {
   it('contentRolePermissions round-trips correctly for any valid 12-boolean matrix', async () => {
     await fc.assert(
       fc.asyncProperty(
