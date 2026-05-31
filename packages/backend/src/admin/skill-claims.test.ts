@@ -11,8 +11,8 @@ import {
 } from './skill-claims';
 
 describe('skill-claims types', () => {
-  it('VALID_SKILL_TYPES contains exactly liveSupport and promoWriting', () => {
-    expect(VALID_SKILL_TYPES).toEqual(['liveSupport', 'promoWriting']);
+  it('VALID_SKILL_TYPES contains exactly liveSupport, posterDesign, articleEditing', () => {
+    expect(VALID_SKILL_TYPES).toEqual(['liveSupport', 'posterDesign', 'articleEditing']);
   });
 
   it('SkillClaimInput interface accepts valid shape', () => {
@@ -24,7 +24,7 @@ describe('skill-claims types', () => {
   it('SkillClaimRecord interface accepts valid shape', () => {
     const record: SkillClaimRecord = {
       activityId: 'act-1',
-      skill: 'promoWriting',
+      skill: 'articleEditing',
       userId: 'user-1',
       userNickname: 'Alice',
       claimedAt: '2024-01-01T00:00:00.000Z',
@@ -33,7 +33,7 @@ describe('skill-claims types', () => {
       pointsAwarded: 30,
     };
     expect(record.activityId).toBe('act-1');
-    expect(record.skill).toBe('promoWriting');
+    expect(record.skill).toBe('articleEditing');
     expect(record.pointsAwarded).toBe(30);
   });
 });
@@ -58,7 +58,7 @@ describe('validateSkillClaimsInput', () => {
   it('returns null for valid two skill claims with UGL role', () => {
     const claims: SkillClaimInput[] = [
       { skill: 'liveSupport', userId: 'user-1' },
-      { skill: 'promoWriting', userId: 'user-2' },
+      { skill: 'articleEditing', userId: 'user-2' },
     ];
     const result = validateSkillClaimsInput(claims, 'UserGroupLeader');
     expect(result).toBeNull();
@@ -72,11 +72,10 @@ describe('validateSkillClaimsInput', () => {
     expect(result!.message).toContain('UGL');
   });
 
-  it('returns SKILL_NOT_ALLOWED_FOR_ROLE when targetRole is Volunteer', () => {
-    const claims: SkillClaimInput[] = [{ skill: 'promoWriting', userId: 'user-1' }];
+  it('returns null when targetRole is Volunteer (skill claims allowed for any role)', () => {
+    const claims: SkillClaimInput[] = [{ skill: 'articleEditing', userId: 'user-1' }];
     const result = validateSkillClaimsInput(claims, 'Volunteer');
-    expect(result).not.toBeNull();
-    expect(result!.code).toBe('SKILL_NOT_ALLOWED_FOR_ROLE');
+    expect(result).toBeNull();
   });
 
   it('returns INVALID_SKILL_TYPE for unknown skill value', () => {
@@ -107,8 +106,8 @@ describe('validateSkillClaimsInput', () => {
 
   it('returns DUPLICATE_SKILL_IN_REQUEST for duplicate promoWriting', () => {
     const claims: SkillClaimInput[] = [
-      { skill: 'promoWriting', userId: 'user-1' },
-      { skill: 'promoWriting', userId: 'user-3' },
+      { skill: 'articleEditing', userId: 'user-1' },
+      { skill: 'articleEditing', userId: 'user-3' },
     ];
     const result = validateSkillClaimsInput(claims, 'UserGroupLeader');
     expect(result).not.toBeNull();
@@ -169,7 +168,7 @@ describe('getSkillClaimsForActivity', () => {
   it('returns skill claim records for a given activityId', async () => {
     const items = [
       makeSkillClaimRecord({ skill: 'liveSupport', userId: 'user-1' }),
-      makeSkillClaimRecord({ skill: 'promoWriting', userId: 'user-2', userNickname: 'Bob' }),
+      makeSkillClaimRecord({ skill: 'articleEditing', userId: 'user-2', userNickname: 'Bob' }),
     ];
     client.send.mockResolvedValueOnce({ Items: items });
 
@@ -178,7 +177,7 @@ describe('getSkillClaimsForActivity', () => {
     expect(result).toHaveLength(2);
     expect(result[0].skill).toBe('liveSupport');
     expect(result[0].userId).toBe('user-1');
-    expect(result[1].skill).toBe('promoWriting');
+    expect(result[1].skill).toBe('articleEditing');
     expect(result[1].userId).toBe('user-2');
   });
 
@@ -225,13 +224,13 @@ describe('getSkillClaimsForActivity', () => {
   });
 
   it('returns single record when only one skill is claimed', async () => {
-    const items = [makeSkillClaimRecord({ skill: 'promoWriting', userId: 'user-3', pointsAwarded: 50 })];
+    const items = [makeSkillClaimRecord({ skill: 'articleEditing', userId: 'user-3', pointsAwarded: 50 })];
     client.send.mockResolvedValueOnce({ Items: items });
 
     const result = await getSkillClaimsForActivity('act-001', client, TABLE_NAME);
 
     expect(result).toHaveLength(1);
-    expect(result[0].skill).toBe('promoWriting');
+    expect(result[0].skill).toBe('articleEditing');
     expect(result[0].pointsAwarded).toBe(50);
   });
 });
@@ -247,7 +246,7 @@ describe('buildSkillClaimTransactItems', () => {
     distributionId: 'dist-001',
     tableName: TABLE_NAME,
     userNicknameMap: { 'user-1': 'Alice', 'user-2': 'Bob' },
-    pointsConfig: { liveSupportPoints: 30, promoWritingPoints: 40 },
+    pointsConfig: { liveSupportPoints: 30, posterDesignPoints: 40, articleEditingPoints: 40 },
   };
 
   beforeEach(() => {
@@ -288,33 +287,33 @@ describe('buildSkillClaimTransactItems', () => {
   });
 
   it('builds a single Put item for one promoWriting claim with correct points', () => {
-    const claims: SkillClaimInput[] = [{ skill: 'promoWriting', userId: 'user-2' }];
+    const claims: SkillClaimInput[] = [{ skill: 'articleEditing', userId: 'user-2' }];
     const result = buildSkillClaimTransactItems(claims, baseContext);
 
     expect(result).toHaveLength(1);
     expect(result[0]!.Put!.Item!.pointsAwarded).toBe(40);
-    expect(result[0]!.Put!.Item!.skill).toBe('promoWriting');
+    expect(result[0]!.Put!.Item!.skill).toBe('articleEditing');
     expect(result[0]!.Put!.Item!.userNickname).toBe('Bob');
   });
 
   it('builds two Put items for two different skill claims', () => {
     const claims: SkillClaimInput[] = [
       { skill: 'liveSupport', userId: 'user-1' },
-      { skill: 'promoWriting', userId: 'user-2' },
+      { skill: 'articleEditing', userId: 'user-2' },
     ];
     const result = buildSkillClaimTransactItems(claims, baseContext);
 
     expect(result).toHaveLength(2);
     expect(result[0]!.Put!.Item!.skill).toBe('liveSupport');
     expect(result[0]!.Put!.Item!.pointsAwarded).toBe(30);
-    expect(result[1]!.Put!.Item!.skill).toBe('promoWriting');
+    expect(result[1]!.Put!.Item!.skill).toBe('articleEditing');
     expect(result[1]!.Put!.Item!.pointsAwarded).toBe(40);
   });
 
   it('includes ConditionExpression on every Put item', () => {
     const claims: SkillClaimInput[] = [
       { skill: 'liveSupport', userId: 'user-1' },
-      { skill: 'promoWriting', userId: 'user-2' },
+      { skill: 'articleEditing', userId: 'user-2' },
     ];
     const result = buildSkillClaimTransactItems(claims, baseContext);
 
@@ -354,11 +353,11 @@ describe('buildSkillClaimTransactItems', () => {
   it('uses pointsConfig snapshot values (not hardcoded defaults)', () => {
     const customContext: SkillClaimContext = {
       ...baseContext,
-      pointsConfig: { liveSupportPoints: 100, promoWritingPoints: 200 },
+      pointsConfig: { liveSupportPoints: 100, posterDesignPoints: 200, articleEditingPoints: 200 },
     };
     const claims: SkillClaimInput[] = [
       { skill: 'liveSupport', userId: 'user-1' },
-      { skill: 'promoWriting', userId: 'user-2' },
+      { skill: 'articleEditing', userId: 'user-2' },
     ];
     const result = buildSkillClaimTransactItems(claims, customContext);
 
@@ -384,7 +383,7 @@ describe('buildSkillClaimTransactItems', () => {
   it('all items share the same claimedAt timestamp', () => {
     const claims: SkillClaimInput[] = [
       { skill: 'liveSupport', userId: 'user-1' },
-      { skill: 'promoWriting', userId: 'user-2' },
+      { skill: 'articleEditing', userId: 'user-2' },
     ];
     const result = buildSkillClaimTransactItems(claims, baseContext);
 

@@ -30,6 +30,7 @@ export interface ApiStackProps extends cdk.StackProps {
   batchDistributionsTable: dynamodb.Table;
   travelApplicationsTable: dynamodb.Table;
   contentTagsTable: dynamodb.Table;
+  awardTagsTable: dynamodb.Table;
   emailTemplatesTable: dynamodb.Table;
   ugsTable: dynamodb.Table;
   activitiesTable: dynamodb.Table;
@@ -58,7 +59,7 @@ export class ApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
-    const { usersTable, productsTable, codesTable, redemptionsTable, pointsRecordsTable, cartTable, addressesTable, ordersTable, invitesTable, claimsTable, contentItemsTable, contentCategoriesTable, contentCommentsTable, contentLikesTable, contentReservationsTable, batchDistributionsTable, travelApplicationsTable, contentTagsTable, emailTemplatesTable, ugsTable, activitiesTable, credentialsTable, credentialSequencesTable, wishesTable, wishVotesTable, activitySkillClaimsTable } = props;
+    const { usersTable, productsTable, codesTable, redemptionsTable, pointsRecordsTable, cartTable, addressesTable, ordersTable, invitesTable, claimsTable, contentItemsTable, contentCategoriesTable, contentCommentsTable, contentLikesTable, contentReservationsTable, batchDistributionsTable, travelApplicationsTable, contentTagsTable, awardTagsTable, emailTemplatesTable, ugsTable, activitiesTable, credentialsTable, credentialSequencesTable, wishesTable, wishVotesTable, activitySkillClaimsTable } = props;
 
     // --- SSM Parameter for JWT Secret ---
     const jwtSecretParam = new ssm.StringParameter(this, 'JwtSecretParam', {
@@ -154,6 +155,7 @@ export class ApiStack extends cdk.Stack {
     adminFn.addEnvironment('BATCH_DISTRIBUTIONS_TABLE', batchDistributionsTable.tableName);
     adminFn.addEnvironment('TRAVEL_APPLICATIONS_TABLE', travelApplicationsTable.tableName);
     adminFn.addEnvironment('CONTENT_TAGS_TABLE', contentTagsTable.tableName);
+    adminFn.addEnvironment('AWARD_TAGS_TABLE', awardTagsTable.tableName);
     adminFn.addEnvironment('UGS_TABLE', ugsTable.tableName);
     adminFn.addEnvironment('ACTIVITIES_TABLE', activitiesTable.tableName);
     adminFn.addEnvironment('ACTIVITY_SKILL_CLAIMS_TABLE', activitySkillClaimsTable.tableName);
@@ -354,6 +356,8 @@ export class ApiStack extends cdk.Stack {
     }));
     invitesTable.grantReadWriteData(authFn);
     productsTable.grantReadData(productFn);
+    // Product Lambda: read Users table for getFeatureToggles (employee-store check)
+    usersTable.grantReadData(productFn);
     usersTable.grantReadWriteData(pointsFn);
     codesTable.grantReadWriteData(pointsFn);
     pointsRecordsTable.grantReadWriteData(pointsFn);
@@ -394,6 +398,10 @@ export class ApiStack extends cdk.Stack {
     cartTable.grantReadWriteData(cartFn);
     addressesTable.grantReadWriteData(cartFn);
     productsTable.grantReadWriteData(cartFn);
+    // Read Orders (incl. userId-createdAt-index GSI) for purchase-limit historical count
+    ordersTable.grantReadData(cartFn);
+    // Read Users table for getFeatureToggles (feature-toggles record stored under userId='feature-toggles')
+    usersTable.grantReadData(cartFn);
 
     // Order Lambda: Orders, Cart, Users, Products, PointsRecords, Addresses tables
     ordersTable.grantReadWriteData(orderFn);
@@ -568,6 +576,7 @@ export class ApiStack extends cdk.Stack {
     const adminOrderById = adminOrders.addResource('{orderId}');
     adminOrderById.addMethod('GET', orderInt);
     adminOrderById.addResource('shipping').addMethod('PATCH', orderInt);
+    adminOrderById.addResource('cancel').addMethod('POST', orderInt);
 
     // Admin credential routes must be defined BEFORE addProxy to avoid CDK conflict with {proxy+}.
     // These routes are handled by the independent Credential Lambda, not the Admin Lambda.

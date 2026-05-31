@@ -28,7 +28,7 @@ interface AnnouncementResponse {
   lastKey?: string | null;
 }
 
-type RoleFilter = 'all' | 'Speaker' | 'UserGroupLeader' | 'Volunteer';
+type RoleFilter = 'all' | 'Speaker' | 'UserGroupLeader' | 'Volunteer' | 'SpecialActivity';
 type MainTab = 'ranking' | 'announcement';
 
 /* ---- Role badge mapping ---- */
@@ -102,6 +102,7 @@ function RankingTab({
     { value: 'Speaker', labelKey: 'leaderboard.roleSpeaker' },
     { value: 'UserGroupLeader', labelKey: 'leaderboard.roleLeader' },
     { value: 'Volunteer', labelKey: 'leaderboard.roleVolunteer' },
+    { value: 'SpecialActivity', labelKey: 'leaderboard.roleSpecialActivity' },
   ];
 
   const fetchRanking = useCallback(async (reset = false) => {
@@ -304,6 +305,7 @@ function AnnouncementTab() {
   };
 
   const isBatchRecord = (source: string) => source.startsWith('批量发放:');
+  const isSpecialActivityRecord = (source: string) => source.startsWith('特殊活动:');
   const isQuarterlyAward = (item: LeaderboardAnnouncementItem) => item.activityType === '季度贡献奖';
 
   const formatRecord = (item: LeaderboardAnnouncementItem): string => {
@@ -315,6 +317,19 @@ function AnnouncementTab() {
         recipientNickname: item.recipientNickname,
         amount: item.amount,
         awardDate: item.activityDate || '—',
+      });
+    }
+    // Special activity award — parse source: '特殊活动:{topic}|{ug}|{date}|{tagName}'
+    if (isSpecialActivityRecord(item.source)) {
+      const parts = item.source.replace('特殊活动:', '').split('|');
+      const awardTagName = parts[3] || '—';
+      return t('leaderboard.specialActivityTemplate' as any, {
+        recipientNickname: item.recipientNickname,
+        activityUG: item.activityUG || parts[1] || '—',
+        activityTopic: item.activityTopic || parts[0] || '—',
+        activityDate: item.activityDate || parts[2] || '—',
+        awardTagName,
+        amount: item.amount,
       });
     }
     if (isBatchRecord(item.source)) {

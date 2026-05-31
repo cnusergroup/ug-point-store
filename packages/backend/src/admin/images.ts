@@ -110,11 +110,11 @@ export async function getUploadUrl(
 /**
  * Generate a presigned PUT URL for uploading a product image without a productId.
  * Used during product creation before the product exists.
- * S3 key format: products/temp/{ulid}.{ext}
+ * S3 key format: products/temp/{ulid}.{ext} (default) or wishes/images/{ulid}.{ext} (purpose='wish')
  * When UPLOAD_VIA_CLOUDFRONT is enabled, generates a CloudFront URL with an HMAC token.
  */
 export async function getTempUploadUrl(
-  input: { fileName: string; contentType: string },
+  input: { fileName: string; contentType: string; purpose?: string },
   s3Client: S3Client,
   bucketName: string,
 ): Promise<GetUploadUrlResult> {
@@ -126,7 +126,9 @@ export async function getTempUploadUrl(
     };
   }
 
-  const key = `products/temp/${ulid()}.${ext}`;
+  // Wish images go to a permanent prefix (not subject to lifecycle cleanup)
+  const prefix = input.purpose === 'wish' ? 'wishes/images' : 'products/temp';
+  const key = `${prefix}/${ulid()}.${ext}`;
 
   let uploadUrl: string;
   if (UPLOAD_VIA_CLOUDFRONT) {

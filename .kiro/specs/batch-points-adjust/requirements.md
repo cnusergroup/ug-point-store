@@ -15,6 +15,7 @@ The Batch Points Adjustment feature allows a SuperAdmin to modify a previously c
 - **PointsRuleConfig**: The system-wide configuration defining points values per role and speaker type, stored in the feature-toggles settings record.
 - **SuperAdmin**: A user with the `SuperAdmin` role, the only role authorized to perform batch points adjustments.
 - **Correction_Record**: A Points_Record with `type: 'adjust'` that documents a points adjustment without deleting the original `earn` record, preserving the audit trail.
+- **Distribution_Deletion**: An adjustment in which the adjusted `recipientIds` list is empty, causing every original recipient to be removed and the Distribution_Record itself to be deleted while the points audit trail is preserved via Correction_Records.
 
 ## Requirements
 
@@ -126,11 +127,14 @@ The Batch Points Adjustment feature allows a SuperAdmin to modify a previously c
 
 #### Acceptance Criteria
 
-1. WHEN the adjusted `recipientIds` list is empty, THE Adjustment_Service SHALL reject the request with error code `INVALID_REQUEST` and message indicating at least one recipient is required.
-2. WHEN the `targetRole` is `Speaker` and no `speakerType` is provided, THE Adjustment_Service SHALL reject the request with error code `INVALID_REQUEST`.
-3. WHEN the `targetRole` is `Volunteer` and the adjusted recipient count exceeds `volunteerMaxPerEvent` from PointsRuleConfig, THE Adjustment_Service SHALL reject the request with error code `VOLUNTEER_LIMIT_EXCEEDED`.
-4. THE Adjustment_Service SHALL recalculate points from the current PointsRuleConfig rather than accepting a client-provided points value.
-5. WHEN no actual changes are detected (same recipients, same role, same speaker type), THE Adjustment_Service SHALL reject the request with error code `NO_CHANGES` and a descriptive message.
+1. WHEN the adjusted `recipientIds` list is empty (contains zero user IDs), THE Adjustment_Service SHALL treat the request as a full deletion of the Distribution_Record and process it according to Requirement 13 rather than rejecting it.
+2. IF the adjusted `recipientIds` list is non-empty AND the `targetRole` is `Speaker` AND no `speakerType` is provided, THEN THE Adjustment_Service SHALL reject the request with error code `INVALID_REQUEST` and leave the Distribution_Record unchanged.
+3. IF the adjusted `recipientIds` list is non-empty AND the `targetRole` is `Volunteer` AND the adjusted recipient count exceeds `volunteerMaxPerEvent` from PointsRuleConfig, THEN THE Adjustment_Service SHALL reject the request with error code `VOLUNTEER_LIMIT_EXCEEDED` and leave the Distribution_Record unchanged.
+4. WHILE the adjusted `recipientIds` list is non-empty, THE Adjustment_Service SHALL recalculate the per-person points value from the current PointsRuleConfig rather than accepting a client-provided points value.
+5. IF the adjusted `recipientIds` list is non-empty AND no actual changes are detected (identical set of recipient user IDs, identical `targetRole`, and identical `speakerType` compared to the current Distribution_Record), THEN THE Adjustment_Service SHALL reject the request with error code `NO_CHANGES` and an error message indicating that no changes were detected.
+6. WHEN the adjusted `recipientIds` list is empty, THE Adjustment_Service SHALL skip the `speakerType`, `VOLUNTEER_LIMIT_EXCEEDED`, and `NO_CHANGES` validations and proceed to the deletion flow defined in Requirement 13.
+7. IF the adjusted `recipientIds` list is non-empty AND the `targetRole` is `Speaker` AND the provided `speakerType` is not one of `typeA`, `typeB`, or `roundtable`, THEN THE Adjustment_Service SHALL reject the request with error code `INVALID_REQUEST` and leave the Distribution_Record unchanged.
+8. IF the adjustment request fails any validation, THEN THE Adjustment_Service SHALL reject the request before performing any write to the Users, PointsRecords, BatchDistributions, or Activities tables, leaving the Distribution_Record and all User_Records unchanged.
 
 ### Requirement 11: Confirmation Dialog with Diff Summary
 
@@ -153,3 +157,25 @@ The Batch Points Adjustment feature allows a SuperAdmin to modify a previously c
 1. WHEN a Distribution_Record has an `adjustedAt` field, THE batch-history detail view SHALL display an "Adjusted" badge alongside the record.
 2. THE batch-history detail view SHALL display the `adjustedAt` timestamp and the `adjustedBy` SuperAdmin's identity.
 3. THE Adjustment_UI SHALL be accessible from the batch-history detail view via an "Adjust" button visible only to SuperAdmin users.
+
+### Requirement 13: Delete Distribution via Full Recipient Removal
+
+**User Story:** As a SuperAdmin, I want removing all recipients from a distribution to delete the entire distribution and reverse every awarded point, so that I can fully undo a distribution that was created in error.
+
+#### Acceptance Criteria
+
+1. WHEN the adjusted `recipientIds` list is empty, THE Adjustment_Service SHALL treat the request as a Distribution_Deletion in which every user in the original `recipientIds` is a removed user.
+2. FOR each removed user in a Distribution_Deletion, THE Adjustment_Service SHALL reverse the `points` balance, `earnTotal`, and the role-specific earned total field (`earnTotalSpeaker`, `earnTotalLeader`, or `earnTotalVolunteer`) corresponding to the original `targetRole` by the amount that user originally received from the Distribution_Record.
+3. WHERE skill-claim points are tied to the Distribution_Record being deleted, THE Adjustment_Service SHALL reverse each affected user's `points` balance, `earnTotal`, and `earnTotalLeader` by the `pointsAwarded` of the associated skill claim and remove the corresponding skill-claim record.
+4. FOR each removed user in a Distribution_Deletion, THE Adjustment_Service SHALL write a Correction_Record with `type: 'adjust'`, negative `amount` equal to the points being reversed, and `source` indicating the deletion context, before the Distribution_Record is deleted.
+5. THE Adjustment_Service SHALL preserve the original `earn` records and the written Correction_Records in the `PointsRecords` table so that the points audit trail remains intact after the Distribution_Record is deleted.
+6. THE Adjustment_Service SHALL apply all User_Record balance reversals, Correction_Record writes, skill-claim removals, and the Distribution_Record deletion as a single atomic operation, using DynamoDB `TransactWriteCommand` and splitting into multiple transaction batches of at most 25 items each (the DynamoDB TransactWriteItems limit per Requirement 6.2) WHEN the affected item count exceeds 25.
+7. WHEN every user-level transaction batch of a Distribution_Deletion succeeds, THE Adjustment_Service SHALL hard-delete the Distribution_Record from the `BatchDistributions` table, consistent with the hard-delete pattern used elsewhere in the system.
+8. IF any transaction batch of a Distribution_Deletion fails, THEN THE Adjustment_Service SHALL stop processing further batches, return an error with code `ADJUSTMENT_FAILED`, and leave the Distribution_Record in place without deleting it.
+9. IF reversing points during a Distribution_Deletion would cause any user's `points` balance to become negative, THEN THE Adjustment_Service SHALL perform this check before any reversal write and reject the deletion with error code `INSUFFICIENT_BALANCE`, leaving the Distribution_Record and all User_Records unchanged, consistent with Requirement 7.5.
+10. WHEN a non-SuperAdmin user requests a Distribution_Deletion, THE Adjustment_Service SHALL return a 403 Forbidden error with code `FORBIDDEN`, consistent with Requirement 1.
+11. WHEN the SuperAdmin removes all recipients and clicks the submit button, THE Adjustment_UI SHALL display a confirmation dialog whose message identifies the distribution being deleted, states that confirming will delete the entire distribution and reverse all awarded points, and differs from the standard adjustment confirmation message.
+12. WHEN the adjusted recipient list is empty, THE Adjustment_UI SHALL allow the SuperAdmin to proceed with the submit and confirm path with zero recipients.
+13. WHEN the SuperAdmin confirms a Distribution_Deletion, THE Adjustment_UI SHALL send the adjustment request with an empty `recipientIds` list to the Adjustment_Service.
+14. WHEN a Distribution_Deletion completes successfully, THE Adjustment_Service SHALL return a success response that includes the deleted `distributionId` and the count of users whose points were reversed.
+15. WHEN a Distribution_Deletion completes successfully, THE Adjustment_UI SHALL display a success notification and navigate back to the batch-history view.

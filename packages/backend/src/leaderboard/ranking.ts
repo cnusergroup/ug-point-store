@@ -9,7 +9,7 @@ import { REGULAR_ROLES } from '@points-mall/shared';
 // ============================================================
 
 export interface RankingQueryOptions {
-  role: 'all' | 'Speaker' | 'UserGroupLeader' | 'Volunteer';
+  role: 'all' | 'Speaker' | 'UserGroupLeader' | 'Volunteer' | 'SpecialActivity';
   limit: number;    // 1~50, 默认 20
   lastKey?: string;  // base64 编码的分页游标
 }
@@ -32,7 +32,7 @@ export interface RankingResult {
 // Constants
 // ============================================================
 
-const VALID_ROLES = ['all', 'Speaker', 'UserGroupLeader', 'Volunteer'] as const;
+const VALID_ROLES = ['all', 'Speaker', 'UserGroupLeader', 'Volunteer', 'SpecialActivity'] as const;
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 const MIN_LIMIT = 1;
@@ -57,7 +57,7 @@ export function validateRankingParams(query: Record<string, string | undefined>)
   if (!(VALID_ROLES as readonly string[]).includes(role)) {
     return {
       valid: false,
-      error: { code: 'INVALID_REQUEST', message: 'role 参数无效，取值为 all、Speaker、UserGroupLeader 或 Volunteer' },
+      error: { code: 'INVALID_REQUEST', message: 'role 参数无效，取值为 all、Speaker、UserGroupLeader、Volunteer 或 SpecialActivity' },
     };
   }
 
@@ -106,9 +106,11 @@ export function validateRankingParams(query: Record<string, string | undefined>)
 /**
  * Returns true if the user has at least one regular role (Speaker, UserGroupLeader, Volunteer).
  * Users with only admin roles (Admin, SuperAdmin, OrderAdmin) are excluded from ranking.
+ *
+ * Mixed users (e.g. Admin+Speaker, SuperAdmin+Volunteer) ARE eligible: their earnings
+ * via regular roles are legitimate and should appear on the leaderboard.
  */
 export function isEligibleForRanking(roles: string[]): boolean {
-  if (roles.includes('SuperAdmin') || roles.includes('OrderAdmin')) return false;
   return roles.some(r => (REGULAR_ROLES as string[]).includes(r));
 }
 
@@ -139,6 +141,7 @@ const ROLE_GSI_MAP: Record<string, { indexName: string; sortKeyField: string }> 
   Speaker:          { indexName: 'earnTotalSpeaker-index',  sortKeyField: 'earnTotalSpeaker' },
   UserGroupLeader:  { indexName: 'earnTotalLeader-index',   sortKeyField: 'earnTotalLeader' },
   Volunteer:        { indexName: 'earnTotalVolunteer-index', sortKeyField: 'earnTotalVolunteer' },
+  SpecialActivity:  { indexName: 'earnTotalSpecialActivity-index', sortKeyField: 'earnTotalSpecialActivity' },
 };
 
 // ============================================================
@@ -193,10 +196,19 @@ export async function getRanking(
 
   const rawUsers = result.Items ?? [];
 
-  // For role-specific tabs, filter to users who actually have that role
-  const pageUsers = role === 'all'
-    ? rawUsers
-    : rawUsers.filter(u => ((u.roles as string[]) ?? []).includes(role));
+  // For role-specific tabs, filter to users who actually have that role.
+  // SpecialActivity is exceptional: any user with earnTotalSpecialActivity > 0 is eligible
+  // regardless of whether they hold Speaker/UserGroupLeader/Volunteer roles.
+  let pageUsers: Array<Record<string, unknown>>;
+  if (role === 'all') {
+    pageUsers = (rawUsers as Array<Record<string, unknown>>).filter(u =>
+      isEligibleForRanking((u.roles as string[]) ?? []),
+    );
+  } else if (role === 'SpecialActivity') {
+    pageUsers = rawUsers as Array<Record<string, unknown>>;
+  } else {
+    pageUsers = rawUsers.filter(u => ((u.roles as string[]) ?? []).includes(role)) as Array<Record<string, unknown>>;
+  }
 
   const items: RankingItem[] = pageUsers.map((user, index) => ({
     rank: index + 1,

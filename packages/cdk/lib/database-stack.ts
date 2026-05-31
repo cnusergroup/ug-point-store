@@ -21,6 +21,7 @@ export class DatabaseStack extends cdk.Stack {
   public readonly batchDistributionsTable: dynamodb.Table;
   public readonly travelApplicationsTable: dynamodb.Table;
   public readonly contentTagsTable: dynamodb.Table;
+  public readonly awardTagsTable: dynamodb.Table;
   public readonly emailTemplatesTable: dynamodb.Table;
   public readonly ugsTable: dynamodb.Table;
   public readonly activitiesTable: dynamodb.Table;
@@ -76,6 +77,17 @@ export class DatabaseStack extends cdk.Stack {
       indexName: 'earnTotalVolunteer-index',
       partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'earnTotalVolunteer', type: dynamodb.AttributeType.NUMBER },
+    });
+
+    // GSI for the SpecialActivity leaderboard / reports column.
+    // NOTE: DynamoDB only allows one GSI creation per CloudFormation update —
+    // this is the ONLY new GSI being added to the Users table in the
+    // special-activity-award deployment batch. Deploy and wait for ACTIVE state
+    // before deploying any Lambda code that queries this index.
+    this.usersTable.addGlobalSecondaryIndex({
+      indexName: 'earnTotalSpecialActivity-index',
+      partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'earnTotalSpecialActivity', type: dynamodb.AttributeType.NUMBER },
     });
 
     // GSI for paginated user listing: partition by entityType, sort by createdAt
@@ -410,6 +422,25 @@ export class DatabaseStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'ContentTagsTableName', { value: this.contentTagsTable.tableName, exportName: 'PointsMall-ContentTagsTableName' });
     new cdk.CfnOutput(this, 'ContentTagsTableArn', { value: this.contentTagsTable.tableArn, exportName: 'PointsMall-ContentTagsTableArn' });
+
+    // AwardTags table: PK=tagId, GSI: tagName-index
+    // Used by special-activity-award feature to manage award tag metadata.
+    // Fully isolated from ContentTags table (no shared API, no shared GSI).
+    this.awardTagsTable = new dynamodb.Table(this, 'AwardTagsTable', {
+      tableName: 'PointsMall-AwardTags',
+      partitionKey: { name: 'tagId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.awardTagsTable.addGlobalSecondaryIndex({
+      indexName: 'tagName-index',
+      partitionKey: { name: 'tagName', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    new cdk.CfnOutput(this, 'AwardTagsTableName', { value: this.awardTagsTable.tableName, exportName: 'PointsMall-AwardTagsTableName' });
+    new cdk.CfnOutput(this, 'AwardTagsTableArn', { value: this.awardTagsTable.tableArn, exportName: 'PointsMall-AwardTagsTableArn' });
 
     // EmailTemplates table: PK=templateId, SK=locale
     this.emailTemplatesTable = new dynamodb.Table(this, 'EmailTemplatesTable', {

@@ -79,7 +79,8 @@ interface PointsRuleConfig {
   speakerTypeBPoints: number;
   speakerRoundtablePoints: number;
   liveSupportPoints: number;
-  promoWritingPoints: number;
+  posterDesignPoints: number;
+  articleEditingPoints: number;
 }
 
 type NotificationType = 'pointsEarned' | 'newOrder' | 'orderShipped' | 'newProduct' | 'newContent' | 'contentUpdated' | 'weeklyDigest' | 'wishAdopted' | 'wishFulfilled' | 'wishRejected';
@@ -620,7 +621,8 @@ export default function AdminSettingsPage() {
     speakerTypeBPoints: 50,
     speakerRoundtablePoints: 50,
     liveSupportPoints: 30,
-    promoWritingPoints: 30,
+    posterDesignPoints: 30,
+    articleEditingPoints: 30,
   });
   const [pointsRuleSaving, setPointsRuleSaving] = useState(false);
 
@@ -646,7 +648,13 @@ export default function AdminSettingsPage() {
         url: '/api/settings/feature-toggles',
         skipAuth: true,
       });
-      setSettings(res);
+      setSettings({
+        ...res,
+        productManagementMode: res.productManagementMode || 'all',
+        productManagerIds: Array.isArray(res.productManagerIds) ? res.productManagerIds : [],
+        contentReviewMode: res.contentReviewMode || 'all',
+        contentReviewerIds: Array.isArray(res.contentReviewerIds) ? res.contentReviewerIds : [],
+      });
       if (res.contentRolePermissions) {
         setContentRolePermissions(res.contentRolePermissions);
       }
@@ -1326,10 +1334,11 @@ export default function AdminSettingsPage() {
 
   const handleProductManagerToggle = async (userId: string) => {
     const prev = { ...settings };
-    const isSelected = settings.productManagerIds.includes(userId);
+    const currentIds = settings.productManagerIds || [];
+    const isSelected = currentIds.includes(userId);
     const newIds = isSelected
-      ? settings.productManagerIds.filter((id) => id !== userId)
-      : [...settings.productManagerIds, userId];
+      ? currentIds.filter((id) => id !== userId)
+      : [...currentIds, userId];
     const updated = { ...settings, productManagerIds: newIds };
     setSettings(updated);
 
@@ -1618,7 +1627,8 @@ export default function AdminSettingsPage() {
       pointsRuleConfig.speakerTypeBPoints,
       pointsRuleConfig.speakerRoundtablePoints,
       pointsRuleConfig.liveSupportPoints,
-      pointsRuleConfig.promoWritingPoints,
+      pointsRuleConfig.posterDesignPoints,
+      pointsRuleConfig.articleEditingPoints,
     ];
     if (fields.some(v => !Number.isInteger(v) || v < 1)) {
       Taro.showToast({ title: t('admin.settings.pointsRuleValidationError' as any), icon: 'none' });
@@ -1939,7 +1949,7 @@ export default function AdminSettingsPage() {
                                   return u.nickname.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
                                 })
                                 .map((user) => {
-                                  const isChecked = settings.productManagerIds.includes(user.userId);
+                                  const isChecked = (settings.productManagerIds || []).includes(user.userId);
                                   return (
                                     <View
                                       key={user.userId}
@@ -1966,7 +1976,7 @@ export default function AdminSettingsPage() {
                                 })}
                             </View>
                             <Text className='reviewer-checklist__count'>
-                              {(t('admin.settings.productManagerSelectedCount' as any) as string).replace('{count}', String(settings.productManagerIds.length))}
+                              {(t('admin.settings.productManagerSelectedCount' as any) as string).replace('{count}', String((settings.productManagerIds || []).length))}
                             </Text>
                           </View>
                         )}
@@ -2899,7 +2909,8 @@ export default function AdminSettingsPage() {
                       { key: 'speakerTypeBPoints', labelKey: 'admin.settings.speakerTypeBPoints' },
                       { key: 'speakerRoundtablePoints', labelKey: 'admin.settings.speakerRoundtablePoints' },
                       { key: 'liveSupportPoints', labelKey: 'skillClaims.settings.liveSupportPoints', helpKey: 'skillClaims.settings.skillPointsHelp' },
-                      { key: 'promoWritingPoints', labelKey: 'skillClaims.settings.promoWritingPoints', helpKey: 'skillClaims.settings.skillPointsHelp' },
+                      { key: 'posterDesignPoints', labelKey: 'skillClaims.settings.posterDesignPoints', helpKey: 'skillClaims.settings.skillPointsHelp' },
+                      { key: 'articleEditingPoints', labelKey: 'skillClaims.settings.articleEditingPoints', helpKey: 'skillClaims.settings.skillPointsHelp' },
                     ] as const).map((field) => (
                       <View key={field.key} className='toggle-item'>
                         <View className='toggle-item__info'>

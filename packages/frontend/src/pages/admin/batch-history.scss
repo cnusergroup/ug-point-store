@@ -459,3 +459,98 @@
     background: var(--accent-active);
   }
 }
+
+
+/* ─── ActivityType Filter (top of list) ──────────────────── */
+.bh-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--card-border);
+
+  &__group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    flex: 1 1 160px;
+    min-width: 160px;
+  }
+
+  &__label {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  &__select {
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-body-sm);
+    font-family: var(--font-body);
+    color: var(--text-primary);
+    background: var(--bg-base);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: border-color var(--transition-fast);
+
+    &:hover {
+      border-color: var(--card-border-hover);
+    }
+  }
+
+  &__input {
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-body-sm);
+    font-family: var(--font-body);
+    color: var(--text-primary);
+    background: var(--bg-base);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    outline: none;
+    transition: border-color var(--transition-fast);
+
+    &:focus {
+      border-color: var(--accent-primary);
+    }
+  }
+}
+
+/* ─── Award Tag Row (inline pill on record card) ─────────── */
+.bh-award-tag-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  flex-wrap: wrap;
+
+  &__label {
+    font-size: var(--text-body-sm);
+    color: var(--text-tertiary);
+  }
+
+  &__value {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px var(--space-2);
+    border-radius: var(--radius-full);
+    font-size: var(--text-badge);
+    font-weight: 600;
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--warning);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+  }
+}
+
+/* ─── SpecialActivity flavor for the activity-type badge ── */
+.bh-activity-badge {
+  &--special {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--warning);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+  }
+}

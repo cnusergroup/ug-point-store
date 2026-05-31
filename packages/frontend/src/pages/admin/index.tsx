@@ -120,6 +120,15 @@ const ADMIN_LINKS = [
     superAdminOnly: true,
   },
   {
+    key: 'special-activity-award',
+    category: 'operations',
+    icon: GiftIcon,
+    titleKey: 'admin.dashboard.specialActivityAwardTitle',
+    descKey: 'admin.dashboard.specialActivityAwardDesc',
+    url: '/pages/admin/special-activity-award',
+    superAdminOnly: true,
+  },
+  {
     key: 'travel',
     category: 'operations',
     icon: LocationIcon,
@@ -281,7 +290,7 @@ export default function AdminDashboard() {
   const user = useAppStore((s) => s.user);
   const { t } = useTranslation();
   const [activeCategory, setActiveCategory] = useState<string>('product-management');
-  const [featureToggles, setFeatureToggles] = useState<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; adminProductsEnabled: boolean; adminOrdersEnabled: boolean; adminContentReviewEnabled: boolean; adminCategoriesEnabled: boolean; adminEmailProductsEnabled: boolean; adminEmailContentEnabled: boolean; wishPoolEnabled: boolean } | null>(null);
+  const [featureToggles, setFeatureToggles] = useState<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; adminProductsEnabled: boolean; adminOrdersEnabled: boolean; adminContentReviewEnabled: boolean; adminCategoriesEnabled: boolean; adminEmailProductsEnabled: boolean; adminEmailContentEnabled: boolean; wishPoolEnabled: boolean; productManagementMode?: 'all' | 'specific'; productManagerIds?: string[] } | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -299,7 +308,7 @@ export default function AdminDashboard() {
     }
 
     // Fetch feature toggles (public endpoint, no auth needed)
-    request<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; adminProductsEnabled: boolean; adminOrdersEnabled: boolean; adminContentReviewEnabled: boolean; adminCategoriesEnabled: boolean; adminEmailProductsEnabled: boolean; adminEmailContentEnabled: boolean; wishPoolEnabled: boolean }>({
+    request<{ codeRedemptionEnabled: boolean; pointsClaimEnabled: boolean; adminProductsEnabled: boolean; adminOrdersEnabled: boolean; adminContentReviewEnabled: boolean; adminCategoriesEnabled: boolean; adminEmailProductsEnabled: boolean; adminEmailContentEnabled: boolean; wishPoolEnabled: boolean; productManagementMode?: 'all' | 'specific'; productManagerIds?: string[] }>({
       url: '/api/settings/feature-toggles',
       skipAuth: true,
     })
@@ -338,6 +347,15 @@ export default function AdminDashboard() {
           // Hide admin-permission-gated links for non-SuperAdmin when toggle is off
           if (link.adminPermissionKey && !user?.roles?.includes('SuperAdmin')) {
             if (featureToggles[link.adminPermissionKey] === false) return false;
+            // Fine-grained product management permission:
+            // when mode is 'specific' and current user is not in productManagerIds, hide product links
+            if (
+              link.adminPermissionKey === 'adminProductsEnabled' &&
+              featureToggles.productManagementMode === 'specific' &&
+              !(featureToggles.productManagerIds || []).includes(user?.userId || '')
+            ) {
+              return false;
+            }
           }
           return true;
         })

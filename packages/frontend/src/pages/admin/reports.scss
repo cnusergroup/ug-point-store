@@ -381,3 +381,36 @@
 .report-table__row--error {
   background: rgba(var(--error-rgb, 239, 68, 68), 0.08);
 }
+
+/* ─── Quarter Selector (Inactive UGL) ────────────────────── */
+.report-quarter-selector {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+
+  &__label {
+    font-family: var(--font-body);
+    font-size: 14px;
+    color: var(--text-secondary);
+  }
+
+  &__picker {
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg-surface);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    font-family: var(--font-display);
+    font-size: 14px;
+    color: var(--text-primary);
+    cursor: pointer;
+  }
+}
+
+.report-total-count {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-3);
+  padding: 0 var(--space-5);
+}

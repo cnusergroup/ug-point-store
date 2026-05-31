@@ -125,6 +125,9 @@ export interface CodeExclusiveProduct extends Product {
 /** 积分记录类型 */
 export type PointsRecordType = 'earn' | 'spend' | 'refund' | 'adjust';
 
+/** 积分记录目标角色（用于身份分与特殊活动积分区分） */
+export type PointsRecordTargetRole = 'Speaker' | 'UserGroupLeader' | 'Volunteer' | 'SpecialActivity';
+
 /** 积分记录 */
 export interface PointsRecord {
   recordId: string;
@@ -134,6 +137,12 @@ export interface PointsRecord {
   source: string;
   balanceAfter: number;
   createdAt: string;
+  /** 关联的目标角色：身份分（Speaker/UGL/Volunteer）或特殊活动积分（SpecialActivity） */
+  targetRole?: PointsRecordTargetRole;
+  /** 关联的奖项 Tag ID（仅 targetRole==='SpecialActivity' 时存在） */
+  awardTagId?: string;
+  /** 关联的奖项 Tag 归一化名称（仅 targetRole==='SpecialActivity' 时存在） */
+  awardTagName?: string;
 }
 
 /** 兑换方式 */
@@ -592,6 +601,30 @@ export function validateTagsArray(tags: string[]): {
 }
 
 // ============================================================
+// 奖项标签（AwardTag）相关类型与共享常量
+// ============================================================
+
+/**
+ * 奖项标签禁止字符集合：`<`、`>`、`"`、`'`、`/`、`\`、`|`、`*`、`?`、`:`、`&`
+ * 用于 special-activity-award 功能 AwardTag 名校验，前后端共用同一规则。
+ */
+export const AWARD_TAG_FORBIDDEN_CHARS = `<>"'/\\|*?:&`;
+
+/** 奖项标签名最大长度（归一化后字符数） */
+export const AWARD_TAG_MAX_LENGTH = 30;
+
+/** 奖项标签元数据记录（PointsMall-AwardTags 表） */
+export interface AwardTag {
+  tagId: string;
+  tagName: string;
+  displayName: string;
+  usageCount: number;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+}
+
+// ============================================================
 // 内容中心校验辅助函数
 // ============================================================
 
@@ -631,7 +664,7 @@ export function isValidVideoUrl(url: string): boolean {
 
 /** 技能认领摘要（存储在 Distribution 记录中） */
 export interface SkillClaimSummary {
-  skill: 'liveSupport' | 'promoWriting';
+  skill: 'liveSupport' | 'posterDesign' | 'articleEditing';
   userId: string;
   userNickname: string;
   pointsAwarded: number;
@@ -642,7 +675,7 @@ export interface DistributionRecord {
   distributionId: string;
   distributorId: string;
   distributorNickname: string;
-  targetRole: 'UserGroupLeader' | 'Speaker' | 'Volunteer';
+  targetRole: 'UserGroupLeader' | 'Speaker' | 'Volunteer' | 'SpecialActivity';
   speakerType?: 'typeA' | 'typeB' | 'roundtable';
   recipientIds: string[];
   recipientDetails?: { userId: string; nickname: string; email: string }[];
@@ -660,6 +693,12 @@ export interface DistributionRecord {
   adjustedBy?: string;
   /** 技能认领摘要（仅 UGL 发放且含 skillClaims 时存在） */
   skillClaims?: SkillClaimSummary[];
+  /** 关联的奖项 Tag ID（仅 targetRole==='SpecialActivity' 时存在） */
+  awardTagId?: string;
+  /** 关联的奖项 Tag 归一化名称（仅 targetRole==='SpecialActivity' 时存在） */
+  awardTagName?: string;
+  /** 关联的奖项 Tag 用户原文（仅 targetRole==='SpecialActivity' 时存在，用于 UI 展示） */
+  awardTagDisplayName?: string;
 }
 
 // ============================================================

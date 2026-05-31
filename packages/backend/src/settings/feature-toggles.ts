@@ -29,7 +29,8 @@ export interface PointsRuleConfig {
   speakerTypeBPoints: number;       // Speaker B类积分，默认 50
   speakerRoundtablePoints: number;  // 圆桌嘉宾积分，默认 50
   liveSupportPoints: number;        // 直播支持技能分，默认 30
-  promoWritingPoints: number;       // 宣传文案创作技能分，默认 30
+  posterDesignPoints: number;       // 海报创作技能分，默认 30
+  articleEditingPoints: number;     // 推文排版技能分，默认 30
 }
 
 export const DEFAULT_POINTS_RULE_CONFIG: PointsRuleConfig = {
@@ -40,7 +41,8 @@ export const DEFAULT_POINTS_RULE_CONFIG: PointsRuleConfig = {
   speakerTypeBPoints: 50,
   speakerRoundtablePoints: 50,
   liveSupportPoints: 30,
-  promoWritingPoints: 30,
+  posterDesignPoints: 30,
+  articleEditingPoints: 30,
 };
 
 export interface FeatureToggles {
@@ -343,7 +345,8 @@ export async function getFeatureToggles(
           speakerTypeBPoints: safePositiveInt(raw.speakerTypeBPoints, DEFAULT_POINTS_RULE_CONFIG.speakerTypeBPoints),
           speakerRoundtablePoints: safePositiveInt(raw.speakerRoundtablePoints, DEFAULT_POINTS_RULE_CONFIG.speakerRoundtablePoints),
           liveSupportPoints: safePositiveInt(raw.liveSupportPoints, DEFAULT_POINTS_RULE_CONFIG.liveSupportPoints),
-          promoWritingPoints: safePositiveInt(raw.promoWritingPoints, DEFAULT_POINTS_RULE_CONFIG.promoWritingPoints),
+          posterDesignPoints: safePositiveInt(raw.posterDesignPoints, DEFAULT_POINTS_RULE_CONFIG.posterDesignPoints),
+          articleEditingPoints: safePositiveInt(raw.articleEditingPoints, DEFAULT_POINTS_RULE_CONFIG.articleEditingPoints),
         };
       })(),
     };
@@ -456,7 +459,7 @@ export async function updateFeatureToggles(
     const fields: (keyof PointsRuleConfig)[] = [
       'uglPointsPerEvent', 'volunteerPointsPerEvent', 'volunteerMaxPerEvent',
       'speakerTypeAPoints', 'speakerTypeBPoints', 'speakerRoundtablePoints',
-      'liveSupportPoints', 'promoWritingPoints',
+      'liveSupportPoints', 'posterDesignPoints', 'articleEditingPoints',
     ];
     for (const field of fields) {
       const val = prc[field];

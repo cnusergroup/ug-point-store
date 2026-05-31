@@ -85,7 +85,7 @@ describe('renderCredentialPage', () => {
     expect(html).toContain('志愿者');
     expect(html).toContain('2026-06-15');
     expect(html).toContain('ACD-BASE-2026-Summer-VOL-0001');
-    expect(html).toContain('AWS User Group China');
+    expect(html).toContain('亚马逊云科技 User Group China');
 
     // QR code
     expect(html).toContain('<svg');

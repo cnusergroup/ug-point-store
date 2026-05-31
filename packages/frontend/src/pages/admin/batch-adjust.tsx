@@ -12,7 +12,7 @@ import './batch-adjust.scss';
 /** Skill claim record returned by the skill-claims API */
 interface SkillClaimRecord {
   activityId: string;
-  skill: 'liveSupport' | 'promoWriting';
+  skill: 'liveSupport' | 'posterDesign' | 'articleEditing';
   userId: string;
   userNickname: string;
   claimedAt: string;
@@ -42,7 +42,8 @@ interface PointsRuleConfig {
   speakerTypeBPoints: number;
   speakerRoundtablePoints: number;
   liveSupportPoints?: number;
-  promoWritingPoints?: number;
+  posterDesignPoints?: number;
+  articleEditingPoints?: number;
 }
 
 /** Target role options */
@@ -127,20 +128,25 @@ export default function BatchAdjustPage() {
   const [skillClaims, setSkillClaims] = useState<SkillClaimRecord[]>([]);
   const [skillClaimsLoading, setSkillClaimsLoading] = useState(false);
 
+  // Skill type alias and ordered list
+  type SkillType = 'liveSupport' | 'posterDesign' | 'articleEditing';
+  const ORDERED_SKILLS: SkillType[] = ['liveSupport', 'posterDesign', 'articleEditing'];
+
   // Skill lock adjustment state
-  const [releaseSkills, setReleaseSkills] = useState<Array<{ skill: 'liveSupport' | 'promoWriting' }>>([]);
-  const [addSkillClaims, setAddSkillClaims] = useState<Array<{ skill: 'liveSupport' | 'promoWriting'; userId: string; userNickname: string }>>([]);
+  const [releaseSkills, setReleaseSkills] = useState<Array<{ skill: SkillType }>>([]);
+  const [addSkillClaims, setAddSkillClaims] = useState<Array<{ skill: SkillType; userId: string; userNickname: string }>>([]);
 
   // Release confirmation dialog
-  const [releaseDialogSkill, setReleaseDialogSkill] = useState<'liveSupport' | 'promoWriting' | null>(null);
+  const [releaseDialogSkill, setReleaseDialogSkill] = useState<SkillType | null>(null);
 
   // Assign selector dialog
-  const [assignDialogSkill, setAssignDialogSkill] = useState<'liveSupport' | 'promoWriting' | null>(null);
+  const [assignDialogSkill, setAssignDialogSkill] = useState<SkillType | null>(null);
   const [uglUsers, setUglUsers] = useState<UserListItem[]>([]);
   const [uglUsersLoading, setUglUsersLoading] = useState(false);
 
   // Confirm modal
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showDeletionConfirm, setShowDeletionConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // Computed points values
@@ -179,15 +185,21 @@ export default function BatchAdjustPage() {
     return addedDelta + removedDelta + retainedDelta;
   }, [addedUserIds, removedUserIds, retainedUserIds, autoPoints, originalPoints]);
 
+  // Deletion mode: all recipients removed from an existing record
+  const isDeletionMode = useMemo(() => {
+    return selectedIds.size === 0 && originalRecord !== null;
+  }, [selectedIds, originalRecord]);
+
   // Has changes?
   const hasChanges = useMemo(() => {
     if (!originalRecord) return false;
+    if (isDeletionMode) return true;
     if (addedUserIds.size > 0 || removedUserIds.size > 0) return true;
     if (targetRole !== originalRecord.targetRole) return true;
     if (targetRole === 'Speaker' && speakerType !== originalRecord.speakerType) return true;
     if (releaseSkills.length > 0 || addSkillClaims.length > 0) return true;
     return false;
-  }, [originalRecord, addedUserIds, removedUserIds, targetRole, speakerType, releaseSkills, addSkillClaims]);
+  }, [originalRecord, isDeletionMode, addedUserIds, removedUserIds, targetRole, speakerType, releaseSkills, addSkillClaims]);
 
   // Skill points delta calculation
   const skillPointsDelta = useMemo(() => {
@@ -198,9 +210,10 @@ export default function BatchAdjustPage() {
     }
     for (const add of addSkillClaims) {
       // Use the pointsRuleConfig for new assignments (current config value)
-      const pts = add.skill === 'liveSupport'
-        ? pointsRuleConfig.liveSupportPoints || 30
-        : pointsRuleConfig.promoWritingPoints || 30;
+      const pts =
+        add.skill === 'liveSupport' ? (pointsRuleConfig.liveSupportPoints || 30)
+        : add.skill === 'posterDesign' ? (pointsRuleConfig.posterDesignPoints || 30)
+        : (pointsRuleConfig.articleEditingPoints || 30);
       delta += pts;
     }
     return delta;
@@ -235,7 +248,10 @@ export default function BatchAdjustPage() {
       });
       const record = res.distribution;
       setOriginalRecord(record);
-      setTargetRole(record.targetRole);
+      // batch-adjust only supports identity-points roles; SpecialActivity is excluded
+      if (record.targetRole !== 'SpecialActivity') {
+        setTargetRole(record.targetRole);
+      }
       setSpeakerType(record.speakerType || null);
       setSelectedIds(new Set(record.recipientIds));
     } catch (err) {
@@ -280,7 +296,7 @@ export default function BatchAdjustPage() {
   }, []);
 
   // Skill lock interaction handlers
-  const handleReleaseClick = (skill: 'liveSupport' | 'promoWriting') => {
+  const handleReleaseClick = (skill: SkillType) => {
     setReleaseDialogSkill(skill);
   };
 
@@ -300,7 +316,7 @@ export default function BatchAdjustPage() {
     setReleaseDialogSkill(null);
   };
 
-  const handleAssignClick = (skill: 'liveSupport' | 'promoWriting') => {
+  const handleAssignClick = (skill: SkillType) => {
     setAssignDialogSkill(skill);
     fetchUglUsers();
   };
@@ -440,34 +456,47 @@ export default function BatchAdjustPage() {
   const isSpeakerTypeValid = targetRole !== 'Speaker' || !!speakerType;
 
   // Validation
-  const canSubmit = !!originalRecord && (selectedIds.size > 0 || releaseSkills.length > 0 || addSkillClaims.length > 0) && (autoPoints > 0 || releaseSkills.length > 0 || addSkillClaims.length > 0) && hasChanges && !volunteerLimitExceeded && isSpeakerTypeValid;
+  const canSubmit = !!originalRecord && (isDeletionMode || (selectedIds.size > 0 || releaseSkills.length > 0 || addSkillClaims.length > 0)) && (isDeletionMode || autoPoints > 0 || releaseSkills.length > 0 || addSkillClaims.length > 0) && hasChanges && !volunteerLimitExceeded && (isDeletionMode || isSpeakerTypeValid);
 
   const handleOpenConfirm = () => {
     if (!canSubmit) return;
-    setShowConfirm(true);
+    if (isDeletionMode) {
+      setShowDeletionConfirm(true);
+    } else {
+      setShowConfirm(true);
+    }
   };
 
   const handleCloseConfirm = () => {
     setShowConfirm(false);
   };
 
+  const handleCloseDeletionConfirm = () => {
+    setShowDeletionConfirm(false);
+  };
+
   const handleSubmit = async () => {
     if (!canSubmit || submitting || !originalRecord) return;
     setSubmitting(true);
     try {
-      await request({
+      const res = await request<{ deleted?: boolean; distributionId?: string; reversedCount?: number }>({
         url: `/api/admin/batch-points/${distributionId}/adjust`,
         method: 'POST',
         data: {
-          recipientIds: Array.from(selectedIds),
+          recipientIds: isDeletionMode ? [] : Array.from(selectedIds),
           targetRole,
           ...(targetRole === 'Speaker' && speakerType ? { speakerType } : {}),
           ...(releaseSkills.length > 0 ? { releaseSkills } : {}),
           ...(addSkillClaims.length > 0 ? { addSkillClaims: addSkillClaims.map((a) => ({ skill: a.skill, userId: a.userId })) } : {}),
         },
       });
-      Taro.showToast({ title: t('batchPoints.adjust.successToast' as any), icon: 'none' });
+      if (res.deleted) {
+        Taro.showToast({ title: t('batchPoints.adjust.deletionSuccessToast' as any), icon: 'none' });
+      } else {
+        Taro.showToast({ title: t('batchPoints.adjust.successToast' as any), icon: 'none' });
+      }
       setShowConfirm(false);
+      setShowDeletionConfirm(false);
       setTimeout(() => {
         goBack('/pages/admin/batch-history');
       }, 1000);
@@ -511,34 +540,25 @@ export default function BatchAdjustPage() {
     return String(delta);
   };
 
-  // Skill lock occupant lookup (considering pending changes)
-  const liveSupportClaim = useMemo(
-    () => skillClaims.find((c) => c.skill === 'liveSupport') || null,
-    [skillClaims],
-  );
-  const promoWritingClaim = useMemo(
-    () => skillClaims.find((c) => c.skill === 'promoWriting') || null,
-    [skillClaims],
-  );
-
-  // Effective skill lock state (after pending release/assign)
-  const effectiveLiveSupport = useMemo(() => {
-    if (releaseSkills.some((r) => r.skill === 'liveSupport')) return null;
-    const added = addSkillClaims.find((a) => a.skill === 'liveSupport');
+  // Effective skill claim state by skill (after pending release/assign)
+  const effectiveSkillClaim = (skill: SkillType): { userNickname: string; pointsAwarded: number; isNew: boolean } | null => {
+    if (releaseSkills.some((r) => r.skill === skill)) return null;
+    const added = addSkillClaims.find((a) => a.skill === skill);
     if (added) return { userNickname: added.userNickname, pointsAwarded: 0, isNew: true };
-    return liveSupportClaim ? { ...liveSupportClaim, isNew: false } : null;
-  }, [liveSupportClaim, releaseSkills, addSkillClaims]);
-
-  const effectivePromoWriting = useMemo(() => {
-    if (releaseSkills.some((r) => r.skill === 'promoWriting')) return null;
-    const added = addSkillClaims.find((a) => a.skill === 'promoWriting');
-    if (added) return { userNickname: added.userNickname, pointsAwarded: 0, isNew: true };
-    return promoWritingClaim ? { ...promoWritingClaim, isNew: false } : null;
-  }, [promoWritingClaim, releaseSkills, addSkillClaims]);
+    const claim = skillClaims.find((c) => c.skill === skill);
+    return claim ? { ...claim, isNew: false } : null;
+  };
 
   // Get skill display name
-  const getSkillName = (skill: 'liveSupport' | 'promoWriting') => {
+  const getSkillName = (skill: SkillType) => {
     return t(`skillClaims.skillName.${skill}` as any);
+  };
+
+  // Get configured points for a skill type (snapshot at write time may differ for releases)
+  const getSkillPoints = (skill: SkillType): number => {
+    if (skill === 'liveSupport') return pointsRuleConfig.liveSupportPoints || 30;
+    if (skill === 'posterDesign') return pointsRuleConfig.posterDesignPoints || 30;
+    return pointsRuleConfig.articleEditingPoints || 30;
   };
 
   // Release dialog claim info
@@ -615,72 +635,43 @@ export default function BatchAdjustPage() {
                 </View>
               ) : (
                 <View className='ba-skill-locks__grid'>
-                  {/* liveSupport row */}
-                  <View className='ba-skill-locks__row'>
-                    <Text className='ba-skill-locks__skill-label'>{t('skillClaims.skillName.liveSupport')}</Text>
-                    <View className='ba-skill-locks__right'>
-                      {effectiveLiveSupport ? (
-                        <>
-                          <Text className='ba-skill-locks__occupant ba-skill-locks__occupant--occupied'>
-                            {effectiveLiveSupport.userNickname}
-                          </Text>
-                          {!effectiveLiveSupport.isNew && (
-                            <View
-                              className='btn-danger ba-skill-locks__btn'
-                              onClick={() => handleReleaseClick('liveSupport')}
-                            >
-                              <Text>{t('skillClaims.adjust.release')}</Text>
-                            </View>
+                  {ORDERED_SKILLS.map((skill) => {
+                    const eff = effectiveSkillClaim(skill);
+                    return (
+                      <View key={skill} className='ba-skill-locks__row'>
+                        <Text className='ba-skill-locks__skill-label'>{t(`skillClaims.skillName.${skill}` as any)}</Text>
+                        <View className='ba-skill-locks__right'>
+                          {eff ? (
+                            <>
+                              <Text className='ba-skill-locks__occupant ba-skill-locks__occupant--occupied'>
+                                {eff.userNickname}
+                              </Text>
+                              {!eff.isNew && (
+                                <View
+                                  className='btn-danger ba-skill-locks__btn'
+                                  onClick={() => handleReleaseClick(skill)}
+                                >
+                                  <Text>{t('skillClaims.adjust.release')}</Text>
+                                </View>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <Text className='ba-skill-locks__occupant ba-skill-locks__occupant--empty'>
+                                {t('skillClaims.adjust.notOccupied')}
+                              </Text>
+                              <View
+                                className='btn-primary ba-skill-locks__btn'
+                                onClick={() => handleAssignClick(skill)}
+                              >
+                                <Text>{t('skillClaims.adjust.assign')}</Text>
+                              </View>
+                            </>
                           )}
-                        </>
-                      ) : (
-                        <>
-                          <Text className='ba-skill-locks__occupant ba-skill-locks__occupant--empty'>
-                            {t('skillClaims.adjust.notOccupied')}
-                          </Text>
-                          <View
-                            className='btn-primary ba-skill-locks__btn'
-                            onClick={() => handleAssignClick('liveSupport')}
-                          >
-                            <Text>{t('skillClaims.adjust.assign')}</Text>
-                          </View>
-                        </>
-                      )}
-                    </View>
-                  </View>
-                  {/* promoWriting row */}
-                  <View className='ba-skill-locks__row'>
-                    <Text className='ba-skill-locks__skill-label'>{t('skillClaims.skillName.promoWriting')}</Text>
-                    <View className='ba-skill-locks__right'>
-                      {effectivePromoWriting ? (
-                        <>
-                          <Text className='ba-skill-locks__occupant ba-skill-locks__occupant--occupied'>
-                            {effectivePromoWriting.userNickname}
-                          </Text>
-                          {!effectivePromoWriting.isNew && (
-                            <View
-                              className='btn-danger ba-skill-locks__btn'
-                              onClick={() => handleReleaseClick('promoWriting')}
-                            >
-                              <Text>{t('skillClaims.adjust.release')}</Text>
-                            </View>
-                          )}
-                        </>
-                      ) : (
-                        <>
-                          <Text className='ba-skill-locks__occupant ba-skill-locks__occupant--empty'>
-                            {t('skillClaims.adjust.notOccupied')}
-                          </Text>
-                          <View
-                            className='btn-primary ba-skill-locks__btn'
-                            onClick={() => handleAssignClick('promoWriting')}
-                          >
-                            <Text>{t('skillClaims.adjust.assign')}</Text>
-                          </View>
-                        </>
-                      )}
-                    </View>
-                  </View>
+                        </View>
+                      </View>
+                    );
+                  })}
                 </View>
               )}
 
@@ -704,9 +695,7 @@ export default function BatchAdjustPage() {
                     ) : null;
                   })}
                   {addSkillClaims.map((add) => {
-                    const pts = add.skill === 'liveSupport'
-                      ? pointsRuleConfig.liveSupportPoints || 30
-                      : pointsRuleConfig.promoWritingPoints || 30;
+                    const pts = getSkillPoints(add.skill);
                     return (
                       <View key={add.skill} className='ba-skill-locks__diff-row ba-skill-locks__diff-row--positive'>
                         <Text className='ba-skill-locks__diff-text'>
@@ -978,9 +967,7 @@ export default function BatchAdjustPage() {
                     ) : null;
                   })}
                   {addSkillClaims.map((add) => {
-                    const pts = add.skill === 'liveSupport'
-                      ? pointsRuleConfig.liveSupportPoints || 30
-                      : pointsRuleConfig.promoWritingPoints || 30;
+                    const pts = getSkillPoints(add.skill);
                     return (
                       <View key={add.skill} className='ba-confirm__diff-row'>
                         <Text className='ba-confirm__diff-label'>
@@ -1024,6 +1011,57 @@ export default function BatchAdjustPage() {
                 onClick={handleSubmit}
               >
                 <Text>{submitting ? t('batchPoints.adjust.submitting' as any) : t('batchPoints.adjust.confirmSubmit' as any)}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Deletion Confirmation Dialog */}
+      {showDeletionConfirm && originalRecord && (
+        <View className='form-overlay'>
+          <View className='form-modal ba-confirm--deletion'>
+            <View className='form-modal__header'>
+              <Text className='form-modal__title'>{t('batchPoints.adjust.deletionConfirmTitle' as any)}</Text>
+              <View className='form-modal__close' onClick={handleCloseDeletionConfirm}><Text>✕</Text></View>
+            </View>
+            <View className='form-modal__body'>
+              <View className='ba-confirm--deletion__warning'>
+                <Text className='ba-confirm--deletion__warning-icon'>⚠</Text>
+                <Text className='ba-confirm--deletion__warning-text'>
+                  {(t('batchPoints.adjust.deletionConfirmMessage' as any) as string)
+                    .replace('{activityTopic}', originalRecord.activityTopic || '-')
+                    .replace('{activityDate}', originalRecord.activityDate || '-')
+                    .replace('{count}', String(originalRecord.recipientIds?.length || 0))
+                    .replace('{points}', String(originalPoints))}
+                </Text>
+              </View>
+              <View className='ba-confirm--deletion__info'>
+                <View className='ba-confirm__diff-row'>
+                  <Text className='ba-confirm__diff-label'>{t('batchPoints.adjust.confirmRemovedUsers' as any)}</Text>
+                  <Text className='ba-confirm__diff-value ba-confirm__diff-value--removed'>{originalRecord.recipientIds?.length || 0}</Text>
+                </View>
+                <View className='ba-confirm__diff-row'>
+                  <Text className='ba-confirm__diff-label'>{t('batchPoints.adjust.confirmOriginalPointsPerPerson' as any)}</Text>
+                  <Text className='ba-confirm__diff-value'>{originalPoints} {t('batchPoints.page.pointsUnit')}</Text>
+                </View>
+                <View className='ba-confirm__diff-row ba-confirm__diff-row--highlight'>
+                  <Text className='ba-confirm__diff-label'>{t('batchPoints.adjust.confirmTotalDelta' as any)}</Text>
+                  <Text className='ba-confirm__diff-value ba-confirm__diff-value--removed'>
+                    -{(originalRecord.recipientIds?.length || 0) * originalPoints} {t('batchPoints.page.pointsUnit')}
+                  </Text>
+                </View>
+              </View>
+            </View>
+            <View className='form-modal__actions'>
+              <View className='form-modal__cancel' onClick={handleCloseDeletionConfirm}>
+                <Text>{t('batchPoints.adjust.confirmCancel' as any)}</Text>
+              </View>
+              <View
+                className={`form-modal__submit form-modal__submit--danger ${submitting ? 'form-modal__submit--loading' : ''}`}
+                onClick={handleSubmit}
+              >
+                <Text>{submitting ? t('batchPoints.adjust.submitting' as any) : t('batchPoints.adjust.deletionConfirmButton' as any)}</Text>
               </View>
             </View>
           </View>

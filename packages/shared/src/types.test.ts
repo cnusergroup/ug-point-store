@@ -312,7 +312,7 @@ describe('isSuperAdmin', () => {
 describe('error codes', () => {
   it('defines all error codes', () => {
     const codes = Object.keys(ErrorCodes);
-    expect(codes).toHaveLength(98);
+    expect(codes).toHaveLength(108);
   });
 
   it('each error code has a corresponding HTTP status', () => {

@@ -18,6 +18,8 @@ import { executeAdjustment, type AdjustmentInput } from './batch-points-adjust';
 import { reviewClaim, listAllClaims } from '../claims/review';
 import { reviewContent, listAllContent, deleteContent, createCategory, updateCategory, deleteCategory } from '../content/admin';
 import { listAllTags, mergeTags, deleteTag } from '../content/admin-tags';
+import { searchAwardTags, getHotAwardTags, createAwardTag, deleteAwardTag, normalizeTagName } from './award-tags';
+import { executeSpecialActivityDistribution } from './special-activity-award';
 import { updateFeatureToggles, getFeatureToggles, updateContentRolePermissions } from '../settings/feature-toggles';
 import type { PointsRuleConfig } from '../settings/feature-toggles';
 import { checkReviewPermission } from '../content/content-permission';
@@ -48,6 +50,7 @@ import {
   queryInviteConversion,
   queryEmployeeEngagement,
 } from '../reports/insight-query';
+import { queryInactiveUGLs } from '../reports/inactive-ugl-query';
 
 // Create client outside handler for Lambda container reuse
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -78,6 +81,7 @@ const UGS_TABLE = process.env.UGS_TABLE ?? '';
 const ACTIVITIES_TABLE = process.env.ACTIVITIES_TABLE ?? '';
 const SYNC_FUNCTION_NAME = process.env.SYNC_FUNCTION_NAME ?? '';
 const ACTIVITY_SKILL_CLAIMS_TABLE = process.env.ACTIVITY_SKILL_CLAIMS_TABLE ?? '';
+const AWARD_TAGS_TABLE = process.env.AWARD_TAGS_TABLE ?? '';
 
 const CORS_HEADERS = {
   'Content-Type': 'application/json',
@@ -129,6 +133,7 @@ const BATCH_POINTS_HISTORY_DETAIL_REGEX = /^\/api\/admin\/batch-points\/history\
 const BATCH_POINTS_ADJUST_REGEX = /^\/api\/admin\/batch-points\/([^/]+)\/adjust$/;
 const TRAVEL_REVIEW_REGEX = /^\/api\/admin\/travel\/([^/]+)\/review$/;
 const TAGS_DELETE_REGEX = /^\/api\/admin\/tags\/([^/]+)$/;
+const AWARD_TAG_BY_ID_REGEX = /^\/api\/admin\/award-tags\/([^/]+)$/;
 const EMAIL_TEMPLATES_UPDATE_REGEX = /^\/api\/admin\/email-templates\/([^/]+)\/([^/]+)$/;
 const UGS_STATUS_REGEX = /^\/api\/admin\/ugs\/([^/]+)\/status$/;
 const UGS_RENAME_REGEX = /^\/api\/admin\/ugs\/([^/]+)$/;
@@ -288,10 +293,15 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
 
     // POST /api/admin/images/upload-url — temp upload for product creation (no productId needed)
     if (path === '/api/admin/images/upload-url') {
-      if (!isSuperAdmin(event.user.roles as UserRole[])) {
-        const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
-        if (!checkProductPermission(event.user.roles, toggles.adminProductsEnabled, event.user.userId, toggles.productManagementMode, toggles.productManagerIds)) {
-          return errorResponse('FORBIDDEN', '管理员暂无商品管理权限', 403);
+      const body = parseBody(event);
+      const purpose = (body as Record<string, unknown>)?.purpose as string | undefined;
+      // Wish pool uses this endpoint for reference image upload — only requires authenticated user
+      if (purpose !== 'wish') {
+        if (!isSuperAdmin(event.user.roles as UserRole[])) {
+          const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
+          if (!checkProductPermission(event.user.roles, toggles.adminProductsEnabled, event.user.userId, toggles.productManagementMode, toggles.productManagerIds)) {
+            return errorResponse('FORBIDDEN', '管理员暂无商品管理权限', 403);
+          }
         }
       }
       return await handleGetTempUploadUrl(event);
@@ -334,6 +344,13 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
       }
       return await handleMergeTags(event);
     }
+    // POST /api/admin/award-tags — SuperAdmin only (create AwardTag)
+    if (path === '/api/admin/award-tags') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleCreateAwardTag(event);
+    }
     if (path === '/api/admin/superadmin/transfer') {
       if (!isSuperAdmin(event.user.roles as UserRole[])) {
         return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
@@ -358,6 +375,14 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
         return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
       }
       return await handleQuarterlyAward(event);
+    }
+
+    // POST /api/admin/special-activity-award — SuperAdmin only
+    if (path === '/api/admin/special-activity-award') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleSpecialActivityAward(event);
     }
 
     // POST /api/admin/ugs — SuperAdmin only
@@ -466,6 +491,22 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
 
   if (method === 'GET' && path === '/api/admin/tags') {
     return await handleListAllTags();
+  }
+
+  // GET /api/admin/award-tags/hot — SuperAdmin only (must check before prefix match)
+  if (method === 'GET' && path === '/api/admin/award-tags/hot') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handleGetHotAwardTags();
+  }
+
+  // GET /api/admin/award-tags?prefix=...&limit=10 — SuperAdmin only
+  if (method === 'GET' && path === '/api/admin/award-tags') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handleSearchAwardTags(event);
   }
 
   // GET /api/admin/ugs/my-ugs — Admin/SuperAdmin
@@ -618,6 +659,14 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     return await handleEmployeeEngagementReport(event);
   }
 
+  // GET /api/admin/reports/inactive-ugl — SuperAdmin only
+  if (method === 'GET' && path === '/api/admin/reports/inactive-ugl') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handleInactiveUGLReport(event);
+  }
+
   // PATCH routes
   if (method === 'PATCH') {
     const codesMatch = path.match(CODES_DISABLE_REGEX);
@@ -695,6 +744,15 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
         return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限');
       }
       return await handleDeleteTag(tagsDeleteMatch[1]);
+    }
+
+    // DELETE /api/admin/award-tags/:tagId — SuperAdmin only
+    const awardTagDeleteMatch = path.match(AWARD_TAG_BY_ID_REGEX);
+    if (awardTagDeleteMatch && path.startsWith('/api/admin/award-tags/')) {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleDeleteAwardTag(awardTagDeleteMatch[1]);
     }
 
     const deleteImageMatch = path.match(PRODUCTS_DELETE_IMAGE_REGEX);
@@ -1267,7 +1325,7 @@ async function handleBatchDistribution(event: AuthenticatedEvent): Promise<APIGa
     return errorResponse(validation.error.code, validation.error.message, 400);
   }
 
-  const { userIds, points, reason, targetRole, activityId, activityType, activityUG, activityTopic, activityDate, speakerType } = body as Record<string, unknown>;
+  const { userIds, points, reason, targetRole, activityId, activityType, activityUG, activityTopic, activityDate, speakerType, skillClaims } = body as Record<string, unknown>;
 
   // Fetch distributor's nickname from Users table
   const distributorResult = await dynamoClient.send(
@@ -1289,6 +1347,7 @@ async function handleBatchDistribution(event: AuthenticatedEvent): Promise<APIGa
       activityUG: activityUG as string,
       activityTopic: activityTopic as string,
       activityDate: activityDate as string,
+      skillClaims: skillClaims as { skill: 'liveSupport' | 'posterDesign' | 'articleEditing'; userId: string }[] | undefined,
     },
     dynamoClient,
     {
@@ -1384,6 +1443,15 @@ async function handleBatchPointsAdjust(distributionId: string, event: Authentica
     return errorResponse(result.error!.code, result.error!.message);
   }
 
+  if (result.deleted) {
+    return jsonResponse(200, {
+      message: '发放记录已删除',
+      deleted: true,
+      distributionId: result.distributionId,
+      reversedCount: result.reversedCount,
+    });
+  }
+
   return jsonResponse(200, { message: '调整成功' });
 }
 
@@ -1404,6 +1472,93 @@ async function handleGetAwardedUsers(event: AuthenticatedEvent): Promise<APIGate
 
   const userIds = await getAwardedUserIds(activityId, targetRole, dynamoClient, BATCH_DISTRIBUTIONS_TABLE);
   return jsonResponse(200, { userIds });
+}
+
+// ---- Special Activity Award Handler ----
+
+async function handleSpecialActivityAward(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || typeof body !== 'object') {
+    return errorResponse('INVALID_REQUEST', '请求体无效', 400);
+  }
+
+  const { activityId, points, awardTagName, userIds, awardDate } = body as Record<string, unknown>;
+
+  // Fetch distributor nickname (executeSpecialActivityDistribution will perform full input
+  // validation; here we just assemble the input).
+  const distributorResult = await dynamoClient.send(
+    new GetCommand({ TableName: USERS_TABLE, Key: { userId: event.user.userId }, ProjectionExpression: 'nickname' }),
+  );
+  const distributorNickname = (distributorResult.Item?.nickname as string | undefined) ?? '';
+
+  const result = await executeSpecialActivityDistribution(
+    {
+      activityId: activityId as string,
+      points: points as number,
+      awardTagName: awardTagName as string,
+      userIds: userIds as string[],
+      awardDate: awardDate as string,
+      distributorId: event.user.userId,
+      distributorNickname,
+    },
+    dynamoClient,
+    {
+      usersTable: USERS_TABLE,
+      pointsRecordsTable: POINTS_RECORDS_TABLE,
+      batchDistributionsTable: BATCH_DISTRIBUTIONS_TABLE,
+      activitiesTable: ACTIVITIES_TABLE,
+      awardTagsTable: AWARD_TAGS_TABLE,
+    },
+  );
+
+  if (!result.success) {
+    const code = result.error!.code;
+    // Per design.md "Backend API Contract":
+    //   INVALID_REQUEST / ACTIVITY_NOT_FOUND / DUPLICATE_AWARD_TAG_DISTRIBUTION / BATCH_TOO_LARGE -> 400
+    //   INTERNAL_ERROR -> 500
+    const statusCode = code === 'INTERNAL_ERROR' ? 500 : 400;
+    // For DUPLICATE_AWARD_TAG_DISTRIBUTION the error object carries duplicateUserIds —
+    // pass the whole error through so the client can highlight conflicting users.
+    return jsonResponse(statusCode, result.error);
+  }
+
+  // Best-effort email notifications — mirror handleQuarterlyAward pattern:
+  // sequential per-user GetCommand + sendPointsEarnedEmail wrapped in try/catch so a
+  // single failure neither blocks subsequent emails nor the 201 response.
+  // (design.md "邮件通知集成"; requirements 11.1–11.4)
+  try {
+    const notificationCtx: NotificationContext = {
+      sesClient,
+      dynamoClient,
+      emailTemplatesTable: EMAIL_TEMPLATES_TABLE,
+      usersTable: USERS_TABLE,
+      senderEmail: 'store@awscommunity.cn',
+    };
+    const uniqueUserIds = [...new Set(userIds as string[])];
+    for (const userId of uniqueUserIds) {
+      try {
+        const userBalanceResult = await dynamoClient.send(
+          new GetCommand({ TableName: USERS_TABLE, Key: { userId }, ProjectionExpression: 'points' }),
+        );
+        const currentBalance = userBalanceResult.Item?.points ?? 0;
+        // source='特殊活动' matches design.md "邮件通知集成" — reuses the existing
+        // points_earned template, no new template introduced.
+        await sendPointsEarnedEmail(notificationCtx, userId, points as number, '特殊活动', currentBalance);
+      } catch (emailErr) {
+        console.error(`[Email] Failed to send special-activity-award email to user ${userId}:`, emailErr);
+      }
+    }
+  } catch (err) {
+    console.error('[Email] Failed to send special-activity-award emails:', err);
+  }
+
+  return jsonResponse(201, {
+    distributionId: result.distributionId,
+    successCount: result.successCount,
+    totalPoints: result.totalPoints,
+    awardTagId: result.awardTagId,
+    awardTagName: result.awardTagName,
+  });
 }
 
 // ---- Quarterly Award Handler ----
@@ -1516,8 +1671,21 @@ async function handleListDistributionHistory(event: AuthenticatedEvent): Promise
     ? undefined
     : event.user.userId;
 
+  // Optional filters: activityType (e.g. '特殊活动') and awardTagName (normalized).
+  // Both are forwarded to listDistributionHistory which composes them as
+  // FilterExpression clauses on the createdAt-index GSI query.
+  const activityType = event.queryStringParameters?.activityType;
+  const rawAwardTagName = event.queryStringParameters?.awardTagName;
+  const awardTagName = rawAwardTagName ? normalizeTagName(rawAwardTagName) : undefined;
+
   const result = await listDistributionHistory(
-    { pageSize, lastKey, distributorId },
+    {
+      pageSize,
+      lastKey,
+      distributorId,
+      ...(activityType && { activityType }),
+      ...(awardTagName && { awardTagName }),
+    },
     dynamoClient,
     BATCH_DISTRIBUTIONS_TABLE,
   );
@@ -1759,6 +1927,7 @@ async function handleGetTempUploadUrl(event: AuthenticatedEvent): Promise<APIGat
     {
       fileName: body.fileName as string,
       contentType: body.contentType as string,
+      purpose: body.purpose as string | undefined,
     },
     s3Client,
     IMAGES_BUCKET,
@@ -1909,6 +2078,62 @@ async function handleDeleteTag(tagId: string): Promise<APIGatewayProxyResult> {
   }
 
   return jsonResponse(200, { message: '标签已删除' });
+}
+
+// ---- AwardTag Management Route Handlers (special-activity-award) ----
+
+async function handleSearchAwardTags(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const prefix = event.queryStringParameters?.prefix ?? '';
+  const limitStr = event.queryStringParameters?.limit;
+  const limit = limitStr ? parseInt(limitStr, 10) : 10;
+
+  const result = await searchAwardTags(prefix, limit, dynamoClient, AWARD_TAGS_TABLE);
+
+  return jsonResponse(200, { tags: result.tags });
+}
+
+async function handleGetHotAwardTags(): Promise<APIGatewayProxyResult> {
+  const result = await getHotAwardTags(dynamoClient, AWARD_TAGS_TABLE);
+
+  return jsonResponse(200, { tags: result.tags });
+}
+
+async function handleCreateAwardTag(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || typeof body.displayName !== 'string') {
+    return errorResponse('INVALID_REQUEST', 'Missing required field: displayName', 400);
+  }
+
+  const result = await createAwardTag(
+    {
+      displayName: body.displayName,
+      createdBy: event.user.userId,
+    },
+    dynamoClient,
+    AWARD_TAGS_TABLE,
+  );
+
+  if (!result.success) {
+    const code = result.error!.code;
+    // 409 for TAG_ALREADY_EXISTS, otherwise default mapping (400 for INVALID_REQUEST)
+    const statusCode = code === 'TAG_ALREADY_EXISTS' ? 409 : 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(201, { tag: result.tag });
+}
+
+async function handleDeleteAwardTag(tagId: string): Promise<APIGatewayProxyResult> {
+  const result = await deleteAwardTag(tagId, dynamoClient, AWARD_TAGS_TABLE);
+
+  if (!result.success) {
+    const code = result.error!.code;
+    // TAG_NOT_FOUND -> 404, TAG_IN_USE -> 400
+    const statusCode = code === 'TAG_NOT_FOUND' ? 404 : 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { message: '奖项标签已删除' });
 }
 
 // ---- SuperAdmin Transfer Route Handler ----
@@ -2920,6 +3145,7 @@ async function handleReportExport(event: AuthenticatedEvent): Promise<APIGateway
       contentCategoriesTable: CONTENT_CATEGORIES_TABLE,
       travelApplicationsTable: TRAVEL_APPLICATIONS_TABLE,
       invitesTable: INVITES_TABLE,
+      ugsTable: UGS_TABLE,
     },
     IMAGES_BUCKET,
     Date.now(),
@@ -3064,6 +3290,24 @@ async function handleEmployeeEngagementReport(event: AuthenticatedEvent): Promis
   }
 
   return jsonResponse(200, { summary: result.summary, records: result.records });
+}
+
+async function handleInactiveUGLReport(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const query = event.queryStringParameters ?? {};
+  const quarter = query.quarter || undefined;
+
+  const result = await queryInactiveUGLs(
+    { quarter },
+    dynamoClient,
+    { usersTable: USERS_TABLE, pointsRecordsTable: POINTS_RECORDS_TABLE, ugsTable: UGS_TABLE },
+  );
+
+  if (!result.success) {
+    const statusCode = result.error?.code === 'INTERNAL_ERROR' ? 500 : 400;
+    return jsonResponse(statusCode, result);
+  }
+
+  return jsonResponse(200, result);
 }
 
 // ---- Website Sync Config Route Handlers ----

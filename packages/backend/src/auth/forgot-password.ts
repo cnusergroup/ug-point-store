@@ -72,8 +72,9 @@ export async function forgotPassword(
         },
       }),
     );
-  } catch {
-    // SES failure: still return success (anti-enumeration)
+  } catch (emailErr) {
+    // SES failure: still return success (anti-enumeration), but log for debugging
+    console.error('[ForgotPassword] Failed to send reset email:', emailErr);
   }
 
   // 7. Return success

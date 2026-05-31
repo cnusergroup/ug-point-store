@@ -544,6 +544,8 @@ export interface TranslationDict {
       batchPointsDesc: string;
       batchHistoryTitle: string;
       batchHistoryDesc: string;
+      specialActivityAwardTitle: string;
+      specialActivityAwardDesc: string;
       travelTitle: string;
       travelDesc: string;
       tagsTitle: string;
@@ -1056,6 +1058,7 @@ export interface TranslationDict {
       colParticipantCount: string;
       colRank: string;
       colTotalEarnPoints: string;
+      colTotalEarnSpecialActivity: string;
       colRole: string;
       colActivityDate: string;
       colUGLCount: string;
@@ -1622,6 +1625,15 @@ export interface TranslationDict {
       adjustedAt: string;
       adjustedBy: string;
       adjustButton: string;
+      activityTypeFilterLabel: string;
+      activityTypeAll: string;
+      activityTypeOnline: string;
+      activityTypeOffline: string;
+      activityTypeQuarterly: string;
+      activityTypeSpecial: string;
+      awardTagFilterPlaceholder: string;
+      awardTagLabel: string;
+      roleSpecialActivity: string;
     };
   };
   ugManagement: {
@@ -1834,6 +1846,7 @@ export interface TranslationDict {
     roleSpeaker: string;
     roleLeader: string;
     roleVolunteer: string;
+    roleSpecialActivity: string;
     rank: string;
     nickname: string;
     earnTotal: string;
@@ -2020,13 +2033,17 @@ export interface TranslationDict {
   skillClaims: {
     skillName: {
       liveSupport: string;
-      promoWriting: string;
+      posterDesign: string;
+      articleEditing: string;
     };
     skillIcon: {
       liveSupport: {
         tooltip: string;
       };
-      promoWriting: {
+      posterDesign: {
+        tooltip: string;
+      };
+      articleEditing: {
         tooltip: string;
       };
       occupied: string;
@@ -2055,12 +2072,67 @@ export interface TranslationDict {
     };
     settings: {
       liveSupportPoints: string;
-      promoWritingPoints: string;
+      posterDesignPoints: string;
+      articleEditingPoints: string;
       skillPointsHelp: string;
     };
     history: {
       skillDetailHeader: string;
       pointsUnit: string;
     };
+  };
+  awardTagPicker: {
+    placeholder: string;
+    noHotTags: string;
+    noMatch: string;
+    usageCount: string;
+    createNew: string;
+  };
+  specialActivityAward: {
+    title: string;
+    backButton: string;
+    formCardTitle: string;
+    activityLabel: string;
+    awardDateLabel: string;
+    pointsLabel: string;
+    pointsPlaceholder: string;
+    awardTagLabel: string;
+    awardTagHint: string;
+    userSectionTitle: string;
+    selectAll: string;
+    deselectAll: string;
+    searchPlaceholder: string;
+    noUsers: string;
+    noUsersSearch: string;
+    loading: string;
+    loadMore: string;
+    pickDateHint: string;
+    awardedBadge: string;
+    submitButton: string;
+    submitting: string;
+    confirmTitle: string;
+    confirmActivity: string;
+    confirmAwardDate: string;
+    confirmAwardTagName: string;
+    confirmCount: string;
+    confirmPointsPerPerson: string;
+    confirmTotalPoints: string;
+    confirmCancel: string;
+    confirmSubmit: string;
+    successToast: string;
+    errorBatchTooLarge: string;
+    errorMissingActivity: string;
+    errorMissingPoints: string;
+    errorMissingAwardTag: string;
+    errorMissingUsers: string;
+    errorMissingDate: string;
+    errorPointsInvalid: string;
+    errorActivityNotFound: string;
+    errorDuplicateAwardTagDistribution: string;
+    errorTagInUse: string;
+    errorTagAlreadyExists: string;
+    errorInvalidRequest: string;
+    errorForbidden: string;
+    errorDefault: string;
   };
 }

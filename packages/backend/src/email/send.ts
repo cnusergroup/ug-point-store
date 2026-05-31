@@ -42,7 +42,7 @@ export interface BulkSendResult {
 // ============================================================
 
 const DEFAULT_SENDER = 'store@awscommunity.cn';
-const MAX_BCC_RECIPIENTS = 49; // SES limit is 50 total (To + CC + BCC); we use 1 To address
+const MAX_BCC_RECIPIENTS = 50; // SES per-message destination limit
 const INTER_BATCH_DELAY_MS = 100;
 
 // ============================================================

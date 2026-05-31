@@ -11,7 +11,7 @@ import './reports.scss';
 /* ─── Types ─────────────────────────────────────────────── */
 
 type ReportTab = 'points-detail' | 'ug-activity' | 'user-ranking' | 'activity-summary'
-  | 'popular-products' | 'hot-content' | 'content-contributors' | 'inventory-alert' | 'travel-statistics' | 'invite-conversion' | 'employee-engagement';
+  | 'popular-products' | 'hot-content' | 'content-contributors' | 'inventory-alert' | 'travel-statistics' | 'invite-conversion' | 'employee-engagement' | 'inactive-ugl';
 
 interface TabFilterState {
   'points-detail': {
@@ -69,6 +69,9 @@ interface TabFilterState {
     startDate: string;
     endDate: string;
   };
+  'inactive-ugl': {
+    quarter: string;
+  };
 }
 
 interface PointsDetailRecord {
@@ -101,6 +104,8 @@ interface UserRankingRecord {
   totalEarnPoints: number;
   targetRole: string;
   isEmployee?: boolean;
+  /** Special-activity earnings within the filtered date range (backend computes from PointsRecords with targetRole='SpecialActivity') */
+  earnTotalSpecialActivity?: number;
 }
 
 interface ActivitySummaryRecord {
@@ -221,9 +226,10 @@ const REPORT_TABS: { key: ReportTab; labelKey: string }[] = [
   { key: 'travel-statistics', labelKey: 'admin.reports.tabTravelStatistics' },
   { key: 'invite-conversion', labelKey: 'admin.reports.tabInviteConversion' },
   { key: 'employee-engagement', labelKey: 'admin.reports.tabEmployeeEngagement' },
+  { key: 'inactive-ugl', labelKey: 'admin.reports.tabInactiveUGL' },
 ];
 
-const ROLE_OPTIONS = ['UserGroupLeader', 'Speaker', 'Volunteer'];
+const ROLE_OPTIONS = ['UserGroupLeader', 'Speaker', 'Volunteer', 'SpecialActivity'];
 const TYPE_OPTIONS: { value: string; labelKey: string }[] = [
   { value: 'all', labelKey: 'admin.reports.filterTypeAll' },
   { value: 'earn', labelKey: 'admin.reports.filterTypeEarn' },
@@ -253,19 +259,48 @@ const TRAVEL_CATEGORY_OPTIONS: { value: string; labelKey: string }[] = [
   { value: 'international', labelKey: 'admin.reports.filterTravelCategoryInternational' },
 ];
 
+/** Generate available quarter options from 2024-Q1 to current quarter, descending */
+function generateQuarterOptions(): string[] {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentQuarter = Math.ceil((now.getMonth() + 1) / 3);
+  const quarters: string[] = [];
+
+  for (let year = currentYear; year >= 2026; year--) {
+    const maxQ = year === currentYear ? currentQuarter : 4;
+    for (let q = maxQ; q >= 1; q--) {
+      quarters.push(`${year}-Q${q}`);
+    }
+  }
+
+  return quarters;
+}
+
+function getDefaultDateRange(): { startDate: string; endDate: string } {
+  const now = new Date();
+  const end = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const start = `${thirtyDaysAgo.getFullYear()}-${String(thirtyDaysAgo.getMonth() + 1).padStart(2, '0')}-${String(thirtyDaysAgo.getDate()).padStart(2, '0')}`;
+  return { startDate: start, endDate: end };
+}
+
 function getDefaultFilters(): TabFilterState {
+  const { startDate, endDate } = getDefaultDateRange();
+  const now = new Date();
+  const currentQuarter = `${now.getFullYear()}-Q${Math.ceil((now.getMonth() + 1) / 3)}`;
   return {
-    'points-detail': { startDate: '', endDate: '', ugName: '', targetRole: '', activityId: '', type: 'all' },
-    'ug-activity': { startDate: '', endDate: '' },
-    'user-ranking': { startDate: '', endDate: '', targetRole: '' },
-    'activity-summary': { startDate: '', endDate: '', ugName: '' },
-    'popular-products': { startDate: '', endDate: '', productType: 'all' },
-    'hot-content': { startDate: '', endDate: '', categoryId: '' },
-    'content-contributors': { startDate: '', endDate: '' },
+    'points-detail': { startDate, endDate, ugName: '', targetRole: '', activityId: '', type: 'all' },
+    'ug-activity': { startDate, endDate },
+    'user-ranking': { startDate, endDate, targetRole: '' },
+    'activity-summary': { startDate, endDate, ugName: '' },
+    'popular-products': { startDate, endDate, productType: 'all' },
+    'hot-content': { startDate, endDate, categoryId: '' },
+    'content-contributors': { startDate, endDate },
     'inventory-alert': { stockThreshold: '5', productType: 'all', productStatus: 'all' },
-    'travel-statistics': { startDate: '', endDate: '', periodType: 'month', category: 'all' },
-    'invite-conversion': { startDate: '', endDate: '' },
-    'employee-engagement': { startDate: '', endDate: '' },
+    'travel-statistics': { startDate, endDate, periodType: 'month', category: 'all' },
+    'invite-conversion': { startDate, endDate },
+    'employee-engagement': { startDate, endDate },
+    'inactive-ugl': { quarter: currentQuarter },
   };
 }
 
@@ -283,6 +318,7 @@ function tabToReportType(tab: ReportTab): string {
     'travel-statistics': 'travel-statistics',
     'invite-conversion': 'invite-conversion',
     'employee-engagement': 'employee-engagement',
+    'inactive-ugl': 'inactive-ugl',
   };
   return map[tab];
 }
@@ -301,6 +337,7 @@ function tabToEndpoint(tab: ReportTab): string {
     'travel-statistics': '/api/admin/reports/travel-statistics',
     'invite-conversion': '/api/admin/reports/invite-conversion',
     'employee-engagement': '/api/admin/reports/employee-engagement',
+    'inactive-ugl': '/api/admin/reports/inactive-ugl',
   };
   return map[tab];
 }
@@ -335,6 +372,7 @@ function buildQueryString(tab: ReportTab, filters: TabFilterState, lastKey?: str
   if ('productStatus' in f && (f as any).productStatus && (f as any).productStatus !== 'all') params.push(`productStatus=${encodeURIComponent((f as any).productStatus)}`);
   if ('periodType' in f && (f as any).periodType) params.push(`periodType=${encodeURIComponent((f as any).periodType)}`);
   if ('category' in f && (f as any).category && (f as any).category !== 'all') params.push(`category=${encodeURIComponent((f as any).category)}`);
+  if ('quarter' in f && (f as any).quarter) params.push(`quarter=${encodeURIComponent((f as any).quarter)}`);
   if (lastKey) params.push(`lastKey=${encodeURIComponent(lastKey)}`);
 
   return params.length > 0 ? `?${params.join('&')}` : '';
@@ -364,8 +402,8 @@ function FilterPanel({ activeTab, filters, onFilterChange, ugOptions, activityOp
   const showActivity = activeTab === 'points-detail';
   const showType = activeTab === 'points-detail';
 
-  // New insight tabs — date range for all except inventory-alert
-  const showDateRange = activeTab !== 'inventory-alert';
+  // New insight tabs — date range for all except inventory-alert and inactive-ugl
+  const showDateRange = activeTab !== 'inventory-alert' && activeTab !== 'inactive-ugl';
 
   // New insight tab filters
   const showProductType = activeTab === 'popular-products' || activeTab === 'inventory-alert';
@@ -655,6 +693,31 @@ function FilterPanel({ activeTab, filters, onFilterChange, ugOptions, activityOp
         </View>
       )}
 
+      {/* Quarter Selector — inactive-ugl */}
+      {activeTab === 'inactive-ugl' && (() => {
+        const quarterOptions = generateQuarterOptions();
+        const currentQuarterValue = (currentFilters as any).quarter || quarterOptions[0] || '';
+        const selectedQuarterIndex = Math.max(0, quarterOptions.indexOf(currentQuarterValue));
+        return (
+          <View className='report-filter__group'>
+            <Text className='report-filter__label'>{t('admin.reports.inactiveUGL.quarterLabel')}</Text>
+            <Picker
+              mode='selector'
+              range={quarterOptions}
+              value={selectedQuarterIndex}
+              onChange={(e) => {
+                const idx = Number(e.detail.value);
+                onFilterChange(activeTab, 'quarter', quarterOptions[idx]);
+              }}
+            >
+              <View className='report-filter__select'>
+                {currentQuarterValue}
+              </View>
+            </Picker>
+          </View>
+        );
+      })()}
+
       {/* Export Buttons */}
       <View className='report-filter__actions'>
         <View
@@ -711,6 +774,7 @@ function getColumns(tab: ReportTab, t: (key: string) => string): ColumnDef[] {
         { key: 'rank', labelKey: 'admin.reports.colRank', width: '60px', render: (r: UserRankingRecord) => <Text style={{ fontFamily: 'var(--font-display)', fontWeight: '700', color: 'var(--accent-primary)' }}>{r.rank}</Text> },
         { key: 'nickname', labelKey: 'admin.reports.colNickname', width: '160px' },
         { key: 'totalEarnPoints', labelKey: 'admin.reports.colTotalEarnPoints', width: '140px', render: (r: UserRankingRecord) => <Text style={{ fontFamily: 'var(--font-display)', fontWeight: '600' }}>{r.totalEarnPoints}</Text> },
+        { key: 'earnTotalSpecialActivity', labelKey: 'admin.reports.colTotalEarnSpecialActivity', width: '140px', render: (r: UserRankingRecord) => <Text style={{ fontFamily: 'var(--font-display)', fontWeight: '600' }}>{r.earnTotalSpecialActivity ?? 0}</Text> },
         { key: 'targetRole', labelKey: 'admin.reports.colRole', width: '140px' },
         { key: 'isEmployee', labelKey: 'admin.reports.colIsEmployee', width: '80px', render: (r: UserRankingRecord) => <Text className={r.isEmployee ? 'employee-badge' : ''}>{r.isEmployee ? '是' : '否'}</Text> },
       ];
@@ -792,6 +856,14 @@ function getColumns(tab: ReportTab, t: (key: string) => string): ColumnDef[] {
         { key: 'lastActiveTime', labelKey: 'admin.reports.colLastActiveTime', width: '140px', render: (r: EmployeeEngagementRecord) => <Text>{formatTime(r.lastActiveTime)}</Text> },
         { key: 'primaryRoles', labelKey: 'admin.reports.colPrimaryRoles', width: '120px' },
         { key: 'ugList', labelKey: 'admin.reports.colUGList', width: '160px' },
+      ];
+    case 'inactive-ugl':
+      return [
+        { key: 'nickname', labelKey: 'admin.reports.inactiveUGL.colNickname', width: '140px' },
+        { key: 'email', labelKey: 'admin.reports.inactiveUGL.colEmail', width: '200px' },
+        { key: 'ugName', labelKey: 'admin.reports.inactiveUGL.colUGName', width: '160px' },
+        { key: 'createdAt', labelKey: 'admin.reports.inactiveUGL.colCreatedAt', width: '140px' },
+        { key: 'lastActiveDate', labelKey: 'admin.reports.inactiveUGL.colLastActive', width: '140px', render: (r) => <Text>{r.lastActiveDate || t('admin.reports.inactiveUGL.noLastActive')}</Text> },
       ];
     default:
       return [];
@@ -1091,6 +1163,7 @@ export default function AdminReportsPage() {
       if ('productStatus' in currentFilters && (currentFilters as any).productStatus && (currentFilters as any).productStatus !== 'all') filterPayload.productStatus = (currentFilters as any).productStatus;
       if ('periodType' in currentFilters && (currentFilters as any).periodType) filterPayload.periodType = (currentFilters as any).periodType;
       if ('category' in currentFilters && (currentFilters as any).category && (currentFilters as any).category !== 'all') filterPayload.category = (currentFilters as any).category;
+      if ('quarter' in currentFilters && (currentFilters as any).quarter) filterPayload.quarter = (currentFilters as any).quarter;
 
       const res = await request<{ downloadUrl?: string }>({
         url: '/api/admin/reports/export',
@@ -1154,6 +1227,7 @@ export default function AdminReportsPage() {
   const hasPagination = activeTab === 'points-detail' || activeTab === 'user-ranking';
   const isInviteConversion = activeTab === 'invite-conversion';
   const isEmployeeEngagement = activeTab === 'employee-engagement';
+  const isInactiveUGL = activeTab === 'inactive-ugl';
 
   return (
     <View className='admin-reports'>
@@ -1168,7 +1242,7 @@ export default function AdminReportsPage() {
 
       {/* Tab Bar */}
       <View className='report-tabs'>
-        {REPORT_TABS.map((tab) => (
+        {REPORT_TABS.filter((tab) => tab.key !== 'inactive-ugl' || isSuperAdmin).map((tab) => (
           <View
             key={tab.key}
             className={`report-tabs__item ${activeTab === tab.key ? 'report-tabs__item--active' : ''}`}
@@ -1210,6 +1284,29 @@ export default function AdminReportsPage() {
             loadingMore={loadingMore}
           />
         </>
+      ) : isInactiveUGL ? (
+        loading ? (
+          <View className='admin-loading'><Text>{t('admin.reports.loading')}</Text></View>
+        ) : records.length === 0 ? (
+          <View className='admin-empty'>
+            <Text className='admin-empty__icon'><ClockIcon size={48} color='var(--text-tertiary)' /></Text>
+            <Text className='admin-empty__text'>{t('admin.reports.inactiveUGL.emptyState')}</Text>
+          </View>
+        ) : (
+          <>
+            <View className='report-total-count'>
+              <Text>{t('admin.reports.inactiveUGL.totalCount', { count: records.length })}</Text>
+            </View>
+            <DataTable
+              activeTab={activeTab}
+              records={records}
+              loading={false}
+              hasMore={false}
+              onLoadMore={handleLoadMore}
+              loadingMore={loadingMore}
+            />
+          </>
+        )
       ) : (
         <DataTable
           activeTab={activeTab}

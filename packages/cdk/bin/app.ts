@@ -42,6 +42,7 @@ const apiStack = new ApiStack(app, 'PointsMall-ApiStack', {
   batchDistributionsTable: databaseStack.batchDistributionsTable,
   travelApplicationsTable: databaseStack.travelApplicationsTable,
   contentTagsTable: databaseStack.contentTagsTable,
+  awardTagsTable: databaseStack.awardTagsTable,
   emailTemplatesTable: databaseStack.emailTemplatesTable,
   ugsTable: databaseStack.ugsTable,
   activitiesTable: databaseStack.activitiesTable,

@@ -263,7 +263,7 @@ export async function executeBatchDistribution(
           RequestItems: {
             [tables.usersTable]: {
               Keys: chunk.map(userId => ({ userId })),
-              ProjectionExpression: 'userId, #s, roles',
+              ProjectionExpression: 'userId, #s',
               ExpressionAttributeNames: { '#s': 'status' },
             },
           },
@@ -283,20 +283,13 @@ export async function executeBatchDistribution(
         }
       }
 
-      // Check each user is active and has UGL role
+      // Check each user is active (skill claims allowed for any role)
       for (const item of items) {
         const userStatus = (item.status as string) ?? 'active';
         if (userStatus !== 'active') {
           return {
             success: false,
             error: { code: 'INVALID_REQUEST', message: `skillClaims 中的用户 ${item.userId} 不是活跃状态` },
-          };
-        }
-        const userRoles = (item.roles as string[]) ?? [];
-        if (!userRoles.includes('UserGroupLeader')) {
-          return {
-            success: false,
-            error: { code: 'INVALID_REQUEST', message: `skillClaims 中的用户 ${item.userId} 不具备 UserGroupLeader 角色` },
           };
         }
       }
@@ -388,8 +381,10 @@ export async function executeBatchDistribution(
       for (const skill of userSkills) {
         if (skill === 'liveSupport') {
           skillPoints += config.liveSupportPoints;
-        } else if (skill === 'promoWriting') {
-          skillPoints += config.promoWritingPoints;
+        } else if (skill === 'posterDesign') {
+          skillPoints += config.posterDesignPoints;
+        } else if (skill === 'articleEditing') {
+          skillPoints += config.articleEditingPoints;
         }
       }
     }
@@ -472,7 +467,8 @@ export async function executeBatchDistribution(
       userNicknameMap,
       pointsConfig: {
         liveSupportPoints: config.liveSupportPoints,
-        promoWritingPoints: config.promoWritingPoints,
+        posterDesignPoints: config.posterDesignPoints,
+        articleEditingPoints: config.articleEditingPoints,
       },
     });
 
@@ -559,11 +555,18 @@ export async function executeBatchDistribution(
     if (userSkills) {
       for (const skill of userSkills) {
         if (skill === 'liveSupport') userTotal += config.liveSupportPoints;
-        else if (skill === 'promoWriting') userTotal += config.promoWritingPoints;
+        else if (skill === 'posterDesign') userTotal += config.posterDesignPoints;
+        else if (skill === 'articleEditing') userTotal += config.articleEditingPoints;
       }
     }
     return sum + userTotal;
   }, 0);
+
+  // Helper: get configured points for a skill type
+  const skillPointsFor = (skill: SkillType): number =>
+    skill === 'liveSupport' ? config.liveSupportPoints
+    : skill === 'posterDesign' ? config.posterDesignPoints
+    : config.articleEditingPoints;
 
   const distributionRecord: DistributionRecord & { pk: string } = {
     distributionId,
@@ -589,7 +592,7 @@ export async function executeBatchDistribution(
         skill: sc.skill,
         userId: sc.userId,
         userNickname: userDetails.find(u => u.userId === sc.userId)?.nickname ?? '',
-        pointsAwarded: sc.skill === 'liveSupport' ? config.liveSupportPoints : config.promoWritingPoints,
+        pointsAwarded: skillPointsFor(sc.skill),
       })),
     }),
   };
@@ -607,14 +610,12 @@ export async function executeBatchDistribution(
         skill: sc.skill,
         userId: sc.userId,
         userNickname: userDetails.find(u => u.userId === sc.userId)?.nickname ?? '',
-        pointsAwarded: sc.skill === 'liveSupport' ? config.liveSupportPoints : config.promoWritingPoints,
+        pointsAwarded: skillPointsFor(sc.skill),
       }))
     : undefined;
 
   const totalSkillPoints = skillClaims.length > 0
-    ? skillClaims.reduce((sum, sc) => {
-        return sum + (sc.skill === 'liveSupport' ? config.liveSupportPoints : config.promoWritingPoints);
-      }, 0)
+    ? skillClaims.reduce((sum, sc) => sum + skillPointsFor(sc.skill), 0)
     : undefined;
 
   return {
@@ -671,6 +672,10 @@ export interface ListDistributionHistoryOptions {
   pageSize?: number;
   lastKey?: string;
   distributorId?: string;
+  /** Optional filter on activityType (e.g. '特殊活动', '线上活动', '线下活动', '季度贡献奖') */
+  activityType?: string;
+  /** Optional filter on normalized awardTagName; only meaningful for SpecialActivity records */
+  awardTagName?: string;
 }
 
 export interface ListDistributionHistoryResult {
@@ -724,6 +729,23 @@ export async function listDistributionHistory(
   const MAX_ITERATIONS = 10;
   let iterations = 0;
 
+  // Compose optional FilterExpression clauses for distributorId / activityType / awardTagName
+  const filterClauses: string[] = [];
+  const filterValues: Record<string, unknown> = { ':pk': 'ALL' };
+  if (options.distributorId) {
+    filterClauses.push('distributorId = :did');
+    filterValues[':did'] = options.distributorId;
+  }
+  if (options.activityType) {
+    filterClauses.push('activityType = :atype');
+    filterValues[':atype'] = options.activityType;
+  }
+  if (options.awardTagName) {
+    filterClauses.push('awardTagName = :atag');
+    filterValues[':atag'] = options.awardTagName;
+  }
+  const filterExpression = filterClauses.length > 0 ? filterClauses.join(' AND ') : undefined;
+
   while (collected.length < pageSize && iterations < MAX_ITERATIONS) {
     iterations++;
     const result = await dynamoClient.send(
@@ -731,13 +753,8 @@ export async function listDistributionHistory(
         TableName: batchDistributionsTable,
         IndexName: 'createdAt-index',
         KeyConditionExpression: 'pk = :pk',
-        ...(options.distributorId && {
-          FilterExpression: 'distributorId = :did',
-        }),
-        ExpressionAttributeValues: {
-          ':pk': 'ALL',
-          ...(options.distributorId && { ':did': options.distributorId }),
-        },
+        ...(filterExpression && { FilterExpression: filterExpression }),
+        ExpressionAttributeValues: filterValues,
         ScanIndexForward: false,
         Limit: pageSize,
         ...(cursor && { ExclusiveStartKey: cursor }),

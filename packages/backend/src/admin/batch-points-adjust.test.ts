@@ -50,7 +50,7 @@ function makeInput(overrides: Partial<AdjustmentInput> = {}): AdjustmentInput {
 }
 
 // ============================================================
-// 1. computeAdjustmentDiff — added / removed / retained users
+// 1. computeAdjustmentDiff �?added / removed / retained users
 // ============================================================
 
 describe('computeAdjustmentDiff', () => {
@@ -349,28 +349,72 @@ describe('computeAdjustmentDiff', () => {
 describe('validateAdjustmentInput', () => {
   const config = makeConfig();
 
-  describe('empty recipients (Req 10.1)', () => {
-    it('should reject empty recipientIds array', () => {
+  describe('empty recipients → deletion mode (Req 10.1, 10.6)', () => {
+    it('should return valid with isDeletion for empty recipientIds array', () => {
       const original = makeDistribution();
       const input = makeInput({ recipientIds: [] });
 
       const result = validateAdjustmentInput(original, input, config);
 
-      expect(result.valid).toBe(false);
-      if (!result.valid) {
-        expect(result.error.code).toBe('INVALID_REQUEST');
+      expect(result.valid).toBe(true);
+      if (result.valid) {
+        expect(result.isDeletion).toBe(true);
       }
     });
 
-    it('should reject undefined recipientIds', () => {
+    it('should return valid with isDeletion for undefined recipientIds', () => {
       const original = makeDistribution();
       const input = makeInput({ recipientIds: undefined as any });
 
       const result = validateAdjustmentInput(original, input, config);
 
-      expect(result.valid).toBe(false);
-      if (!result.valid) {
-        expect(result.error.code).toBe('INVALID_REQUEST');
+      expect(result.valid).toBe(true);
+      if (result.valid) {
+        expect(result.isDeletion).toBe(true);
+      }
+    });
+
+    it('should skip speakerType validation when recipientIds is empty', () => {
+      const original = makeDistribution();
+      const input = makeInput({
+        recipientIds: [],
+        targetRole: 'Speaker',
+        speakerType: undefined,
+      });
+
+      const result = validateAdjustmentInput(original, input, config);
+
+      expect(result.valid).toBe(true);
+      if (result.valid) {
+        expect(result.isDeletion).toBe(true);
+      }
+    });
+
+    it('should skip volunteer limit validation when recipientIds is empty', () => {
+      const original = makeDistribution({ targetRole: 'Volunteer' });
+      const input = makeInput({
+        recipientIds: [],
+        targetRole: 'Volunteer',
+        speakerType: undefined,
+      });
+
+      const result = validateAdjustmentInput(original, input, config);
+
+      expect(result.valid).toBe(true);
+      if (result.valid) {
+        expect(result.isDeletion).toBe(true);
+      }
+    });
+
+    it('should skip NO_CHANGES validation when recipientIds is empty', () => {
+      const original = makeDistribution({ recipientIds: [] as any });
+      const input = makeInput({ recipientIds: [] });
+
+      const result = validateAdjustmentInput(original, input, config);
+
+      expect(result.valid).toBe(true);
+      if (result.valid) {
+        expect(result.isDeletion).toBe(true);
       }
     });
   });
@@ -399,6 +443,77 @@ describe('validateAdjustmentInput', () => {
         targetRole: 'Speaker',
         speakerType: 'typeB',
         recipientIds: ['u1'],
+      });
+
+      const result = validateAdjustmentInput(original, input, config);
+
+      expect(result.valid).toBe(true);
+    });
+  });
+
+  describe('invalid speakerType value (Req 10.7)', () => {
+    it('should reject Speaker with invalid speakerType value', () => {
+      const original = makeDistribution({ recipientIds: ['u1'] });
+      const input = makeInput({
+        targetRole: 'Speaker',
+        speakerType: 'invalidType' as any,
+        recipientIds: ['u1', 'u2'], // different from original to avoid NO_CHANGES
+      });
+
+      const result = validateAdjustmentInput(original, input, config);
+
+      expect(result.valid).toBe(false);
+      if (!result.valid) {
+        expect(result.error.code).toBe('INVALID_REQUEST');
+        expect(result.error.message).toContain('invalidType');
+      }
+    });
+
+    it('should accept Speaker with typeA speakerType', () => {
+      const original = makeDistribution({ recipientIds: ['u1'] });
+      const input = makeInput({
+        targetRole: 'Speaker',
+        speakerType: 'typeA',
+        recipientIds: ['u1', 'u2'],
+      });
+
+      const result = validateAdjustmentInput(original, input, config);
+
+      expect(result.valid).toBe(true);
+    });
+
+    it('should accept Speaker with typeB speakerType', () => {
+      const original = makeDistribution({ recipientIds: ['u1'] });
+      const input = makeInput({
+        targetRole: 'Speaker',
+        speakerType: 'typeB',
+        recipientIds: ['u1', 'u2'],
+      });
+
+      const result = validateAdjustmentInput(original, input, config);
+
+      expect(result.valid).toBe(true);
+    });
+
+    it('should accept Speaker with roundtable speakerType', () => {
+      const original = makeDistribution({ recipientIds: ['u1'] });
+      const input = makeInput({
+        targetRole: 'Speaker',
+        speakerType: 'roundtable',
+        recipientIds: ['u1', 'u2'],
+      });
+
+      const result = validateAdjustmentInput(original, input, config);
+
+      expect(result.valid).toBe(true);
+    });
+
+    it('should not validate speakerType for non-Speaker roles', () => {
+      const original = makeDistribution({ recipientIds: ['u1'], targetRole: 'Volunteer' });
+      const input = makeInput({
+        targetRole: 'Volunteer',
+        speakerType: 'invalidType' as any,
+        recipientIds: ['u1', 'u2'],
       });
 
       const result = validateAdjustmentInput(original, input, config);
@@ -443,7 +558,7 @@ describe('validateAdjustmentInput', () => {
 
     it('should deduplicate recipientIds when checking volunteer limit', () => {
       const original = makeDistribution({ targetRole: 'Volunteer', recipientIds: ['v1'] });
-      // 11 entries but only 5 unique — should pass
+      // 11 entries but only 5 unique �?should pass
       const userIds = ['v1', 'v1', 'v2', 'v2', 'v3', 'v3', 'v4', 'v4', 'v5', 'v5', 'v1'];
       const input = makeInput({
         recipientIds: userIds,
@@ -458,7 +573,7 @@ describe('validateAdjustmentInput', () => {
 
     it('should not check volunteer limit for non-Volunteer roles', () => {
       const original = makeDistribution({ targetRole: 'Speaker', speakerType: 'typeA', recipientIds: ['u1'] });
-      // 15 users as Speaker — should not trigger volunteer limit
+      // 15 users as Speaker �?should not trigger volunteer limit
       const userIds = Array.from({ length: 15 }, (_, i) => `spk-${i + 1}`);
       const input = makeInput({
         recipientIds: userIds,
@@ -646,7 +761,7 @@ describe('validateAdjustmentInput', () => {
   });
 
   describe('validation priority', () => {
-    it('should reject empty recipients before checking speakerType', () => {
+    it('should enter deletion mode for empty recipients instead of checking speakerType', () => {
       const original = makeDistribution();
       const input = makeInput({
         recipientIds: [],
@@ -656,10 +771,10 @@ describe('validateAdjustmentInput', () => {
 
       const result = validateAdjustmentInput(original, input, config);
 
-      expect(result.valid).toBe(false);
-      if (!result.valid) {
-        // Should be INVALID_REQUEST for empty recipients, not for missing speakerType
-        expect(result.error.code).toBe('INVALID_REQUEST');
+      // Empty recipientIds enters deletion mode, skipping all other validations
+      expect(result.valid).toBe(true);
+      if (result.valid) {
+        expect(result.isDeletion).toBe(true);
       }
     });
 
@@ -687,7 +802,7 @@ describe('validateAdjustmentInput', () => {
 });
 
 // ============================================================
-// 3. executeAdjustment — integration tests
+// 3. executeAdjustment �?integration tests
 // ============================================================
 
 const USERS_TABLE = 'Users';
@@ -737,13 +852,13 @@ describe('executeAdjustment', () => {
 
       expect(result.success).toBe(false);
       expect(result.error?.code).toBe('DISTRIBUTION_NOT_FOUND');
-      // Should stop after the first GetCommand — no further calls
+      // Should stop after the first GetCommand �?no further calls
       expect(client.send).toHaveBeenCalledTimes(1);
     });
   });
 
   // --------------------------------------------------------
-  // 3.2 Successful adjustment with added/removed/retained users (Req 6.1, 7.1–7.3, 8.1–8.5)
+  // 3.2 Successful adjustment with added/removed/retained users (Req 6.1, 7.1�?.3, 8.1�?.5)
   // --------------------------------------------------------
 
   describe('successful adjustment with added/removed/retained users', () => {
@@ -757,11 +872,11 @@ describe('executeAdjustment', () => {
         totalPoints: 300,
       });
 
-      // 1. GetCommand — fetch DistributionRecord
+      // 1. GetCommand �?fetch DistributionRecord
       client.send.mockResolvedValueOnce({ Item: originalDist });
-      // 2. GetCommand — fetch feature-toggles
+      // 2. GetCommand �?fetch feature-toggles
       client.send.mockResolvedValueOnce(featureTogglesResponse());
-      // 3. BatchGetCommand — fetch balances for ALL negative-delta users
+      // 3. BatchGetCommand �?fetch balances for ALL negative-delta users
       //    Removed u3 (-100), retained u1 (-50), retained u2 (-50) all have negative deltas
       client.send.mockResolvedValueOnce({
         Responses: {
@@ -772,7 +887,7 @@ describe('executeAdjustment', () => {
           ],
         },
       });
-      // 4. BatchGetCommand — fetch user details for new recipients [u1, u2, u4]
+      // 4. BatchGetCommand �?fetch user details for new recipients [u1, u2, u4]
       client.send.mockResolvedValueOnce({
         Responses: {
           [USERS_TABLE]: [
@@ -782,16 +897,16 @@ describe('executeAdjustment', () => {
           ],
         },
       });
-      // 5. TransactWriteCommand — user batch succeeds
+      // 5. TransactWriteCommand �?user batch succeeds
       client.send.mockResolvedValueOnce({});
-      // 6. UpdateCommand — update DistributionRecord
+      // 6. UpdateCommand �?update DistributionRecord
       client.send.mockResolvedValueOnce({});
 
       const result = await executeAdjustment(
         makeInput({
           recipientIds: ['u1', 'u2', 'u4'],
           targetRole: 'Speaker',
-          speakerType: 'typeB', // changed from typeA → typeB
+          speakerType: 'typeB', // changed from typeA �?typeB
         }),
         client,
         TABLES,
@@ -858,7 +973,7 @@ describe('executeAdjustment', () => {
         makeInput({
           recipientIds: ['u1', 'u2'],
           targetRole: 'Speaker',
-          speakerType: 'typeB', // changed: 100 → 50
+          speakerType: 'typeB', // changed: 100 �?50
         }),
         client,
         TABLES,
@@ -928,7 +1043,7 @@ describe('executeAdjustment', () => {
 
       client.send.mockResolvedValueOnce({ Item: originalDist });
       client.send.mockResolvedValueOnce(featureTogglesResponse());
-      // u1 has 30 points, delta = 50 - 100 = -50 → would go to -20
+      // u1 has 30 points, delta = 50 - 100 = -50 �?would go to -20
       client.send.mockResolvedValueOnce({
         Responses: {
           [USERS_TABLE]: [{ userId: 'u1', points: 30 }],
@@ -939,7 +1054,7 @@ describe('executeAdjustment', () => {
         makeInput({
           recipientIds: ['u1'],
           targetRole: 'Speaker',
-          speakerType: 'typeB', // typeA(100) → typeB(50), delta = -50
+          speakerType: 'typeB', // typeA(100) �?typeB(50), delta = -50
         }),
         client,
         TABLES,
@@ -959,7 +1074,7 @@ describe('executeAdjustment', () => {
 
       client.send.mockResolvedValueOnce({ Item: originalDist });
       client.send.mockResolvedValueOnce(featureTogglesResponse());
-      // u2 has exactly 100 points, delta = -100 → balance becomes 0 (OK)
+      // u2 has exactly 100 points, delta = -100 �?balance becomes 0 (OK)
       client.send.mockResolvedValueOnce({
         Responses: {
           [USERS_TABLE]: [{ userId: 'u2', points: 100 }],
@@ -994,7 +1109,7 @@ describe('executeAdjustment', () => {
 
   describe('batch splitting for many users', () => {
     it('should split into multiple TransactWriteCommand batches when users exceed USERS_PER_BATCH', async () => {
-      // Original has 1 user, we add 14 new users → 15 total affected (1 retained + 14 added)
+      // Original has 1 user, we add 14 new users �?15 total affected (1 retained + 14 added)
       // But we need a change: change speakerType so retained user also gets a delta
       const originalDist = makeDistribution({
         recipientIds: ['u-orig'],
@@ -1008,7 +1123,7 @@ describe('executeAdjustment', () => {
 
       client.send.mockResolvedValueOnce({ Item: originalDist });
       client.send.mockResolvedValueOnce(featureTogglesResponse());
-      // u-orig has negative delta (typeA 100 → typeB 50 = -50), need balance check
+      // u-orig has negative delta (typeA 100 �?typeB 50 = -50), need balance check
       client.send.mockResolvedValueOnce({
         Responses: {
           [USERS_TABLE]: [{ userId: 'u-orig', points: 500 }],
@@ -1082,7 +1197,7 @@ describe('executeAdjustment', () => {
         makeInput({
           recipientIds: ['u1', 'u2'], // add u2, retain u1 with same speakerType
           targetRole: 'Speaker',
-          speakerType: 'typeA', // same speakerType → no delta for retained u1, only u2 added (+100)
+          speakerType: 'typeA', // same speakerType �?no delta for retained u1, only u2 added (+100)
         }),
         client,
         TABLES,
@@ -1228,7 +1343,7 @@ describe('executeAdjustment', () => {
       const txCmd = client.send.mock.calls[4][0];
       const txItems = txCmd.input.TransactItems;
 
-      // Find the Update for u2 (added user) — should use normal path with newRole field
+      // Find the Update for u2 (added user) �?should use normal path with newRole field
       const u2Update = txItems.find(
         (item: any) => item.Update && item.Update.Key.userId === 'u2',
       );
@@ -1237,7 +1352,7 @@ describe('executeAdjustment', () => {
       expect(u2Update.Update.ExpressionAttributeNames['#rf']).toBe('earnTotalLeader');
       expect(u2Update.Update.ExpressionAttributeValues[':delta']).toBe(50); // uglPointsPerEvent
 
-      // Find the Update for u1 (retained user with role change) — should use role-change path
+      // Find the Update for u1 (retained user with role change) �?should use role-change path
       const u1Update = txItems.find(
         (item: any) => item.Update && item.Update.Key.userId === 'u1',
       );
@@ -1248,7 +1363,7 @@ describe('executeAdjustment', () => {
   });
 
   // --------------------------------------------------------
-  // 3.6 Validation pass-through (Req 10.1–10.5)
+  // 3.6 Validation pass-through (Req 10.1�?0.5)
   // --------------------------------------------------------
 
   describe('validation pass-through', () => {
@@ -1277,11 +1392,28 @@ describe('executeAdjustment', () => {
       expect(result.error?.code).toBe('NO_CHANGES');
     });
 
-    it('should return INVALID_REQUEST when recipientIds is empty', async () => {
-      const originalDist = makeDistribution();
+    it('should pass validation when recipientIds is empty (deletion mode)', async () => {
+      const originalDist = makeDistribution({ recipientIds: ['u1', 'u2'] });
 
       client.send.mockResolvedValueOnce({ Item: originalDist });
       client.send.mockResolvedValueOnce(featureTogglesResponse());
+      // After validation passes with isDeletion: true, executeAdjustment delegates
+      // to executeDeletion which now performs the full deletion flow.
+
+      // executeDeletion calls (no activitySkillClaimsTable in TABLES, so skill claims query is skipped):
+      // 1. BatchGetCommand → fetch user balances (u1, u2 have enough)
+      client.send.mockResolvedValueOnce({
+        Responses: {
+          [USERS_TABLE]: [
+            { userId: 'u1', points: 200 },
+            { userId: 'u2', points: 200 },
+          ],
+        },
+      });
+      // 2. TransactWriteCommand → user reversal batch
+      client.send.mockResolvedValueOnce({});
+      // 3. DeleteCommand → hard-delete Distribution_Record
+      client.send.mockResolvedValueOnce({});
 
       const result = await executeAdjustment(
         makeInput({ recipientIds: [] }),
@@ -1289,13 +1421,16 @@ describe('executeAdjustment', () => {
         TABLES,
       );
 
-      expect(result.success).toBe(false);
-      expect(result.error?.code).toBe('INVALID_REQUEST');
+      // Deletion succeeds
+      expect(result.success).toBe(true);
+      expect(result.deleted).toBe(true);
+      expect(result.distributionId).toBe('dist-001');
+      expect(result.reversedCount).toBe(2);
     });
   });
 
   // --------------------------------------------------------
-  // 3.7 Distribution record update (Req 9.1–9.5)
+  // 3.7 Distribution record update (Req 9.1�?.5)
   // --------------------------------------------------------
 
   describe('distribution record update', () => {
@@ -1421,11 +1556,11 @@ describe('participant removal preserving skill claims', () => {
     const config = makeConfig({ uglPointsPerEvent: 50 });
     const diff = computeAdjustmentDiff(original, input, config);
 
-    // u2 is removed — delta should be -50 (only activity points), NOT -(50 + skill points)
+    // u2 is removed �?delta should be -50 (only activity points), NOT -(50 + skill points)
     const removedAdj = diff.userAdjustments.find(ua => ua.userId === 'u2');
     expect(removedAdj).toBeDefined();
     expect(removedAdj!.delta).toBe(-50); // Only activity points deducted
-    // SkillClaim record is never touched by computeAdjustmentDiff — it's preserved
+    // SkillClaim record is never touched by computeAdjustmentDiff �?it's preserved
   });
 
   it('should deduct exactly distribution.points for removed users regardless of skill claims existence', () => {
@@ -1446,7 +1581,7 @@ describe('participant removal preserving skill claims', () => {
     const config = makeConfig({ uglPointsPerEvent: 50 });
     const diff = computeAdjustmentDiff(original, input, config);
 
-    // Both u2 and u3 removed — each gets -50 (activity points only)
+    // Both u2 and u3 removed �?each gets -50 (activity points only)
     const u2Adj = diff.userAdjustments.find(ua => ua.userId === 'u2');
     const u3Adj = diff.userAdjustments.find(ua => ua.userId === 'u3');
     expect(u2Adj!.delta).toBe(-50);
@@ -1462,12 +1597,12 @@ describe('participant removal preserving skill claims', () => {
       activityId: 'act-001',
     });
 
-    // 1. GetCommand — fetch DistributionRecord
+    // 1. GetCommand �?fetch DistributionRecord
     client.send.mockResolvedValueOnce({ Item: originalDist });
-    // 2. GetCommand — fetch feature-toggles
+    // 2. GetCommand �?fetch feature-toggles
     client.send.mockResolvedValueOnce(featureTogglesResponse());
     // 3. No negative-delta users (no changes to recipients)
-    // 4. BatchGetCommand — fetch user details for recipients
+    // 4. BatchGetCommand �?fetch user details for recipients
     client.send.mockResolvedValueOnce({
       Responses: {
         [USERS_TABLE]: [
@@ -1476,7 +1611,7 @@ describe('participant removal preserving skill claims', () => {
         ],
       },
     });
-    // 5. QueryCommand — fetch existing skill claims for releaseSkills
+    // 5. QueryCommand �?fetch existing skill claims for releaseSkills
     client.send.mockResolvedValueOnce({
       Items: [
         {
@@ -1491,7 +1626,7 @@ describe('participant removal preserving skill claims', () => {
         },
       ],
     });
-    // 6. BatchGetCommand — fetch nicknames for addSkillClaims target user
+    // 6. BatchGetCommand �?fetch nicknames for addSkillClaims target user
     client.send.mockResolvedValueOnce({
       Responses: {
         [USERS_TABLE]: [
@@ -1499,7 +1634,7 @@ describe('participant removal preserving skill claims', () => {
         ],
       },
     });
-    // 7. TransactWriteCommand — skill operations (no user adjustments since NO_CHANGES would block)
+    // 7. TransactWriteCommand �?skill operations (no user adjustments since NO_CHANGES would block)
     // Actually, we need to change recipients to avoid NO_CHANGES validation
     // Let me restructure: add u3 to avoid NO_CHANGES
     client.send.mockReset();
@@ -1512,12 +1647,12 @@ describe('participant removal preserving skill claims', () => {
       activityId: 'act-001',
     });
 
-    // 1. GetCommand — fetch DistributionRecord
+    // 1. GetCommand �?fetch DistributionRecord
     client.send.mockResolvedValueOnce({ Item: originalDist2 });
-    // 2. GetCommand — fetch feature-toggles
+    // 2. GetCommand �?fetch feature-toggles
     client.send.mockResolvedValueOnce(featureTogglesResponse());
     // 3. No negative-delta users (adding u3 only)
-    // 4. BatchGetCommand — fetch user details for new recipients [u1, u2, u3]
+    // 4. BatchGetCommand �?fetch user details for new recipients [u1, u2, u3]
     client.send.mockResolvedValueOnce({
       Responses: {
         [USERS_TABLE]: [
@@ -1527,7 +1662,7 @@ describe('participant removal preserving skill claims', () => {
         ],
       },
     });
-    // 5. QueryCommand — fetch existing skill claims for releaseSkills
+    // 5. QueryCommand �?fetch existing skill claims for releaseSkills
     client.send.mockResolvedValueOnce({
       Items: [
         {
@@ -1542,7 +1677,7 @@ describe('participant removal preserving skill claims', () => {
         },
       ],
     });
-    // 6. BatchGetCommand — fetch nicknames for addSkillClaims target user u2
+    // 6. BatchGetCommand �?fetch nicknames for addSkillClaims target user u2
     client.send.mockResolvedValueOnce({
       Responses: {
         [USERS_TABLE]: [
@@ -1550,9 +1685,9 @@ describe('participant removal preserving skill claims', () => {
         ],
       },
     });
-    // 7. TransactWriteCommand — succeeds
+    // 7. TransactWriteCommand �?succeeds
     client.send.mockResolvedValueOnce({});
-    // 8. UpdateCommand — update DistributionRecord
+    // 8. UpdateCommand �?update DistributionRecord
     client.send.mockResolvedValueOnce({});
 
     const result = await executeAdjustment(
@@ -1562,7 +1697,7 @@ describe('participant removal preserving skill claims', () => {
         speakerType: undefined,
         callerRoles: ['SuperAdmin'],
         releaseSkills: [{ skill: 'liveSupport' }],
-        addSkillClaims: [{ skill: 'promoWriting', userId: 'u2' }],
+        addSkillClaims: [{ skill: 'articleEditing', userId: 'u2' }],
       }),
       client,
       {
@@ -1612,7 +1747,7 @@ describe('participant removal preserving skill claims', () => {
       activityId: 'act-001',
     });
 
-    // 1. GetCommand — fetch DistributionRecord
+    // 1. GetCommand �?fetch DistributionRecord
     client.send.mockResolvedValueOnce({ Item: originalDist });
 
     const result = await executeAdjustment(
@@ -1643,7 +1778,7 @@ describe('participant removal preserving skill claims', () => {
       activityId: 'act-001',
     });
 
-    // 1. GetCommand — fetch DistributionRecord
+    // 1. GetCommand �?fetch DistributionRecord
     client.send.mockResolvedValueOnce({ Item: originalDist });
 
     const result = await executeAdjustment(
@@ -1652,7 +1787,7 @@ describe('participant removal preserving skill claims', () => {
         targetRole: 'UserGroupLeader',
         speakerType: undefined,
         callerRoles: ['Admin'], // Not SuperAdmin
-        addSkillClaims: [{ skill: 'promoWriting', userId: 'u2' }],
+        addSkillClaims: [{ skill: 'articleEditing', userId: 'u2' }],
       }),
       client,
       {

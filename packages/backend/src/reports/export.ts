@@ -21,6 +21,7 @@ import {
   formatTravelStatisticsForExport,
   formatInviteConversionForExport,
   formatEmployeeEngagementForExport,
+  formatInactiveUGLForExport,
 } from './formatters';
 import type {
   PointsDetailRecord,
@@ -45,6 +46,7 @@ import {
   queryInviteConversion,
   queryEmployeeEngagement,
 } from './insight-query';
+import { queryInactiveUGLs } from './inactive-ugl-query';
 
 // ============================================================
 // Constants
@@ -67,6 +69,7 @@ const VALID_REPORT_TYPES: ReportType[] = [
   'travel-statistics',
   'invite-conversion',
   'employee-engagement',
+  'inactive-ugl',
 ];
 
 const VALID_FORMATS: ExportFormat[] = ['csv', 'xlsx'];
@@ -276,6 +279,7 @@ export async function executeExport(
     contentCategoriesTable?: string;
     travelApplicationsTable?: string;
     invitesTable?: string;
+    ugsTable?: string;
   },
   bucket: string,
   lambdaStartTime?: number,
@@ -456,6 +460,7 @@ export async function executeExport(
         totalEarnPoints: r.totalEarnPoints,
         targetRole: r.targetRole,
         isEmployee: nicknameMap.get(r.userId)?.isEmployee ?? false,
+        earnTotalSpecialActivity: r.earnTotalSpecialActivity,
       }));
 
       // Apply isEmployee filter if specified
@@ -565,6 +570,19 @@ export async function executeExport(
         return { success: false, error: queryResult.error ?? { code: 'INTERNAL_ERROR', message: 'Internal server error' } };
       }
       const formatted = formatEmployeeEngagementForExport(queryResult.records);
+      fileBuffer = format === 'csv' ? generateCSV(formatted, columns) : generateExcel(formatted, columns);
+
+    } else if (reportType === 'inactive-ugl') {
+      const quarter = filters.quarter;
+      const queryResult = await queryInactiveUGLs(
+        { quarter },
+        dynamoClient,
+        { usersTable: tables.usersTable, pointsRecordsTable: tables.pointsRecordsTable, ugsTable: tables.ugsTable! },
+      );
+      if (!queryResult.success || !queryResult.records) {
+        return { success: false, error: queryResult.error ?? { code: 'INTERNAL_ERROR', message: 'Internal server error' } };
+      }
+      const formatted = formatInactiveUGLForExport(queryResult.records);
       fileBuffer = format === 'csv' ? generateCSV(formatted, columns) : generateExcel(formatted, columns);
 
     } else {

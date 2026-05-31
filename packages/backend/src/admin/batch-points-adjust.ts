@@ -4,6 +4,7 @@ import {
   BatchGetCommand,
   TransactWriteCommand,
   UpdateCommand,
+  DeleteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { ulid } from 'ulid';
 import type { DistributionRecord } from '@points-mall/shared';
@@ -53,6 +54,9 @@ export interface AdjustmentDiff {
 /** 调整结果 */
 export interface AdjustmentResult {
   success: boolean;
+  deleted?: boolean;
+  distributionId?: string;
+  reversedCount?: number;
   error?: { code: string; message: string };
 }
 
@@ -123,25 +127,27 @@ export function computeAdjustmentDiff(
  * Validate an adjustment input against the original distribution and config.
  *
  * Returns `{ valid: true }` or `{ valid: false, error }` with appropriate error codes:
- * - INVALID_REQUEST: empty recipientIds or Speaker without speakerType
+ * - INVALID_REQUEST: Speaker without speakerType, or invalid speakerType value
  * - VOLUNTEER_LIMIT_EXCEEDED: volunteer count exceeds config limit
  * - NO_CHANGES: no actual changes detected
+ *
+ * When recipientIds is empty, returns `{ valid: true, isDeletion: true }` to signal
+ * the deletion flow (skips speakerType, volunteer limit, and NO_CHANGES checks).
  */
 export type AdjustmentValidationResult =
-  | { valid: true }
+  | { valid: true; isDeletion?: boolean }
   | { valid: false; error: { code: string; message: string } };
+
+const VALID_SPEAKER_TYPES: ReadonlySet<string> = new Set(['typeA', 'typeB', 'roundtable']);
 
 export function validateAdjustmentInput(
   original: DistributionRecord,
   input: AdjustmentInput,
   config: PointsRuleConfig,
 ): AdjustmentValidationResult {
-  // 1. Reject empty recipientIds
+  // 1. Empty recipientIds → deletion mode, skip all other validations
   if (!input.recipientIds || input.recipientIds.length === 0) {
-    return {
-      valid: false,
-      error: { code: 'INVALID_REQUEST', message: '调整后的接收人列表不能为空' },
-    };
+    return { valid: true, isDeletion: true };
   }
 
   // 2. Reject Speaker without speakerType
@@ -152,7 +158,15 @@ export function validateAdjustmentInput(
     };
   }
 
-  // 3. Reject volunteer count exceeding limit
+  // 3. Reject Speaker with invalid speakerType value
+  if (input.targetRole === 'Speaker' && input.speakerType && !VALID_SPEAKER_TYPES.has(input.speakerType)) {
+    return {
+      valid: false,
+      error: { code: 'INVALID_REQUEST', message: `无效的 speakerType: ${input.speakerType}，必须为 typeA、typeB 或 roundtable` },
+    };
+  }
+
+  // 4. Reject volunteer count exceeding limit
   if (input.targetRole === 'Volunteer') {
     const uniqueCount = new Set(input.recipientIds).size;
     if (uniqueCount > config.volunteerMaxPerEvent) {
@@ -166,7 +180,7 @@ export function validateAdjustmentInput(
     }
   }
 
-  // 4. Reject if no actual changes detected
+  // 5. Reject if no actual changes detected
   const originalSorted = [...original.recipientIds].sort();
   const newSorted = [...new Set(input.recipientIds)].sort();
   const sameRecipients =
@@ -187,6 +201,280 @@ export function validateAdjustmentInput(
 
 // ============================================================
 // Execution
+// ============================================================
+
+// ============================================================
+// Deletion
+// ============================================================
+
+/** 删除结果 */
+export interface DeletionResult {
+  success: boolean;
+  deleted?: boolean;
+  distributionId?: string;
+  reversedCount?: number;
+  error?: { code: string; message: string };
+}
+
+/** Max items per DynamoDB TransactWriteCommand for deletion batches */
+const DELETION_USERS_PER_BATCH = 12; // 12 users × 2 items = 24 items (within 25 limit)
+
+/**
+ * Execute a full distribution deletion — reverse all awarded points for every
+ * original recipient (including skill-claim points), write correction records,
+ * and hard-delete the Distribution_Record.
+ */
+export async function executeDeletion(
+  input: AdjustmentInput,
+  original: DistributionRecord,
+  client: DynamoDBDocumentClient,
+  tables: {
+    usersTable: string;
+    pointsRecordsTable: string;
+    batchDistributionsTable: string;
+    activitySkillClaimsTable?: string;
+  },
+): Promise<AdjustmentResult> {
+  const now = new Date().toISOString();
+  const activityId = original.activityId ?? '';
+  const skillClaimsTableName = tables.activitySkillClaimsTable ?? process.env.ACTIVITY_SKILL_CLAIMS_TABLE ?? '';
+
+  // 1. Fetch skill claims for the activity
+  let skillClaims: SkillClaimRecord[] = [];
+  if (activityId && skillClaimsTableName) {
+    skillClaims = await getSkillClaimsForActivity(activityId, client, skillClaimsTableName);
+  }
+
+  // 2. Compute total reversal per user: originalPoints + any skill-claim pointsAwarded
+  const originalPoints = original.points;
+  const roleFieldMap: Record<string, string> = {
+    Speaker: 'earnTotalSpeaker',
+    UserGroupLeader: 'earnTotalLeader',
+    Volunteer: 'earnTotalVolunteer',
+  };
+  const roleField = roleFieldMap[original.targetRole] ?? 'earnTotalSpeaker';
+
+  // Build a map of userId → total skill claim points for that user
+  const skillClaimPointsByUser = new Map<string, number>();
+  for (const claim of skillClaims) {
+    const current = skillClaimPointsByUser.get(claim.userId) ?? 0;
+    skillClaimPointsByUser.set(claim.userId, current + claim.pointsAwarded);
+  }
+
+  // Total reversal per user = originalPoints + skill claim points for that user
+  const totalReversalByUser = new Map<string, number>();
+  for (const userId of original.recipientIds) {
+    const skillPts = skillClaimPointsByUser.get(userId) ?? 0;
+    totalReversalByUser.set(userId, originalPoints + skillPts);
+  }
+
+  // 3. Pre-check all users have sufficient balance
+  const allUserIds = [...new Set(original.recipientIds)];
+  const balanceChunks = chunkArray(allUserIds, 100);
+  const balanceMap = new Map<string, number>();
+
+  for (const chunk of balanceChunks) {
+    const batchResult = await client.send(
+      new BatchGetCommand({
+        RequestItems: {
+          [tables.usersTable]: {
+            Keys: chunk.map(userId => ({ userId })),
+            ProjectionExpression: 'userId, points',
+          },
+        },
+      }),
+    );
+    const items = batchResult.Responses?.[tables.usersTable] ?? [];
+    for (const item of items) {
+      balanceMap.set(item.userId as string, (item.points as number) ?? 0);
+    }
+  }
+
+  // Check each user's balance against total reversal
+  for (const userId of allUserIds) {
+    const currentBalance = balanceMap.get(userId) ?? 0;
+    const totalReversal = totalReversalByUser.get(userId) ?? originalPoints;
+    if (currentBalance < totalReversal) {
+      return {
+        success: false,
+        error: {
+          code: 'INSUFFICIENT_BALANCE',
+          message: `用户 ${userId} 积分余额不足，当前 ${currentBalance}，需扣减 ${totalReversal}`,
+        },
+      };
+    }
+  }
+
+  // 4. Build transaction items
+
+  // 4a. Build skill claim transaction items (3 items per claim: Delete + Update user + Put correction)
+  const skillClaimTransactItems: any[] = [];
+  for (const claim of skillClaims) {
+    const recordId = ulid();
+
+    // Delete the skill claim record
+    skillClaimTransactItems.push({
+      Delete: {
+        TableName: skillClaimsTableName,
+        Key: { activityId: claim.activityId, skill: claim.skill },
+      },
+    });
+
+    // Update user: reverse skill points from points, earnTotal, earnTotalLeader
+    skillClaimTransactItems.push({
+      Update: {
+        TableName: tables.usersTable,
+        Key: { userId: claim.userId },
+        UpdateExpression: `SET points = points - :pts, earnTotal = if_not_exists(earnTotal, :zero) - :pts, earnTotalLeader = if_not_exists(earnTotalLeader, :zero) - :pts, updatedAt = :now`,
+        ExpressionAttributeValues: {
+          ':pts': claim.pointsAwarded,
+          ':zero': 0,
+          ':now': now,
+        },
+      },
+    });
+
+    // Put correction record for skill claim reversal
+    skillClaimTransactItems.push({
+      Put: {
+        TableName: tables.pointsRecordsTable,
+        Item: {
+          recordId,
+          userId: claim.userId,
+          type: 'adjust',
+          amount: -claim.pointsAwarded,
+          source: `技能释放(删除):${claim.skill}|${original.activityUG ?? ''}|${original.activityTopic ?? ''}|${original.activityDate ?? ''}`,
+          createdAt: now,
+          activityId,
+          activityUG: original.activityUG ?? '',
+          activityTopic: original.activityTopic ?? '',
+          activityDate: original.activityDate ?? '',
+          targetRole: 'UserGroupLeader',
+          distributionId: input.distributionId,
+        },
+      },
+    });
+  }
+
+  // 4b. Build user transaction items (2 items per user: Update + Put correction)
+  const userTransactItems: any[] = [];
+  for (const userId of allUserIds) {
+    const recordId = ulid();
+
+    // Update user: reverse points, earnTotal, and role-specific field
+    userTransactItems.push({
+      Update: {
+        TableName: tables.usersTable,
+        Key: { userId },
+        UpdateExpression: `SET points = points - :pts, earnTotal = if_not_exists(earnTotal, :zero) - :pts, #rf = if_not_exists(#rf, :zero) - :pts, updatedAt = :now`,
+        ExpressionAttributeNames: { '#rf': roleField },
+        ExpressionAttributeValues: {
+          ':pts': originalPoints,
+          ':zero': 0,
+          ':now': now,
+        },
+      },
+    });
+
+    // Put correction record
+    userTransactItems.push({
+      Put: {
+        TableName: tables.pointsRecordsTable,
+        Item: {
+          recordId,
+          userId,
+          type: 'adjust',
+          amount: -originalPoints,
+          source: `发放删除:${original.targetRole}|${original.activityUG ?? ''}|${original.activityTopic ?? ''}|${original.activityDate ?? ''}`,
+          createdAt: now,
+          activityId,
+          activityUG: original.activityUG ?? '',
+          activityTopic: original.activityTopic ?? '',
+          activityDate: original.activityDate ?? '',
+          targetRole: original.targetRole,
+          distributionId: input.distributionId,
+        },
+      },
+    });
+  }
+
+  // 5. Batch transaction items into groups of ≤25 items
+  // Strategy: skill claim items (3 each) prepended to first user batch;
+  // if they overflow, they get their own batch(es)
+  const allBatches: any[][] = [];
+
+  // Split user items into batches of 12 users (24 items)
+  const userBatches = chunkArray(userTransactItems, DELETION_USERS_PER_BATCH * 2); // 2 items per user
+
+  if (skillClaimTransactItems.length === 0) {
+    // No skill claims — just user batches
+    allBatches.push(...userBatches);
+  } else if (userBatches.length > 0) {
+    // Try to prepend skill claim items to the first user batch
+    const firstUserBatch = userBatches[0];
+    const combined = [...skillClaimTransactItems, ...firstUserBatch];
+
+    if (combined.length <= 25) {
+      // Fits in one batch
+      allBatches.push(combined);
+      // Add remaining user batches
+      for (let i = 1; i < userBatches.length; i++) {
+        allBatches.push(userBatches[i]);
+      }
+    } else {
+      // Skill claims overflow — put them in their own batch(es)
+      const skillBatches = chunkArray(skillClaimTransactItems, 25);
+      allBatches.push(...skillBatches);
+      allBatches.push(...userBatches);
+    }
+  } else {
+    // No users but have skill claims (edge case)
+    const skillBatches = chunkArray(skillClaimTransactItems, 25);
+    allBatches.push(...skillBatches);
+  }
+
+  // 6. Execute batches sequentially
+  for (const batch of allBatches) {
+    try {
+      await client.send(
+        new TransactWriteCommand({ TransactItems: batch }),
+      );
+    } catch (err: any) {
+      console.error('Deletion transaction batch failed:', err);
+      return {
+        success: false,
+        error: { code: 'ADJUSTMENT_FAILED', message: '删除事务执行失败' },
+      };
+    }
+  }
+
+  // 7. Hard-delete the Distribution_Record
+  try {
+    await client.send(
+      new DeleteCommand({
+        TableName: tables.batchDistributionsTable,
+        Key: { distributionId: input.distributionId },
+      }),
+    );
+  } catch (err: any) {
+    console.error('Failed to delete Distribution_Record:', err);
+    return {
+      success: false,
+      error: { code: 'ADJUSTMENT_FAILED', message: '删除发放记录失败' },
+    };
+  }
+
+  // 8. Return success
+  return {
+    success: true,
+    deleted: true,
+    distributionId: input.distributionId,
+    reversedCount: allUserIds.length,
+  };
+}
+
+// ============================================================
+// Adjustment Execution
 // ============================================================
 
 /** Max items per DynamoDB TransactWriteCommand (each user = 2 items: Update + Put) */
@@ -252,6 +540,11 @@ export async function executeAdjustment(
   const validation = validateAdjustmentInput(original, input, config);
   if (!validation.valid) {
     return { success: false, error: validation.error };
+  }
+
+  // 3b. If deletion mode, delegate to executeDeletion
+  if (validation.valid && 'isDeletion' in validation && validation.isDeletion) {
+    return executeDeletion(input, original, client, tables);
   }
 
   // 4. Compute diff
@@ -455,9 +748,10 @@ export async function executeAdjustment(
     }
 
     for (const addItem of input.addSkillClaims) {
-      const pointsAwarded = addItem.skill === 'liveSupport'
-        ? config.liveSupportPoints
-        : config.promoWritingPoints;
+      const pointsAwarded =
+        addItem.skill === 'liveSupport' ? config.liveSupportPoints
+        : addItem.skill === 'posterDesign' ? config.posterDesignPoints
+        : config.articleEditingPoints;
       const recordId = ulid();
       const userNickname = skillUserNicknameMap.get(addItem.userId) ?? '';
 

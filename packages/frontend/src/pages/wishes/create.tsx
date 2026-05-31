@@ -177,7 +177,7 @@ export default function WishCreatePage() {
     const uploadInfo = await request<UploadUrlResponse>({
       url: '/api/admin/images/upload-url',
       method: 'POST',
-      data: { fileName: imageFile.name, contentType },
+      data: { fileName: imageFile.name, contentType, purpose: 'wish' },
     });
 
     const env = Taro.getEnv();

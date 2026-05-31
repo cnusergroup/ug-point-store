@@ -122,6 +122,7 @@ const EMPTY_FORM = {
 export default function AdminProductsPage() {
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
   const userRoles = useAppStore((s) => s.user?.roles || []);
+  const userId = useAppStore((s) => s.user?.userId || '');
   const isSuperAdmin = userRoles.includes('SuperAdmin');
   const { t } = useTranslation();
 
@@ -158,7 +159,7 @@ export default function AdminProductsPage() {
     }
     // SuperAdmin always has access; only check toggle for Admin
     if (!isSuperAdmin) {
-      request<{ adminProductsEnabled: boolean; codeRedemptionEnabled?: boolean }>({
+      request<{ adminProductsEnabled: boolean; codeRedemptionEnabled?: boolean; productManagementMode?: 'all' | 'specific'; productManagerIds?: string[] }>({
         url: '/api/settings/feature-toggles',
         skipAuth: true,
       })
@@ -166,9 +167,17 @@ export default function AdminProductsPage() {
           if (res.codeRedemptionEnabled === false) setCodeRedemptionEnabled(false);
           if (!res.adminProductsEnabled) {
             Taro.redirectTo({ url: '/pages/admin/index' });
-          } else {
-            fetchProducts();
+            return;
           }
+          // Fine-grained check: when mode is 'specific', only listed userIds can access
+          if (
+            res.productManagementMode === 'specific' &&
+            !(res.productManagerIds || []).includes(userId)
+          ) {
+            Taro.redirectTo({ url: '/pages/admin/index' });
+            return;
+          }
+          fetchProducts();
         })
         .catch(() => {
           fetchProducts();
@@ -184,7 +193,7 @@ export default function AdminProductsPage() {
         .catch(() => {});
       fetchProducts();
     }
-  }, [isAuthenticated, isSuperAdmin, fetchProducts]);
+  }, [isAuthenticated, isSuperAdmin, userId, fetchProducts]);
 
   const openCreate = () => {
     setForm({ ...EMPTY_FORM });

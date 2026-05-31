@@ -6,11 +6,11 @@ import { QueryCommand } from '@aws-sdk/lib-dynamodb';
 // Types
 // ============================================================
 
-/** 技能类型：直播支持 / 宣传文案创作 */
-export type SkillType = 'liveSupport' | 'promoWriting';
+/** 技能类型：直播支持 / 海报创作 / 推文排版 */
+export type SkillType = 'liveSupport' | 'posterDesign' | 'articleEditing';
 
 /** 允许的技能值列表 */
-export const VALID_SKILL_TYPES: readonly SkillType[] = ['liveSupport', 'promoWriting'] as const;
+export const VALID_SKILL_TYPES: readonly SkillType[] = ['liveSupport', 'posterDesign', 'articleEditing'] as const;
 
 /** 技能认领请求项 */
 export interface SkillClaimInput {
@@ -45,13 +45,16 @@ export type SkillClaimsValidationResult =
  * Returns null on success, or an error object with code and message on failure.
  *
  * Checks:
- * - SKILL_NOT_ALLOWED_FOR_ROLE: if targetRole !== 'UserGroupLeader' and skillClaims is non-empty
  * - DUPLICATE_SKILL_IN_REQUEST: if same skill appears more than once
  * - INVALID_SKILL_TYPE: if any skill value is not in allowed values
+ *
+ * Note: skill claims are now allowed for any targetRole (UGL/Speaker/Volunteer).
+ * The (activityId, skill) composite PK with ConditionExpression still enforces
+ * "at most one person per skill per activity" globally.
  */
 export function validateSkillClaimsInput(
   skillClaims: SkillClaimInput[],
-  targetRole: string,
+  _targetRole: string,
   _userIds?: string[],
 ): SkillClaimsValidationResult {
   // If skillClaims is empty, nothing to validate
@@ -59,20 +62,12 @@ export function validateSkillClaimsInput(
     return null;
   }
 
-  // Role restriction: skill claims only allowed for UserGroupLeader
-  if (targetRole !== 'UserGroupLeader') {
-    return {
-      code: 'SKILL_NOT_ALLOWED_FOR_ROLE',
-      message: '技能分仅适用于 UGL 角色',
-    };
-  }
-
   // Check for invalid skill types
   for (const claim of skillClaims) {
     if (!VALID_SKILL_TYPES.includes(claim.skill as SkillType)) {
       return {
         code: 'INVALID_SKILL_TYPE',
-        message: `无效的技能类型: ${claim.skill}，允许值为 liveSupport 或 promoWriting`,
+        message: `无效的技能类型: ${claim.skill}，允许值为 liveSupport、posterDesign 或 articleEditing`,
       };
     }
   }
@@ -99,7 +94,7 @@ export interface SkillClaimContext {
   distributionId: string;
   tableName: string;           // ActivitySkillClaims table name
   userNicknameMap: Record<string, string>;  // userId → nickname mapping
-  pointsConfig: { liveSupportPoints: number; promoWritingPoints: number };
+  pointsConfig: { liveSupportPoints: number; posterDesignPoints: number; articleEditingPoints: number };
 }
 
 // ============================================================
@@ -149,9 +144,10 @@ export function buildSkillClaimTransactItems(
   const now = new Date().toISOString();
 
   return skillClaims.map((claim) => {
-    const pointsAwarded = claim.skill === 'liveSupport'
-      ? context.pointsConfig.liveSupportPoints
-      : context.pointsConfig.promoWritingPoints;
+    const pointsAwarded =
+      claim.skill === 'liveSupport' ? context.pointsConfig.liveSupportPoints
+      : claim.skill === 'posterDesign' ? context.pointsConfig.posterDesignPoints
+      : context.pointsConfig.articleEditingPoints;
 
     const item: SkillClaimRecord = {
       activityId: context.activityId,

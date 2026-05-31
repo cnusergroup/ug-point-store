@@ -477,7 +477,7 @@ export default function AdminUsersPage() {
                 )}
                 {/* Regular roles section */}
                 {getVisibleRoles()
-                  .filter((r) => !['Admin', 'SuperAdmin'].includes(r))
+                  .filter((r) => !['Admin', 'SuperAdmin', 'OrderAdmin'].includes(r))
                   .sort((a, b) => (ROLE_PRIORITY[a] ?? 99) - (ROLE_PRIORITY[b] ?? 99))
                   .map((role) => {
                     const isSelected = selectedRoles.includes(role);

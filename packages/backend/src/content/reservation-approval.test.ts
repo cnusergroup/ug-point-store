@@ -116,7 +116,7 @@ describe('reviewReservation', () => {
     expect(pointsRecord.Put.Item.type).toBe('earn');
     expect(pointsRecord.Put.Item.amount).toBe(10);
     expect(pointsRecord.Put.Item.balanceAfter).toBe(110);
-    expect(pointsRecord.Put.Item.source).toBe('预约审批:Reserver|UG-Test|Test Topic|2024-06-15|');
+    expect(pointsRecord.Put.Item.source).toBe('预约审批通过:user-1#content-1');
     expect(pointsRecord.Put.Item.activityId).toBe('activity-1');
     expect(pointsRecord.Put.Item.activityType).toBe('线上活动');
     expect(pointsRecord.Put.Item.activityUG).toBe('UG-Test');

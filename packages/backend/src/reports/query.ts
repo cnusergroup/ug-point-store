@@ -16,7 +16,7 @@ export interface PointsDetailFilter {
   startDate?: string;   // ISO 8601
   endDate?: string;     // ISO 8601
   ugName?: string;      // activityUG
-  targetRole?: string;  // UserGroupLeader | Speaker | Volunteer
+  targetRole?: string;  // UserGroupLeader | Speaker | Volunteer | SpecialActivity
   activityId?: string;
   type?: 'earn' | 'spend' | 'all'; // 默认 all
   pageSize?: number;    // 默认 20，最大 100
@@ -73,7 +73,7 @@ export interface UGActivitySummaryResult {
 export interface UserRankingFilter {
   startDate?: string;
   endDate?: string;
-  targetRole?: string; // UserGroupLeader | Speaker | Volunteer | all
+  targetRole?: string; // UserGroupLeader | Speaker | Volunteer | SpecialActivity | all
   pageSize?: number;   // 默认 50，最大 100
   lastKey?: string;    // base64 编码的 offset 值
 }
@@ -86,6 +86,8 @@ export interface UserRankingRecord {
   totalEarnPoints: number;
   targetRole: string;
   isEmployee?: boolean;
+  /** 该用户在筛选时间范围内累计获得的特殊活动积分（来自 PointsRecords 中 targetRole='SpecialActivity' 的记录） */
+  earnTotalSpecialActivity?: number;
 }
 
 /** 用户积分排行查询结果 */
@@ -168,9 +170,21 @@ export function applyDefaultDateRange(startDate?: string, endDate?: string): { s
   const resolvedEnd = endDate || now.toISOString();
   if (!startDate) {
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    return { startDate: thirtyDaysAgo.toISOString(), endDate: resolvedEnd };
+    return { startDate: thirtyDaysAgo.toISOString(), endDate: normalizeEndDate(resolvedEnd) };
   }
-  return { startDate, endDate: resolvedEnd };
+  return { startDate: normalizeStartDate(startDate), endDate: normalizeEndDate(resolvedEnd) };
+}
+
+/** If date is YYYY-MM-DD (no time component), append T00:00:00.000Z for inclusive start */
+function normalizeStartDate(d: string): string {
+  if (d.length === 10 && /^\d{4}-\d{2}-\d{2}$/.test(d)) return `${d}T00:00:00.000Z`;
+  return d;
+}
+
+/** If date is YYYY-MM-DD (no time component), append T23:59:59.999Z for inclusive end */
+function normalizeEndDate(d: string): string {
+  if (d.length === 10 && /^\d{4}-\d{2}-\d{2}$/.test(d)) return `${d}T23:59:59.999Z`;
+  return d;
 }
 
 /** Split an array into chunks of the given size. */
@@ -263,24 +277,36 @@ export function aggregateByUG(records: RawPointsRecord[]): UGActivitySummaryReco
 
 /**
  * Aggregate raw earn records by userId.
- * Returns { userId, totalEarnPoints }[] (unsorted, no rank yet).
+ * Returns { userId, totalEarnPoints, targetRole, earnTotalSpecialActivity }[] (unsorted, no rank yet).
+ *
+ * `earnTotalSpecialActivity` accumulates only records where `targetRole === 'SpecialActivity'`,
+ * supporting the special-activity-award report column. When the input does not contain any
+ * SpecialActivity records (e.g. caller filtered by `targetRole='Speaker'` upstream), the field
+ * will remain 0 for all users.
  */
-export function aggregateByUser(records: RawPointsRecord[]): { userId: string; totalEarnPoints: number; targetRole: string }[] {
-  const map = new Map<string, { totalEarnPoints: number; targetRole: string }>();
+export function aggregateByUser(records: RawPointsRecord[]): { userId: string; totalEarnPoints: number; targetRole: string; earnTotalSpecialActivity: number }[] {
+  const map = new Map<string, { totalEarnPoints: number; targetRole: string; earnTotalSpecialActivity: number }>();
 
   for (const r of records) {
     if (!map.has(r.userId)) {
-      map.set(r.userId, { totalEarnPoints: 0, targetRole: r.targetRole ?? '' });
+      map.set(r.userId, { totalEarnPoints: 0, targetRole: r.targetRole ?? '', earnTotalSpecialActivity: 0 });
     }
     const entry = map.get(r.userId)!;
     entry.totalEarnPoints += r.amount;
     // Keep the most recent targetRole (last seen)
     if (r.targetRole) entry.targetRole = r.targetRole;
+    // Accumulate special-activity-award sum separately
+    if (r.targetRole === 'SpecialActivity') entry.earnTotalSpecialActivity += r.amount;
   }
 
-  const result: { userId: string; totalEarnPoints: number; targetRole: string }[] = [];
+  const result: { userId: string; totalEarnPoints: number; targetRole: string; earnTotalSpecialActivity: number }[] = [];
   for (const [userId, data] of map) {
-    result.push({ userId, totalEarnPoints: data.totalEarnPoints, targetRole: data.targetRole });
+    result.push({
+      userId,
+      totalEarnPoints: data.totalEarnPoints,
+      targetRole: data.targetRole,
+      earnTotalSpecialActivity: data.earnTotalSpecialActivity,
+    });
   }
   return result;
 }
@@ -742,13 +768,27 @@ export async function queryUGActivitySummary(
   try {
     const { startDate, endDate } = applyDefaultDateRange(filter.startDate, filter.endDate);
 
-    // Query all earn records in date range (no page limit — full scan for aggregation)
+    // Widen createdAt range to capture records where activityDate is in range but
+    // points were distributed later (e.g., activity in March, distributed in April).
+    const widenedStart = new Date(new Date(startDate).getTime() - 60 * 24 * 60 * 60 * 1000).toISOString();
+    const widenedEnd = new Date(new Date(endDate).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Query earn records with widened createdAt range
     const { items } = await queryByTypeAndDateRange(
-      dynamoClient, tables.pointsRecordsTable, 'earn', startDate, endDate,
+      dynamoClient, tables.pointsRecordsTable, 'earn', widenedStart, widenedEnd,
     );
 
+    // Filter by activityDate within the user-specified date range.
+    // activityDate is YYYY-MM-DD format; startDate/endDate may be YYYY-MM-DD or ISO.
+    const adStart = startDate.substring(0, 10);
+    const adEnd = endDate.substring(0, 10);
+    const rawRecords = (items as unknown as RawPointsRecord[]).filter(r => {
+      const ad = r.activityDate;
+      if (!ad) return false; // skip records without activityDate
+      return ad >= adStart && ad <= adEnd;
+    });
+
     // Aggregate by UG using pure function
-    const rawRecords = items as unknown as RawPointsRecord[];
     const aggregated = aggregateByUG(rawRecords);
 
     // Sort by totalPoints descending
@@ -827,6 +867,7 @@ export async function queryUserPointsRanking(
         ? (userDetailsMap.get(r.userId)?.roles?.filter(role => role !== 'Admin' && role !== 'SuperAdmin').join(', ') || r.targetRole)
         : r.targetRole,
       isEmployee: userDetailsMap.get(r.userId)?.isEmployee ?? false,
+      earnTotalSpecialActivity: r.earnTotalSpecialActivity,
     }));
 
     // Encode next offset as lastKey

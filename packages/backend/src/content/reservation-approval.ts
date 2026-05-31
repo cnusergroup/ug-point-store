@@ -193,7 +193,7 @@ export async function reviewReservation(
                 userId: uploaderId,
                 type: 'earn',
                 amount: rewardPoints,
-                source: `预约审批:${reserverNickname}|${reservation.activityUG || ''}|${reservation.activityTopic || ''}|${reservation.activityDate || ''}|${contentTitle}`,
+                source: `预约审批通过:${input.pk}`,
                 balanceAfter: newBalance,
                 createdAt: now,
                 activityId: reservation.activityId,

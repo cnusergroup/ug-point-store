@@ -17,6 +17,7 @@ import type {
   InviteConversionRecord,
   EmployeeEngagementRecord,
 } from './insight-query';
+import type { InactiveUGLRecord } from './inactive-ugl-query';
 
 // ============================================================
 // Types
@@ -37,7 +38,8 @@ export type ReportType =
   | 'inventory-alert'
   | 'travel-statistics'
   | 'invite-conversion'
-  | 'employee-engagement';
+  | 'employee-engagement'
+  | 'inactive-ugl';
 
 /** 列定义 */
 export interface ColumnDef {
@@ -74,6 +76,7 @@ const USER_RANKING_COLUMNS: ColumnDef[] = [
   { key: 'nickname', label: '用户昵称' },
   { key: 'userId', label: '用户ID' },
   { key: 'totalEarnPoints', label: '获取积分总额' },
+  { key: 'earnTotalSpecialActivity', label: '特殊活动积分' },
   { key: 'targetRole', label: '身份' },
   { key: 'isEmployee', label: '是否AWS员工' },
 ];
@@ -152,6 +155,14 @@ const EMPLOYEE_ENGAGEMENT_COLUMNS: ColumnDef[] = [
   { key: 'ugList', label: '参与UG列表' },
 ];
 
+const INACTIVE_UGL_COLUMNS: ColumnDef[] = [
+  { key: 'nickname', label: '用户昵称' },
+  { key: 'email', label: '邮箱' },
+  { key: 'ugName', label: '负责UG' },
+  { key: 'createdAt', label: '注册时间' },
+  { key: 'lastActiveDate', label: '最后活跃时间' },
+];
+
 /** 获取报表列定义 */
 export function getColumnDefs(reportType: ReportType): ColumnDef[] {
   switch (reportType) {
@@ -177,6 +188,8 @@ export function getColumnDefs(reportType: ReportType): ColumnDef[] {
       return INVITE_CONVERSION_COLUMNS;
     case 'employee-engagement':
       return EMPLOYEE_ENGAGEMENT_COLUMNS;
+    case 'inactive-ugl':
+      return INACTIVE_UGL_COLUMNS;
   }
 }
 
@@ -241,6 +254,7 @@ export function formatUserRankingForExport(records: (UserRankingRecord & { isEmp
     nickname: r.nickname,
     userId: r.userId,
     totalEarnPoints: r.totalEarnPoints,
+    earnTotalSpecialActivity: r.earnTotalSpecialActivity ?? 0,
     targetRole: r.targetRole,
     isEmployee: r.isEmployee === true ? '是' : '否',
   }));
@@ -361,6 +375,19 @@ export function formatEmployeeEngagementForExport(records: EmployeeEngagementRec
     lastActiveTime: formatDateTime(r.lastActiveTime),
     primaryRoles: r.primaryRoles,
     ugList: r.ugList,
+  }));
+}
+
+/** 将不活跃UGL记录格式化为导出行 */
+export function formatInactiveUGLForExport(
+  records: InactiveUGLRecord[],
+): Record<string, unknown>[] {
+  return records.map(r => ({
+    nickname: r.nickname,
+    email: r.email,
+    ugName: r.ugName,
+    createdAt: formatDateTime(r.createdAt),
+    lastActiveDate: r.lastActiveDate ? formatDateTime(r.lastActiveDate) : '-',
   }));
 }
 

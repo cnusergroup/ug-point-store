@@ -40,7 +40,7 @@ interface UGItem {
 
 /** Existing skill claim record from the server */
 interface ExistingSkillClaim {
-  skill: 'liveSupport' | 'promoWriting';
+  skill: 'liveSupport' | 'posterDesign' | 'articleEditing';
   userId: string;
   userNickname: string;
   claimedAt: string;
@@ -58,11 +58,12 @@ interface PointsRuleConfig {
   speakerTypeBPoints: number;
   speakerRoundtablePoints: number;
   liveSupportPoints?: number;
-  promoWritingPoints?: number;
+  posterDesignPoints?: number;
+  articleEditingPoints?: number;
 }
 
 /** Skill type for UGL skill claims */
-type SkillType = 'liveSupport' | 'promoWriting';
+type SkillType = 'liveSupport' | 'posterDesign' | 'articleEditing';
 
 /** Skill claim lock from server (existing occupation) */
 interface SkillClaimLock {
@@ -164,10 +165,12 @@ export default function BatchPointsPage() {
 
   // Skill claims state: tracks which userId has selected each skill in current session
   // Key: SkillType, Value: userId that selected it
-  const [selectedSkills, setSelectedSkills] = useState<Record<SkillType, string | null>>({
+  const EMPTY_SKILLS: Record<SkillType, string | null> = {
     liveSupport: null,
-    promoWriting: null,
-  });
+    posterDesign: null,
+    articleEditing: null,
+  };
+  const [selectedSkills, setSelectedSkills] = useState<Record<SkillType, string | null>>({ ...EMPTY_SKILLS });
 
   // Server-side skill locks (existing occupations from other distributions)
   const [serverSkillLocks, setServerSkillLocks] = useState<SkillClaimLock[]>([]);
@@ -294,7 +297,7 @@ export default function BatchPointsPage() {
     setSelectedIds(new Set());
     setSearchQuery('');
     // Reset skill selections when role or activity changes
-    setSelectedSkills({ liveSupport: null, promoWriting: null });
+    setSelectedSkills({ ...EMPTY_SKILLS });
     setServerSkillLocks([]);
     fetchUsers(targetRole);
     // Fetch awarded users when activity + role changes
@@ -303,15 +306,15 @@ export default function BatchPointsPage() {
     }
   }, [isAuthenticated, fetchUsers, targetRole, selectedActivity, fetchAwardedUsers]);
 
-  // Fetch existing skill claims when activityId changes (only for UGL role)
+  // Fetch existing skill claims when activityId changes (for any role)
   useEffect(() => {
     if (!isAuthenticated) return;
-    if (targetRole === 'UserGroupLeader' && selectedActivity) {
+    if (selectedActivity) {
       fetchExistingSkillClaims(selectedActivity.activityId);
     } else {
       setServerSkillLocks([]);
     }
-  }, [isAuthenticated, targetRole, selectedActivity, fetchExistingSkillClaims]);
+  }, [isAuthenticated, selectedActivity, fetchExistingSkillClaims]);
 
   // Filter activities: only active UG + client-side search
   const filteredActivities = useMemo(() => {
@@ -349,7 +352,7 @@ export default function BatchPointsPage() {
     setActivitySearch('');
     setSelectedIds(new Set());
     setSpeakerType(null);
-    setSelectedSkills({ liveSupport: null, promoWriting: null });
+    setSelectedSkills({ ...EMPTY_SKILLS });
     setServerSkillLocks([]);
   };
 
@@ -363,10 +366,10 @@ export default function BatchPointsPage() {
   };
 
   const handleLoadMore = () => {
-    // No longer needed — all users loaded at once
+    // No longer needed �?all users loaded at once
   };
 
-  // Selection handlers — skip awarded users
+  // Selection handlers �?skip awarded users
   const toggleUser = (userId: string) => {
     if (awardedUserIds.has(userId)) return;
     setSelectedIds((prev) => {
@@ -411,20 +414,20 @@ export default function BatchPointsPage() {
     // Check if occupied by server (another user from a previous distribution)
     const serverLock = serverSkillLocks.find((lock) => lock.skill === skill);
     if (serverLock) {
-      // Occupied by server data — do nothing
+      // Occupied by server data �?do nothing
       return;
     }
 
     const currentHolder = selectedSkills[skill];
 
     if (currentHolder === userId) {
-      // Already selected by this user → deselect
+      // Already selected by this user �?deselect
       setSelectedSkills((prev) => ({ ...prev, [skill]: null }));
     } else if (currentHolder === null) {
-      // Not selected by anyone → select it
+      // Not selected by anyone �?select it
       setSelectedSkills((prev) => ({ ...prev, [skill]: userId }));
     }
-    // If occupied by another user in current session (mutex) → do nothing
+    // If occupied by another user in current session (mutex) �?do nothing
   };
 
   // Helper to determine skill icon state for a given user and skill
@@ -449,34 +452,33 @@ export default function BatchPointsPage() {
 
   // Get tooltip text for occupied/disabled skill icons
   const getSkillTooltip = (userId: string, skill: SkillType): string => {
-    const skillPoints = skill === 'liveSupport'
-      ? (pointsRuleConfig.liveSupportPoints ?? 30)
-      : (pointsRuleConfig.promoWritingPoints ?? 30);
-    const skillName = skill === 'liveSupport'
-      ? (t('skillClaims.skillIcon.liveSupport.tooltip' as any) as string)
-      : (t('skillClaims.skillIcon.promoWriting.tooltip' as any) as string);
+    const skillPoints =
+      skill === 'liveSupport' ? (pointsRuleConfig.liveSupportPoints ?? 30)
+      : skill === 'posterDesign' ? (pointsRuleConfig.posterDesignPoints ?? 30)
+      : (pointsRuleConfig.articleEditingPoints ?? 30);
+    const skillName = (t(`skillClaims.skillIcon.${skill}.tooltip` as any) as string);
 
     const serverLock = serverSkillLocks.find((lock) => lock.skill === skill);
     if (serverLock) {
-      return `${skillName} · +${skillPoints}分 · 每场限1人\n已被 ${serverLock.userNickname} 占用`;
+      return `${skillName} · +${skillPoints}分 · 每场1人\n已被 ${serverLock.userNickname} 占用`;
     }
 
     const currentHolder = selectedSkills[skill];
     if (currentHolder !== null && currentHolder !== userId) {
       const holder = users.find((u) => u.userId === currentHolder);
       const nickname = holder?.nickname || currentHolder;
-      return `${skillName} · +${skillPoints}分 · 每场限1人\n已被 ${nickname} 占用`;
+      return `${skillName} · +${skillPoints}分 · 每场1人\n已被 ${nickname} 占用`;
     }
 
     // Normal or selected — show skill name + points + limit
-    return `${skillName} · +${skillPoints}分 · 每场限1人`;
+    return `${skillName} · +${skillPoints}分 · 每场1人`;
   };
 
   // Volunteer limit check
   const volunteerLimitExceeded = targetRole === 'Volunteer' && selectedIds.size > pointsRuleConfig.volunteerMaxPerEvent;
 
   // Check if any skill is selected (for skill-only submission scenario)
-  const hasSkillSelection = selectedSkills.liveSupport !== null || selectedSkills.promoWriting !== null;
+  const hasSkillSelection = selectedSkills.liveSupport !== null || selectedSkills.posterDesign !== null || selectedSkills.articleEditing !== null;
 
   // Validation
   const isReasonValid = reasonInput.trim().length >= 1 && reasonInput.trim().length <= 200;
@@ -523,7 +525,7 @@ export default function BatchPointsPage() {
       setReasonInput('');
       setShowConfirm(false);
       // Reset skill selections on success
-      setSelectedSkills({ liveSupport: null, promoWriting: null });
+      setSelectedSkills({ ...EMPTY_SKILLS });
       // Refresh skill locks from server
       fetchExistingSkillClaims(selectedActivity.activityId);
       fetchUsers(targetRole);
@@ -540,7 +542,7 @@ export default function BatchPointsPage() {
           // Refresh locks to show updated occupation state
           fetchExistingSkillClaims(selectedActivity.activityId);
           // Reset local skill selections since they may be stale
-          setSelectedSkills({ liveSupport: null, promoWriting: null });
+          setSelectedSkills({ ...EMPTY_SKILLS });
         } else if (err.code === 'BATCH_TOO_LARGE') {
           Taro.showToast({
             title: t('skillClaims.batchPoints.batchTooLarge' as any),
@@ -755,7 +757,7 @@ export default function BatchPointsPage() {
           {filteredUsers.map((user) => {
             const isAwarded = awardedUserIds.has(user.userId);
             const isSelected = selectedIds.has(user.userId);
-            const showSkillIcons = targetRole === 'UserGroupLeader' && activitySelected && user.status === 'active';
+            const showSkillIcons = activitySelected && user.status === 'active';
             return (
               <View
                 key={user.userId}
@@ -763,7 +765,7 @@ export default function BatchPointsPage() {
                 onClick={() => toggleUser(user.userId)}
               >
                 <View className={`bp-checkbox ${isSelected ? 'bp-checkbox--checked' : ''} ${isAwarded ? 'bp-checkbox--disabled' : ''}`}>
-                  <Text>{isSelected ? '✓' : isAwarded ? '—' : ''}</Text>
+                  <Text>{isSelected ? '✓' : isAwarded ? '✓' : ''}</Text>
                 </View>
                 <View className='bp-user-row__info'>
                   <View className='bp-user-row__top'>
@@ -789,13 +791,25 @@ export default function BatchPointsPage() {
                         <path strokeLinecap='round' strokeLinejoin='round' d='m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z' />
                       </svg>
                     </View>
-                    {/* pencil-square (promoWriting) - Heroicons outline 24×24 */}
+                    {/* photo (posterDesign) - Heroicons outline 24×24 */}
                     <View
-                      className={`bp-skill-icons__icon bp-skill-icons__icon--${getSkillIconState(user.userId, 'promoWriting')}`}
+                      className={`bp-skill-icons__icon bp-skill-icons__icon--${getSkillIconState(user.userId, 'posterDesign')}`}
                       // @ts-ignore - title works in H5 mode
-                      title={getSkillTooltip(user.userId, 'promoWriting')}
-                      aria-label={getSkillTooltip(user.userId, 'promoWriting')}
-                      onClick={(e) => handleSkillClick(user.userId, 'promoWriting', e)}
+                      title={getSkillTooltip(user.userId, 'posterDesign')}
+                      aria-label={getSkillTooltip(user.userId, 'posterDesign')}
+                      onClick={(e) => handleSkillClick(user.userId, 'posterDesign', e)}
+                    >
+                      <svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' strokeWidth={1.5} stroke='currentColor' width={24} height={24}>
+                        <path strokeLinecap='round' strokeLinejoin='round' d='m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z' />
+                      </svg>
+                    </View>
+                    {/* pencil-square (articleEditing) - Heroicons outline 24×24 */}
+                    <View
+                      className={`bp-skill-icons__icon bp-skill-icons__icon--${getSkillIconState(user.userId, 'articleEditing')}`}
+                      // @ts-ignore - title works in H5 mode
+                      title={getSkillTooltip(user.userId, 'articleEditing')}
+                      aria-label={getSkillTooltip(user.userId, 'articleEditing')}
+                      onClick={(e) => handleSkillClick(user.userId, 'articleEditing', e)}
                     >
                       <svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' strokeWidth={1.5} stroke='currentColor' width={24} height={24}>
                         <path strokeLinecap='round' strokeLinejoin='round' d='m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10' />
@@ -809,7 +823,7 @@ export default function BatchPointsPage() {
         </View>
       )}
 
-      {/* Form Section — reason only, points are auto-filled */}
+      {/* Form Section �?reason only, points are auto-filled */}
       <View className={`bp-form ${!activitySelected ? 'bp-form--disabled' : ''}`}>
         <View className='bp-form__field'>
           <Text className='bp-form__label'>{t('batchPoints.page.reasonLabel')}</Text>
@@ -841,7 +855,7 @@ export default function BatchPointsPage() {
           <View className='form-modal'>
             <View className='form-modal__header'>
               <Text className='form-modal__title'>{t('batchPoints.page.confirmTitle')}</Text>
-              <View className='form-modal__close' onClick={handleCloseConfirm}><Text>✕</Text></View>
+              <View className='form-modal__close' onClick={handleCloseConfirm}><Text>×</Text></View>
             </View>
             <View className='form-modal__body'>
               <View className='bp-confirm__row'>
@@ -886,44 +900,42 @@ export default function BatchPointsPage() {
                 </Text>
               </View>
               {/* Skill Claims Summary */}
-              {hasSkillSelection && (
-                <View className='bp-confirm__skill-section'>
-                  <View className='bp-confirm__row'>
-                    <Text className='bp-confirm__label'>技能分</Text>
-                    <Text className='bp-confirm__value bp-confirm__value--highlight'>
-                      +{(() => {
-                        let total = 0;
-                        if (selectedSkills.liveSupport) total += (pointsRuleConfig.liveSupportPoints ?? 30);
-                        if (selectedSkills.promoWriting) total += (pointsRuleConfig.promoWritingPoints ?? 30);
-                        return total;
-                      })()}
-                    </Text>
+              {hasSkillSelection && (() => {
+                const skillPointsMap: Record<SkillType, number> = {
+                  liveSupport: pointsRuleConfig.liveSupportPoints ?? 30,
+                  posterDesign: pointsRuleConfig.posterDesignPoints ?? 30,
+                  articleEditing: pointsRuleConfig.articleEditingPoints ?? 30,
+                };
+                const orderedSkills: SkillType[] = ['liveSupport', 'posterDesign', 'articleEditing'];
+                const total = orderedSkills.reduce(
+                  (sum, sk) => sum + (selectedSkills[sk] ? skillPointsMap[sk] : 0),
+                  0,
+                );
+                return (
+                  <View className='bp-confirm__skill-section'>
+                    <View className='bp-confirm__row'>
+                      <Text className='bp-confirm__label'>技能分</Text>
+                      <Text className='bp-confirm__value bp-confirm__value--highlight'>+{total}</Text>
+                    </View>
+                    {orderedSkills.map((sk) =>
+                      selectedSkills[sk] ? (
+                        <View key={sk} className='bp-confirm__skill-item'>
+                          <Text className='bp-confirm__skill-name'>{t(`skillClaims.skillIcon.${sk}.tooltip` as any)}</Text>
+                          <Text className='bp-confirm__skill-user'>
+                            {users.find(u => u.userId === selectedSkills[sk])?.nickname || selectedSkills[sk]}
+                          </Text>
+                          <Text className='bp-confirm__skill-pts'>+{skillPointsMap[sk]}</Text>
+                        </View>
+                      ) : null,
+                    )}
                   </View>
-                  {selectedSkills.liveSupport && (
-                    <View className='bp-confirm__skill-item'>
-                      <Text className='bp-confirm__skill-name'>{t('skillClaims.skillIcon.liveSupport.tooltip' as any)}</Text>
-                      <Text className='bp-confirm__skill-user'>
-                        {users.find(u => u.userId === selectedSkills.liveSupport)?.nickname || selectedSkills.liveSupport}
-                      </Text>
-                      <Text className='bp-confirm__skill-pts'>+{pointsRuleConfig.liveSupportPoints ?? 30}</Text>
-                    </View>
-                  )}
-                  {selectedSkills.promoWriting && (
-                    <View className='bp-confirm__skill-item'>
-                      <Text className='bp-confirm__skill-name'>{t('skillClaims.skillIcon.promoWriting.tooltip' as any)}</Text>
-                      <Text className='bp-confirm__skill-user'>
-                        {users.find(u => u.userId === selectedSkills.promoWriting)?.nickname || selectedSkills.promoWriting}
-                      </Text>
-                      <Text className='bp-confirm__skill-pts'>+{pointsRuleConfig.promoWritingPoints ?? 30}</Text>
-                    </View>
-                  )}
-                </View>
-              )}
+                );
+              })()}
               <View className='bp-confirm__row'>
                 <Text className='bp-confirm__label'>{t('batchPoints.page.confirmPointsRule' as any)}</Text>
                 <Text className='bp-confirm__value'>
                   {currentRoleTab ? t(currentRoleTab.labelKey) : targetRole}
-                  {speakerTypeLabel ? ` — ${t(speakerTypeLabel as any)}` : ''}
+                  {speakerTypeLabel ? ` · ${t(speakerTypeLabel as any)}` : ''}
                   {` : ${autoPoints} ${t('batchPoints.page.pointsUnit')}`}
                 </Text>
               </View>
