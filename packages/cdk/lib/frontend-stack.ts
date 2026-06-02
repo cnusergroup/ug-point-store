@@ -194,6 +194,7 @@ function handler(event) {
         '/products/*': uploadBehavior,
         '/claims/*': uploadBehavior,
         '/content/*': uploadBehavior,
+        '/wishes/*': uploadBehavior,
         // Public credential pages — cacheable, no authentication required
         '/c/*': {
           origin: apiOrigin,
@@ -267,10 +268,11 @@ function handler(event) {
       });
 
       // Override upload behavior target origins to use the no-OAC origin
-      // CacheBehaviors order: /api/*, /products/*, /claims/*, /content/*, /c/*
+      // CacheBehaviors order: /api/*, /products/*, /claims/*, /content/*, /wishes/*, /c/*
       cfnDist.addPropertyOverride('DistributionConfig.CacheBehaviors.1.TargetOriginId', uploadOriginId);
       cfnDist.addPropertyOverride('DistributionConfig.CacheBehaviors.2.TargetOriginId', uploadOriginId);
       cfnDist.addPropertyOverride('DistributionConfig.CacheBehaviors.3.TargetOriginId', uploadOriginId);
+      cfnDist.addPropertyOverride('DistributionConfig.CacheBehaviors.4.TargetOriginId', uploadOriginId);
     }
   }
 
