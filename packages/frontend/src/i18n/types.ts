@@ -393,6 +393,7 @@ export interface TranslationDict {
     themeWarm: string;
     tabPoints: string;
     tabRedemptions: string;
+    tabCredentials: string;
     noPointsRecords: string;
     noRedemptionRecords: string;
     loadMore: string;
@@ -2134,5 +2135,52 @@ export interface TranslationDict {
     errorInvalidRequest: string;
     errorForbidden: string;
     errorDefault: string;
+  };
+  credentialApplication: {
+    tabLabel: string;
+    apply: {
+      activityNameLabel: string;
+      identityLabel: string;
+      applyButton: string;
+      appliedBadge: string;
+      viewCertificate: string;
+      loading: string;
+      empty: string;
+      error: string;
+      retry: string;
+      dialogTitle: string;
+      recipientNameLabel: string;
+      recipientNamePlaceholder: string;
+      recipientNameEmptyError: string;
+      submitButton: string;
+      submitting: string;
+      cancelButton: string;
+      successMessage: string;
+      failedMessage: string;
+    };
+    myCredentials: {
+      entryTitle: string;
+      title: string;
+      backButton: string;
+      loading: string;
+      empty: string;
+      error: string;
+      retry: string;
+      activityNameLabel: string;
+      identityLabel: string;
+      credentialIdLabel: string;
+      issueDateLabel: string;
+      statusLabel: string;
+      statusActive: string;
+      statusRevoked: string;
+      copyLink: string;
+      copySuccess: string;
+      copyFailed: string;
+      viewCertificate: string;
+    };
+    sourceType: {
+      selfApplied: string;
+      batchImported: string;
+    };
   };
 }

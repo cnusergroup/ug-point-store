@@ -112,6 +112,35 @@ describe('renderCredentialPage', () => {
     expect(html).toContain('活动志愿者服务');
   });
 
+  it('should render event name line breaks as <br> while keeping title/meta single-line', async () => {
+    const credential = makeCredential({
+      eventName: 'AWS Community Day 2026\nSummer Edition',
+    });
+    const html = await renderCredentialPage({ credential, baseUrl: BASE_URL });
+
+    // Hero event-name preserves the manual break as a <br>
+    expect(html).toContain('AWS Community Day 2026<br>Summer Edition');
+
+    // <title> collapses the newline to a single space — never a raw newline or <br>.
+    const titleMatch = html.match(/<title>([\s\S]*?)<\/title>/);
+    expect(titleMatch).not.toBeNull();
+    expect(titleMatch![1]).not.toContain('\n');
+    expect(titleMatch![1]).not.toContain('<br>');
+    expect(titleMatch![1]).toContain('AWS Community Day 2026 Summer Edition');
+
+    // OG description collapses the newline too.
+    const ogDescMatch = html.match(/og:description" content="([\s\S]*?)"/);
+    expect(ogDescMatch).not.toBeNull();
+    expect(ogDescMatch![1]).not.toContain('<br>');
+    expect(ogDescMatch![1]).toContain('AWS Community Day 2026 Summer Edition');
+
+    // LinkedIn cert name param collapses the newline (no encoded \n).
+    // URLSearchParams encodes spaces as '+', so assert on that form.
+    const linkedIn = buildLinkedInUrl(credential, BASE_URL);
+    expect(linkedIn).not.toContain('%0A');
+    expect(linkedIn).toContain('AWS+Community+Day+2026+Summer+Edition');
+  });
+
   it('should show revocation marker and hide LinkedIn button for revoked credentials', async () => {
     const credential = makeCredential({ status: 'revoked' });
     const html = await renderCredentialPage({ credential, baseUrl: BASE_URL });

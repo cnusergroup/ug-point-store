@@ -4,7 +4,7 @@ import Taro from '@tarojs/taro';
 import { useAppStore, UserRole } from '../../store';
 import { request } from '../../utils/request';
 import { useTranslation } from '../../i18n';
-import { TicketIcon, LocationIcon, ClaimIcon, SettingsIcon, VoucherIcon, ShoppingBagIcon, ContentIcon, GlobeIcon } from '../../components/icons';
+import { TicketIcon, LocationIcon, ClaimIcon, SettingsIcon, VoucherIcon, ShoppingBagIcon, ContentIcon, GlobeIcon, ChevronRightIcon, RefreshIcon } from '../../components/icons';
 import { ProfileSkeleton } from '../../components/Skeleton';
 import TabBar from '../../components/TabBar';
 import './index.scss';
@@ -74,6 +74,16 @@ interface PaginatedResponse<T> {
   pageSize: number;
 }
 
+/** Earned credential from API (credential self-application) */
+interface MyCredential {
+  credentialId: string;
+  eventName: string;
+  identityText: string;
+  issueDate: string;
+  status: 'active' | 'revoked';
+  url: string;
+}
+
 /** Role display config */
 const ROLE_CONFIG: Record<UserRole, { label: string; className: string }> = {
   UserGroupLeader: { label: 'Leader', className: 'role-badge--leader' },
@@ -100,7 +110,7 @@ interface FeatureToggles {
   pointsClaimEnabled: boolean;
 }
 
-type ActiveTab = 'points' | 'redemptions';
+type ActiveTab = 'points' | 'redemptions' | 'credentials';
 
 const PAGE_SIZE = 20;
 
@@ -137,6 +147,30 @@ function ProfilePage() {
   const [redemptionsPage, setRedemptionsPage] = useState(1);
   const [redemptionsTotal, setRedemptionsTotal] = useState(0);
   const [redemptionsLoading, setRedemptionsLoading] = useState(false);
+
+  // My credentials state (credential self-application)
+  const [credentials, setCredentials] = useState<MyCredential[]>([]);
+  const [credentialsLoading, setCredentialsLoading] = useState(false);
+  const [credentialsError, setCredentialsError] = useState(false);
+  const [credentialsLoaded, setCredentialsLoaded] = useState(false);
+  const [copyFailedUrl, setCopyFailedUrl] = useState<string | null>(null);
+
+  const fetchCredentials = useCallback(async () => {
+    setCredentialsLoading(true);
+    setCredentialsError(false);
+    setCopyFailedUrl(null);
+    try {
+      const res = await request<{ items: MyCredential[] }>({
+        url: '/api/credentials/my-credentials',
+      });
+      setCredentials(res?.items ?? []);
+      setCredentialsLoaded(true);
+    } catch {
+      setCredentialsError(true);
+    } finally {
+      setCredentialsLoading(false);
+    }
+  }, []);
 
   const fetchPointsRecords = useCallback(async (page: number, reset = false) => {
     setPointsLoading(true);
@@ -181,6 +215,7 @@ function ProfilePage() {
     }
     fetchProfile();
     fetchPointsRecords(1, true);
+    fetchCredentials();
 
     // Fetch feature toggles (public endpoint, no auth needed)
     request<FeatureToggles>({
@@ -196,7 +231,7 @@ function ProfilePage() {
       .catch(() => {
         // On failure, keep defaults (both false — safe degradation)
       });
-  }, [isAuthenticated, fetchProfile, fetchPointsRecords, fetchRedemptionRecords]);
+  }, [isAuthenticated, fetchProfile, fetchPointsRecords, fetchRedemptionRecords, fetchCredentials]);
 
   const handleLoadMore = () => {
     if (activeTab === 'points') {
@@ -299,6 +334,31 @@ function ProfilePage() {
     }
   };
 
+  /** Open a credential's public page (/c/{credentialId}) */
+  const handleCredentialClick = (cred: MyCredential) => {
+    const env = Taro.getEnv();
+    if (env === Taro.ENV_TYPE.WEB && typeof window !== 'undefined') {
+      window.open(cred.url, '_blank');
+    } else {
+      Taro.setClipboardData({ data: cred.url });
+      Taro.showToast({ title: t('credentialApplication.myCredentials.copySuccess'), icon: 'success', duration: 2000 });
+    }
+  };
+
+  /** Copy a credential's full public URL to clipboard */
+  const handleCopyCredentialLink = (cred: MyCredential) => {
+    setCopyFailedUrl(null);
+    Taro.setClipboardData({ data: cred.url })
+      .then(() => {
+        Taro.showToast({ title: t('credentialApplication.myCredentials.copySuccess'), icon: 'success', duration: 2000 });
+      })
+      .catch(() => {
+        // On failure, show the full URL inline so the user can copy manually (Req 8.9)
+        setCopyFailedUrl(cred.url);
+        Taro.showToast({ title: t('credentialApplication.myCredentials.copyFailed'), icon: 'none', duration: 3000 });
+      });
+  };
+
   const hasMorePoints = pointsRecords.length < pointsTotal;
   const hasMoreRedemptions = redemptionRecords.length < redemptionsTotal;
 
@@ -368,6 +428,8 @@ function ProfilePage() {
         </View>
       )}
 
+      {/* My Credentials moved into the tabbed records area below (third tab) */}
+
       {/* Tab Switcher */}
       <View className='profile-tabs'>
         <View
@@ -384,6 +446,12 @@ function ProfilePage() {
             <Text>{t('profile.tabRedemptions')}</Text>
           </View>
         )}
+        <View
+          className={`profile-tabs__item ${activeTab === 'credentials' ? 'profile-tabs__item--active' : ''}`}
+          onClick={() => handleTabSwitch('credentials')}
+        >
+          <Text>{t('profile.tabCredentials')}</Text>
+        </View>
       </View>
 
       {/* Points Records Tab */}
@@ -482,6 +550,98 @@ function ProfilePage() {
           {redemptionsLoading && redemptionRecords.length === 0 && (
             <View className='record-list__loading'>
               <Text>{t('profile.loading')}</Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Credentials Tab — 我的证书 (credential self-application, Req 8.x) */}
+      {activeTab === 'credentials' && (
+        <View className='my-credentials'>
+          {credentialsLoading && !credentialsLoaded ? (
+            /* Loading state — not empty/error (Req 8.8) */
+            <View className='my-credentials__status'>
+              <Text className='my-credentials__status-text'>{t('credentialApplication.myCredentials.loading')}</Text>
+            </View>
+          ) : credentialsError ? (
+            /* Error state with retry entry — not empty (Req 8.3) */
+            <View className='my-credentials__status'>
+              <Text className='my-credentials__status-text my-credentials__status-text--error'>
+                {t('credentialApplication.myCredentials.error')}
+              </Text>
+              <View className='my-credentials__retry' onClick={fetchCredentials}>
+                <RefreshIcon size={16} color='var(--accent-primary)' />
+                <Text>{t('credentialApplication.myCredentials.retry')}</Text>
+              </View>
+            </View>
+          ) : credentials.length === 0 ? (
+            /* Empty state — load succeeded, no credentials (Req 8.7) */
+            <View className='my-credentials__empty'>
+              <View className='my-credentials__empty-icon'>
+                <VoucherIcon size={40} color='var(--text-tertiary)' />
+              </View>
+              <Text className='my-credentials__empty-text'>{t('credentialApplication.myCredentials.empty')}</Text>
+            </View>
+          ) : (
+            <View className='my-credentials__list'>
+              {credentials.map((cred) => (
+                <View key={cred.credentialId} className='credential-card'>
+                  <View
+                    className='credential-card__main'
+                    onClick={() => handleCredentialClick(cred)}
+                  >
+                    <View className='credential-card__info'>
+                      <Text className='credential-card__event'>{cred.eventName}</Text>
+                      <Text className='credential-card__identity'>{cred.identityText}</Text>
+                      <View className='credential-card__meta'>
+                        <Text className='credential-card__meta-item'>
+                          {t('credentialApplication.myCredentials.credentialIdLabel')}: {cred.credentialId}
+                        </Text>
+                        <Text className='credential-card__meta-item'>
+                          {t('credentialApplication.myCredentials.issueDateLabel')}: {cred.issueDate}
+                        </Text>
+                      </View>
+                    </View>
+                    <View className='credential-card__aside'>
+                      {/* Status shown as a text badge, not color alone (accessibility) */}
+                      <Text
+                        className={`credential-card__status ${
+                          cred.status === 'active'
+                            ? 'credential-card__status--active'
+                            : 'credential-card__status--revoked'
+                        }`}
+                      >
+                        {cred.status === 'active'
+                          ? t('credentialApplication.myCredentials.statusActive')
+                          : t('credentialApplication.myCredentials.statusRevoked')}
+                      </Text>
+                      <ChevronRightIcon size={18} color='var(--text-tertiary)' />
+                    </View>
+                  </View>
+                  <View className='credential-card__actions'>
+                    <View
+                      className='credential-card__view'
+                      onClick={() => handleCredentialClick(cred)}
+                    >
+                      <Text>{t('credentialApplication.myCredentials.viewCertificate')}</Text>
+                    </View>
+                    <View
+                      className='credential-card__copy'
+                      onClick={() => handleCopyCredentialLink(cred)}
+                    >
+                      <Text>{t('credentialApplication.myCredentials.copyLink')}</Text>
+                    </View>
+                  </View>
+                  {copyFailedUrl === cred.url && (
+                    /* Copy failed — show full URL for manual copy (Req 8.9) */
+                    <View className='credential-card__manual-url'>
+                      <Text className='credential-card__manual-url-text' selectable userSelect>
+                        {cred.url}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              ))}
             </View>
           )}
         </View>

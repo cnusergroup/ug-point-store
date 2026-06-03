@@ -485,3 +485,238 @@
 }
 
 
+
+/* ============================================
+   My Credentials (credential self-application)
+   ============================================ */
+.my-credentials {
+  /* Lives inside the tabbed records area (third tab) — match .record-list insets */
+  padding: var(--space-3) var(--space-5);
+
+  /* Loading / error status block */
+  &__status {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    padding: var(--space-8) var(--space-5);
+    background: var(--bg-surface);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-lg);
+  }
+
+  &__status-text {
+    font-size: var(--text-body);
+    color: var(--text-tertiary);
+
+    &--error {
+      color: var(--error);
+    }
+  }
+
+  &__retry {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-4);
+    background: var(--accent-glow);
+    border: 1px solid var(--accent-primary);
+    border-radius: var(--radius-full);
+    font-size: var(--text-body-sm);
+    color: var(--accent-primary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+
+    &:hover {
+      background: rgba(124, 109, 240, 0.15);
+    }
+  }
+
+  /* Empty state */
+  &__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    padding: var(--space-8) var(--space-5);
+    background: var(--bg-surface);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-lg);
+  }
+
+  &__empty-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__empty-text {
+    font-size: var(--text-body);
+    color: var(--text-tertiary);
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+}
+
+/* ---- Credential Card ---- */
+.credential-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: border-color var(--transition-fast);
+
+  &:hover {
+    border-color: var(--card-border-hover);
+  }
+
+  &__main {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+
+    &:hover {
+      background: var(--bg-elevated);
+    }
+  }
+
+  &__info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__event {
+    display: block;
+    font-family: var(--font-display);
+    font-size: var(--text-body);
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: var(--space-1);
+    /* Honor admin-entered line breaks in eventName */
+    white-space: pre-line;
+  }
+
+  &__identity {
+    display: inline-block;
+    font-size: var(--text-caption);
+    font-weight: 600;
+    color: var(--accent-primary);
+    background: var(--accent-glow);
+    padding: 2px var(--space-2);
+    border-radius: var(--radius-sm);
+    margin-bottom: var(--space-2);
+  }
+
+  &__meta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  &__meta-item {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    font-family: var(--font-mono);
+    word-break: break-all;
+  }
+
+  &__aside {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-shrink: 0;
+  }
+
+  /* Status badge — text-based, not color-only */
+  &__status {
+    font-size: var(--text-caption);
+    font-weight: 600;
+    padding: 3px var(--space-3);
+    border-radius: var(--radius-full);
+    white-space: nowrap;
+
+    &--active {
+      background: rgba(45, 212, 168, 0.12);
+      color: var(--success);
+      border: 1px solid rgba(45, 212, 168, 0.2);
+    }
+
+    &--revoked {
+      background: rgba(239, 68, 68, 0.12);
+      color: var(--error);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    padding: 0 var(--space-4) var(--space-3);
+  }
+
+  /* "View certificate" — secondary, outline style */
+  &__view {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--space-2) var(--space-4);
+    background: transparent;
+    border: 1px solid var(--card-border-hover);
+    border-radius: var(--radius-full);
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+
+    &:hover {
+      background: var(--bg-elevated);
+      border-color: var(--text-tertiary);
+      color: var(--text-primary);
+    }
+  }
+
+  &__copy {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--space-2) var(--space-4);
+    background: rgba(124, 109, 240, 0.08);
+    border: 1px solid rgba(124, 109, 240, 0.2);
+    border-radius: var(--radius-full);
+    font-size: var(--text-body-sm);
+    color: var(--accent-primary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+
+    &:hover {
+      background: rgba(124, 109, 240, 0.16);
+      border-color: var(--accent-primary);
+    }
+  }
+
+  /* Manual-copy fallback URL shown when clipboard copy fails */
+  &__manual-url {
+    margin: 0 var(--space-4) var(--space-4);
+    padding: var(--space-3);
+    background: var(--bg-base);
+    border: 1px dashed var(--card-border-hover);
+    border-radius: var(--radius-md);
+  }
+
+  &__manual-url-text {
+    font-family: var(--font-mono);
+    font-size: var(--text-caption);
+    color: var(--text-secondary);
+    word-break: break-all;
+  }
+}

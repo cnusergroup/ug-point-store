@@ -36,6 +36,7 @@ export interface ApiStackProps extends cdk.StackProps {
   activitiesTable: dynamodb.Table;
   credentialsTable: dynamodb.Table;
   credentialSequencesTable: dynamodb.Table;
+  activityTemplateAssociationsTable: dynamodb.Table;
   wishesTable: dynamodb.Table;
   wishVotesTable: dynamodb.Table;
   activitySkillClaimsTable: dynamodb.Table;
@@ -59,7 +60,7 @@ export class ApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
-    const { usersTable, productsTable, codesTable, redemptionsTable, pointsRecordsTable, cartTable, addressesTable, ordersTable, invitesTable, claimsTable, contentItemsTable, contentCategoriesTable, contentCommentsTable, contentLikesTable, contentReservationsTable, batchDistributionsTable, travelApplicationsTable, contentTagsTable, awardTagsTable, emailTemplatesTable, ugsTable, activitiesTable, credentialsTable, credentialSequencesTable, wishesTable, wishVotesTable, activitySkillClaimsTable } = props;
+    const { usersTable, productsTable, codesTable, redemptionsTable, pointsRecordsTable, cartTable, addressesTable, ordersTable, invitesTable, claimsTable, contentItemsTable, contentCategoriesTable, contentCommentsTable, contentLikesTable, contentReservationsTable, batchDistributionsTable, travelApplicationsTable, contentTagsTable, awardTagsTable, emailTemplatesTable, ugsTable, activitiesTable, credentialsTable, credentialSequencesTable, activityTemplateAssociationsTable, wishesTable, wishVotesTable, activitySkillClaimsTable } = props;
 
     // --- SSM Parameter for JWT Secret ---
     const jwtSecretParam = new ssm.StringParameter(this, 'JwtSecretParam', {
@@ -296,6 +297,9 @@ export class ApiStack extends cdk.Stack {
         CREDENTIALS_TABLE: credentialsTable.tableName,
         CREDENTIAL_SEQUENCES_TABLE: credentialSequencesTable.tableName,
         USERS_TABLE: usersTable.tableName,
+        ASSOCIATIONS_TABLE: activityTemplateAssociationsTable.tableName,
+        POINTS_RECORDS_TABLE: pointsRecordsTable.tableName,
+        ACTIVITIES_TABLE: activitiesTable.tableName,
         JWT_SECRET_PARAM: jwtSecretParam.parameterName,
         BASE_URL: 'https://creds.awscommunity.cn',
         CF_DISTRIBUTION_ID: 'E2B6NIC389CI8P',
@@ -305,6 +309,13 @@ export class ApiStack extends cdk.Stack {
     // Credential Lambda: read/write Credentials and CredentialSequences tables
     credentialsTable.grantReadWriteData(credentialFn);
     credentialSequencesTable.grantReadWriteData(credentialFn);
+
+    // Credential Lambda: read/write ActivityTemplateAssociations table (association CRUD)
+    activityTemplateAssociationsTable.grantReadWriteData(credentialFn);
+
+    // Credential Lambda: read-only access to PointsRecords (eligibility) and Activities (association validation)
+    pointsRecordsTable.grantReadData(credentialFn);
+    activitiesTable.grantReadData(credentialFn);
 
     // Credential Lambda: read-only access to Users table (for auth verification)
     usersTable.grantReadData(credentialFn);
@@ -580,14 +591,22 @@ export class ApiStack extends cdk.Stack {
 
     // Admin credential routes must be defined BEFORE addProxy to avoid CDK conflict with {proxy+}.
     // These routes are handled by the independent Credential Lambda, not the Admin Lambda.
+    // Collapsed to ANY + {proxy+}: the Credential Lambda does internal path-based routing
+    // (see credentials/handler.ts, which matches event.path against CREDENTIAL_*_PATH /
+    // CREDENTIAL_*_REGEX), so behavior is preserved while keeping the stack under the
+    // CloudFormation 500-resource-per-stack limit. Each explicit method would otherwise add
+    // a method + CORS OPTIONS method + 2 Lambda permissions.
     const credentialInt = new apigateway.LambdaIntegration(credentialFn);
     const adminCredentials = admin.addResource('credentials');
-    adminCredentials.addMethod('GET', credentialInt);
-    adminCredentials.addResource('batch').addMethod('POST', credentialInt);
-    adminCredentials.addResource('export-feishu').addMethod('POST', credentialInt);
-    const adminCredentialById = adminCredentials.addResource('{credentialId}');
-    adminCredentialById.addMethod('GET', credentialInt);
-    adminCredentialById.addResource('revoke').addMethod('PATCH', credentialInt);
+    adminCredentials.addMethod('ANY', credentialInt);
+    adminCredentials.addProxy({ defaultIntegration: credentialInt, anyMethod: true });
+
+    // Admin credential-association routes (SuperAdmin-only auth enforced inside the Lambda).
+    // Also collapsed to ANY + {proxy+} for the same resource-count reason. The Lambda matches
+    // ASSOCIATION_LIST_PATH and ASSOCIATION_DETAIL_REGEX internally.
+    const adminCredentialAssociations = admin.addResource('credential-associations');
+    adminCredentialAssociations.addMethod('ANY', credentialInt);
+    adminCredentialAssociations.addProxy({ defaultIntegration: credentialInt, anyMethod: true });
 
     // Admin wishes routes must be defined BEFORE addProxy to avoid CDK conflict with {proxy+}.
     // These routes are handled by the independent Wishes Lambda, not the Admin Lambda.
@@ -632,26 +651,18 @@ export class ApiStack extends cdk.Stack {
     orders.addMethod('GET', orderInt);
     orders.addResource('{orderId}').addMethod('GET', orderInt);
 
-    // Content routes (user-facing)
+    // Content routes (user-facing) — collapsed to ANY + {proxy+}.
+    // The Content Lambda self-routes by event.path (see content/handler.ts: exact-path
+    // matches for /api/content, /upload-url, /categories, /mine, /tags/search|hot|cloud,
+    // /reservation-activities, plus CONTENT_ID_REGEX / CONTENT_*_REGEX for /{id} and
+    // /{id}/comments|like|reserve|download). The Lambda does NOT read pathParameters, so
+    // collapsing to a proxy preserves behavior exactly while keeping the stack under the
+    // CloudFormation 500-resource-per-stack limit. Each explicit method would otherwise add
+    // a method + CORS OPTIONS method + 2 Lambda permissions.
     const contentInt = new apigateway.LambdaIntegration(contentFn);
     const content = api.addResource('content');
-    content.addResource('upload-url').addMethod('POST', contentInt);
-    content.addMethod('POST', contentInt);
-    content.addMethod('GET', contentInt);
-    content.addResource('categories').addMethod('GET', contentInt);
-    const contentTags = content.addResource('tags');
-    contentTags.addResource('search').addMethod('GET', contentInt);
-    contentTags.addResource('hot').addMethod('GET', contentInt);
-    contentTags.addResource('cloud').addMethod('GET', contentInt);
-    const contentById = content.addResource('{id}');
-    contentById.addMethod('GET', contentInt);
-    contentById.addMethod('PUT', contentInt);
-    const contentComments = contentById.addResource('comments');
-    contentComments.addMethod('POST', contentInt);
-    contentComments.addMethod('GET', contentInt);
-    contentById.addResource('like').addMethod('POST', contentInt);
-    contentById.addResource('reserve').addMethod('POST', contentInt);
-    contentById.addResource('download').addMethod('GET', contentInt);
+    content.addMethod('ANY', contentInt);
+    content.addProxy({ defaultIntegration: contentInt, anyMethod: true });
 
     // Leaderboard routes
     const leaderboardInt = new apigateway.LambdaIntegration(leaderboardFn);
@@ -670,6 +681,15 @@ export class ApiStack extends cdk.Stack {
     wishById.addMethod('PUT', wishesInt);    // edit wish
     wishById.addMethod('DELETE', wishesInt);  // delete wish
     wishById.addResource('vote').addMethod('POST', wishesInt);  // vote
+
+    // Credential user-facing routes (authenticated; handled by Credential Lambda).
+    // Distinct from /api/admin/credentials/* — these live under the /api root for
+    // certificate self-application. Auth/userId scoping is enforced inside the Lambda.
+    // Collapsed to ANY + {proxy+}: the Lambda routes /api/credentials/* internally
+    // (USER_CREDENTIALS_PREFIX), keeping the stack under the 500-resource CFN limit.
+    const credentials = api.addResource('credentials');
+    credentials.addMethod('ANY', credentialInt);
+    credentials.addProxy({ defaultIntegration: credentialInt, anyMethod: true });
 
     // Public credential page route: /c/{credentialId} (no auth required)
     // This is at the API root level, not under /api

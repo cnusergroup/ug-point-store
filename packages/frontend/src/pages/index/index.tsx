@@ -1,17 +1,41 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, Image } from '@tarojs/components';
+import { View, Text, Image, Input } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useAppStore, UserRole } from '../../store';
-import { request } from '../../utils/request';
+import { request, RequestError } from '../../utils/request';
 import { useTranslation } from '../../i18n';
 import TabBar from '../../components/TabBar';
 import { ProductSkeleton } from '../../components/Skeleton';
-import { TicketIcon, GiftIcon, PackageIcon, LockIcon, LocationIcon, GlobeIcon } from '../../components/icons';
+import { TicketIcon, GiftIcon, PackageIcon, LockIcon, LocationIcon, GlobeIcon, WarningIcon } from '../../components/icons';
 import EmployeeStoreBlocked from '../../components/EmployeeStoreBlocked';
 import type { TravelSponsorshipSettings, TravelQuota } from '@points-mall/shared';
 import './index.scss';
 /** Product type filter options */
-type TypeFilter = 'all' | 'points' | 'code_exclusive' | 'travel';
+type TypeFilter = 'all' | 'points' | 'code_exclusive' | 'travel' | 'credential';
+
+/** Source role for credential self-application (subset of identity roles) */
+type CredentialSourceRole = 'Speaker' | 'UserGroupLeader' | 'Volunteer';
+
+/** Credential application item from GET /api/credentials/my-applications */
+interface CredentialApplicationItem {
+  activityId: string;
+  sourceRole: CredentialSourceRole;
+  eventName: string;
+  identityText: string;
+  applied: boolean;
+  credentialId?: string;
+  status?: 'active' | 'revoked';
+}
+
+interface MyApplicationsResponse {
+  items: CredentialApplicationItem[];
+}
+
+/** Response from POST /api/credentials/apply */
+interface ApplyCredentialResponse {
+  credentialId: string;
+  url: string;
+}
 
 /** Product list item from API */
 interface ProductListItem {
@@ -63,6 +87,16 @@ function HomeIcon({ size = 20, color = 'currentColor' }: { size?: number; color?
   );
 }
 
+/** Award / certificate icon (medal with ribbon) for the credential application tab */
+function CertificateIcon({ size = 20, color = 'currentColor' }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="8" r="6" />
+      <path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" />
+    </svg>
+  );
+}
+
 export default function IndexPage() {
   const { t } = useTranslation();
   const user = useAppStore((s) => s.user);
@@ -77,6 +111,15 @@ export default function IndexPage() {
   const [travelSettings, setTravelSettings] = useState<TravelSponsorshipSettings | null>(null);
   const [travelQuota, setTravelQuota] = useState<TravelQuota | null>(null);
   const [travelQuotaLoading, setTravelQuotaLoading] = useState(false);
+  // Credential self-application (task 10.1)
+  const [credentialItems, setCredentialItems] = useState<CredentialApplicationItem[]>([]);
+  const [credentialLoading, setCredentialLoading] = useState(false);
+  const [credentialError, setCredentialError] = useState(false);
+  // Credential apply dialog (task 10.2)
+  const [applyItem, setApplyItem] = useState<CredentialApplicationItem | null>(null);
+  const [applyName, setApplyName] = useState('');
+  const [applySubmitting, setApplySubmitting] = useState(false);
+  const [applyError, setApplyError] = useState('');
   const fetchProfile = useAppStore((s) => s.fetchProfile);
   const roleWrapRef = useRef<HTMLDivElement>(null);
 
@@ -93,7 +136,7 @@ export default function IndexPage() {
   }, [showRoleDropdown]);
 
   const fetchProducts = useCallback(async () => {
-    if (typeFilter === 'travel') {
+    if (typeFilter === 'travel' || typeFilter === 'credential') {
       setLoading(false);
       return;
     }
@@ -166,6 +209,24 @@ export default function IndexPage() {
       .catch(() => setTravelQuota(null))
       .finally(() => setTravelQuotaLoading(false));
   }, [typeFilter, isSpeaker, travelQuota]);
+
+  // Load credential applications when the credential tab is selected (task 10.1)
+  const loadCredentialApplications = useCallback(() => {
+    setCredentialLoading(true);
+    setCredentialError(false);
+    request<MyApplicationsResponse>({ url: '/api/credentials/my-applications' })
+      .then((res) => setCredentialItems(res.items ?? []))
+      .catch(() => {
+        setCredentialItems([]);
+        setCredentialError(true);
+      })
+      .finally(() => setCredentialLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (typeFilter !== 'credential') return;
+    loadCredentialApplications();
+  }, [typeFilter, loadCredentialApplications]);
 
   const handleCardClick = (product: ProductListItem) => {
     if (product.locked) return;
@@ -348,6 +409,128 @@ export default function IndexPage() {
     );
   };
 
+  /** Open a self-applied credential's public page (/c/{credentialId}) */
+  const handleViewCredential = (credentialId: string) => {
+    const url = `/c/${credentialId}`;
+    const env = Taro.getEnv();
+    if (env === Taro.ENV_TYPE.WEB && typeof window !== 'undefined') {
+      window.open(url, '_blank');
+    } else {
+      Taro.setClipboardData({ data: url });
+    }
+  };
+
+  /**
+   * Open the apply dialog for an eligible item (task 10.2).
+   * Resets the recipient-name input and any inline error.
+   */
+  const handleOpenApplyDialog = (item: CredentialApplicationItem) => {
+    setApplyItem(item);
+    setApplyName('');
+    setApplyError('');
+    setApplySubmitting(false);
+  };
+
+  /** Close the apply dialog (no-op while submitting). */
+  const handleCloseApplyDialog = () => {
+    if (applySubmitting) return;
+    setApplyItem(null);
+    setApplyName('');
+    setApplyError('');
+  };
+
+  /**
+   * Submit a credential application (task 10.2).
+   * Frontend blocks submission when the trimmed name is empty (Req 5.2) and
+   * never sends a request in that case. On success, refreshes the list so the
+   * item becomes marked "已申请" and offers an entry to view the public page.
+   */
+  const handleSubmitApply = async () => {
+    if (!applyItem || applySubmitting) return;
+
+    // Req 5.2: block submission when trimmed name is empty; do NOT call the API.
+    const trimmedName = applyName.trim();
+    if (trimmedName.length === 0) {
+      setApplyError(t('credentialApplication.apply.recipientNameEmptyError'));
+      return;
+    }
+
+    setApplySubmitting(true);
+    setApplyError('');
+    try {
+      const res = await request<ApplyCredentialResponse>({
+        url: '/api/credentials/apply',
+        method: 'POST',
+        data: {
+          activityId: applyItem.activityId,
+          sourceRole: applyItem.sourceRole,
+          recipientName: trimmedName,
+        },
+      });
+      // Success: close dialog, refresh list (item becomes "已申请"), and offer
+      // an entry to the generated public page.
+      setApplyItem(null);
+      setApplyName('');
+      Taro.showToast({ title: t('credentialApplication.apply.successMessage'), icon: 'none' });
+      loadCredentialApplications();
+      if (res.credentialId) {
+        handleViewCredential(res.credentialId);
+      }
+    } catch (err) {
+      const message = err instanceof RequestError ? err.message : t('credentialApplication.apply.failedMessage');
+      setApplyError(message);
+    } finally {
+      setApplySubmitting(false);
+    }
+  };
+
+  const renderCredentialItem = (item: CredentialApplicationItem, index: number) => {
+    const key = `${item.activityId}#${item.sourceRole}`;
+    return (
+      <View
+        key={key}
+        className={`credential-item ${item.applied ? 'credential-item--applied' : ''}`}
+        style={{ animationDelay: `${index * 0.05}s` }}
+      >
+        <View className='credential-item__icon-wrap'>
+          <CertificateIcon size={28} color='var(--accent-primary)' />
+        </View>
+        <View className='credential-item__body'>
+          <View className='credential-item__field'>
+            <Text className='credential-item__field-label'>{t('credentialApplication.apply.activityNameLabel')}</Text>
+            <Text className='credential-item__field-value'>{item.eventName}</Text>
+          </View>
+          <View className='credential-item__field'>
+            <Text className='credential-item__field-label'>{t('credentialApplication.apply.identityLabel')}</Text>
+            <Text className='credential-item__field-value'>{item.identityText}</Text>
+          </View>
+        </View>
+        <View className='credential-item__action'>
+          {item.applied ? (
+            <>
+              <Text className='credential-item__badge'>{t('credentialApplication.apply.appliedBadge')}</Text>
+              {item.credentialId && (
+                <View
+                  className='credential-item__view-btn'
+                  onClick={() => handleViewCredential(item.credentialId!)}
+                >
+                  <Text>{t('credentialApplication.apply.viewCertificate')}</Text>
+                </View>
+              )}
+            </>
+          ) : (
+            <View
+              className='credential-item__apply-btn btn-primary'
+              onClick={() => handleOpenApplyDialog(item)}
+            >
+              <Text>{t('credentialApplication.apply.applyButton')}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  };
+
   return (
     <View className='mall-page'>
       {/* Header / Welcome */}
@@ -397,6 +580,7 @@ export default function IndexPage() {
               { key: 'points' as TypeFilter, label: t('mall.filterPoints') },
               { key: 'code_exclusive' as TypeFilter, label: t('mall.filterCodeExclusive') },
               { key: 'travel' as TypeFilter, label: t('mall.filterTravel') },
+              { key: 'credential' as TypeFilter, label: t('credentialApplication.tabLabel') },
             ] as const).filter((item) => {
               if (item.key === 'code_exclusive' && featureToggles?.codeRedemptionEnabled !== true) return false;
               if (item.key === 'travel' && travelSettings?.travelSponsorshipEnabled !== true) return false;
@@ -416,7 +600,7 @@ export default function IndexPage() {
           })()}
         </View>
 
-        {typeFilter !== 'travel' && (
+        {typeFilter !== 'travel' && typeFilter !== 'credential' && (
           <View className='filter-bar__role-wrap' ref={roleWrapRef}>
           <View
             className={`filter-bar__role-btn ${roleFilter ? 'filter-bar__role-btn--active' : ''}`}
@@ -465,8 +649,40 @@ export default function IndexPage() {
         </View>
       )}
 
+      {/* Credential Application View (task 10.1) */}
+      {typeFilter === 'credential' && (
+        <View className='credential-view mall-loading-fade'>
+          {credentialLoading ? (
+            <View className='mall-loading'>
+              <Text className='mall-loading__text'>{t('credentialApplication.apply.loading')}</Text>
+            </View>
+          ) : credentialError ? (
+            <View className='credential-error'>
+              <View className='credential-error__icon'>
+                <WarningIcon size={48} color='var(--text-tertiary)' />
+              </View>
+              <Text className='credential-error__text'>{t('credentialApplication.apply.error')}</Text>
+              <View className='credential-error__retry btn-secondary' onClick={loadCredentialApplications}>
+                <Text>{t('credentialApplication.apply.retry')}</Text>
+              </View>
+            </View>
+          ) : credentialItems.length === 0 ? (
+            <View className='mall-empty credential-empty'>
+              <View className='credential-empty__icon-wrap'>
+                <CertificateIcon size={40} color='var(--accent-primary)' />
+              </View>
+              <Text className='mall-empty__text'>{t('credentialApplication.apply.empty')}</Text>
+            </View>
+          ) : (
+            <View className='credential-list'>
+              {credentialItems.map((item, index) => renderCredentialItem(item, index))}
+            </View>
+          )}
+        </View>
+      )}
+
       {/* Product Grid */}
-      {typeFilter !== 'travel' && (
+      {typeFilter !== 'travel' && typeFilter !== 'credential' && (
         loading ? (
           <ProductSkeleton />
         ) : products.length === 0 ? (
@@ -487,6 +703,64 @@ export default function IndexPage() {
         )
       )}
       </>
+      )}
+
+      {/* Credential Apply Dialog (task 10.2) */}
+      {applyItem && (
+        <View className='credential-apply-overlay' onClick={handleCloseApplyDialog}>
+          <View className='credential-apply-modal' onClick={(e) => e.stopPropagation()}>
+            <View className='credential-apply-modal__header'>
+              <Text className='credential-apply-modal__title'>{t('credentialApplication.apply.dialogTitle')}</Text>
+              <View className='credential-apply-modal__close' onClick={handleCloseApplyDialog}>
+                <Text>✕</Text>
+              </View>
+            </View>
+
+            <View className='credential-apply-modal__body'>
+              <View className='credential-apply-modal__summary'>
+                <View className='credential-apply-modal__summary-row'>
+                  <Text className='credential-apply-modal__summary-label'>{t('credentialApplication.apply.activityNameLabel')}</Text>
+                  <Text className='credential-apply-modal__summary-value'>{applyItem.eventName}</Text>
+                </View>
+                <View className='credential-apply-modal__summary-row'>
+                  <Text className='credential-apply-modal__summary-label'>{t('credentialApplication.apply.identityLabel')}</Text>
+                  <Text className='credential-apply-modal__summary-value'>{applyItem.identityText}</Text>
+                </View>
+              </View>
+
+              <View className='credential-apply-modal__field'>
+                <Text className='credential-apply-modal__field-label'>{t('credentialApplication.apply.recipientNameLabel')}</Text>
+                <Input
+                  className='credential-apply-modal__input'
+                  placeholder={t('credentialApplication.apply.recipientNamePlaceholder')}
+                  value={applyName}
+                  maxlength={100}
+                  disabled={applySubmitting}
+                  onInput={(e) => { setApplyName(e.detail.value); if (applyError) setApplyError(''); }}
+                />
+              </View>
+
+              {applyError && (
+                <Text className='credential-apply-modal__error'>{applyError}</Text>
+              )}
+            </View>
+
+            <View className='credential-apply-modal__footer'>
+              <View
+                className='credential-apply-modal__cancel'
+                onClick={handleCloseApplyDialog}
+              >
+                <Text>{t('credentialApplication.apply.cancelButton')}</Text>
+              </View>
+              <View
+                className={`credential-apply-modal__submit btn-primary ${applySubmitting ? 'credential-apply-modal__submit--loading' : ''}`}
+                onClick={handleSubmitApply}
+              >
+                <Text>{applySubmitting ? t('credentialApplication.apply.submitting') : t('credentialApplication.apply.submitButton')}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
       )}
 
       <TabBar current='/pages/index/index' />

@@ -27,6 +27,7 @@ export class DatabaseStack extends cdk.Stack {
   public readonly activitiesTable: dynamodb.Table;
   public readonly credentialsTable: dynamodb.Table;
   public readonly credentialSequencesTable: dynamodb.Table;
+  public readonly activityTemplateAssociationsTable: dynamodb.Table;
   public readonly wishesTable: dynamodb.Table;
   public readonly wishVotesTable: dynamodb.Table;
   public readonly activitySkillClaimsTable: dynamodb.Table;
@@ -517,6 +518,24 @@ export class DatabaseStack extends cdk.Stack {
       partitionKey: { name: 'batchId', type: dynamodb.AttributeType.STRING },
     });
 
+    // GSI for self-applied credentials: query a user's own credentials sorted by issueDate
+    // (credential-self-application feature; PK=appliedByUserId, SK=issueDate).
+    // NOTE: DynamoDB only allows one GSI creation per CloudFormation update —
+    // deploy this GSI and wait for ACTIVE state before adding the next one.
+    this.credentialsTable.addGlobalSecondaryIndex({
+      indexName: 'appliedByUserId-index',
+      partitionKey: { name: 'appliedByUserId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'issueDate', type: dynamodb.AttributeType.STRING },
+    });
+
+    // GSI for self-applied credential dedupe-key lookups (eligibility / apply de-duplication).
+    // NOTE: DynamoDB only allows one GSI creation per CloudFormation update —
+    // deploy this GSI alone after appliedByUserId-index reaches ACTIVE state.
+    this.credentialsTable.addGlobalSecondaryIndex({
+      indexName: 'appliedDedupeKey-index',
+      partitionKey: { name: 'appliedDedupeKey', type: dynamodb.AttributeType.STRING },
+    });
+
     new cdk.CfnOutput(this, 'CredentialsTableName', { value: this.credentialsTable.tableName, exportName: 'PointsMall-CredentialsTableName' });
     new cdk.CfnOutput(this, 'CredentialsTableArn', { value: this.credentialsTable.tableArn, exportName: 'PointsMall-CredentialsTableArn' });
 
@@ -577,5 +596,23 @@ export class DatabaseStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'ActivitySkillClaimsTableName', { value: this.activitySkillClaimsTable.tableName, exportName: 'PointsMall-ActivitySkillClaimsTableName' });
     new cdk.CfnOutput(this, 'ActivitySkillClaimsTableArn', { value: this.activitySkillClaimsTable.tableArn, exportName: 'PointsMall-ActivitySkillClaimsTableArn' });
+
+    // ActivityTemplateAssociations table: PK=associationId, GSI: activityId-index (PK=activityId)
+    // Used by the credential-self-application feature to map activities to certificate templates.
+    // Fully isolated from points-mall core data (products, orders, points records, balances).
+    this.activityTemplateAssociationsTable = new dynamodb.Table(this, 'ActivityTemplateAssociationsTable', {
+      tableName: 'PointsMall-ActivityTemplateAssociations',
+      partitionKey: { name: 'associationId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.activityTemplateAssociationsTable.addGlobalSecondaryIndex({
+      indexName: 'activityId-index',
+      partitionKey: { name: 'activityId', type: dynamodb.AttributeType.STRING },
+    });
+
+    new cdk.CfnOutput(this, 'ActivityTemplateAssociationsTableName', { value: this.activityTemplateAssociationsTable.tableName, exportName: 'PointsMall-ActivityTemplateAssociationsTableName' });
+    new cdk.CfnOutput(this, 'ActivityTemplateAssociationsTableArn', { value: this.activityTemplateAssociationsTable.tableArn, exportName: 'PointsMall-ActivityTemplateAssociationsTableArn' });
   }
 }

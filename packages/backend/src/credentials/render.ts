@@ -17,7 +17,10 @@ export interface RenderOptions {
 export function buildLinkedInUrl(credential: Credential, baseUrl: string): string {
   const strings = getStrings(credential.locale);
   const roleName = strings.roles[credential.role] || credential.role;
-  const certName = `${roleName} - ${credential.eventName}`;
+  // Collapse any admin-entered line breaks in the event name to single spaces —
+  // this value is embedded in a LinkedIn URL parameter.
+  const eventNameOneLine = credential.eventName.replace(/\s+/g, ' ').trim();
+  const certName = `${roleName} - ${eventNameOneLine}`;
   const credentialUrl = `${baseUrl}/c/${credential.credentialId}`;
 
   const dateParts = credential.issueDate.split('-');
@@ -52,6 +55,20 @@ function escapeHtml(str: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#x27;');
+}
+
+/**
+ * Escape HTML, then convert newlines to <br> for inline display.
+ * Used for the event name, which admins may enter with manual line breaks.
+ * CRLF/CR are normalized to LF first so a single <br> is produced per break.
+ */
+function escapeHtmlWithBreaks(str: string): string {
+  return escapeHtml(str).replace(/\r\n|\r|\n/g, '<br>');
+}
+
+/** Collapse any newlines/whitespace runs into single spaces (for <title>/OG meta). */
+function singleLine(str: string): string {
+  return str.replace(/\s+/g, ' ').trim();
 }
 
 
@@ -237,16 +254,21 @@ export async function renderCredentialPage(options: RenderOptions): Promise<stri
   const s = getStrings(credential.locale);
   const isRevoked = credential.status === 'revoked';
   const credentialUrl = `${baseUrl}/c/${credential.credentialId}`;
-  const roleName = s.roles[credential.role] || credential.role;
+  // Self-applied credentials persist an admin-configured identityText to display as
+  // the credential identity. Prefer it when present (non-empty); otherwise fall back
+  // to the existing translated role name. Batch credentials have no identityText and
+  // therefore render exactly as before (backward compatibility — Requirement 11.6).
+  const roleName = credential.identityText || s.roles[credential.role] || credential.role;
 
-  // Page title & description for OG tags
+  // Page title & description for OG tags — must be single-line (no manual breaks)
+  const singleLineEvent = singleLine(credential.eventName);
   const pageTitle = s.pageTitle
     .replace('{name}', credential.recipientName)
     .replace('{role}', roleName)
-    .replace('{event}', credential.eventName);
+    .replace('{event}', singleLineEvent);
   const ogDescription = isRevoked
-    ? `${s.revoked} — ${roleName} | ${credential.eventName}`
-    : `${s.verified} — ${roleName} | ${credential.eventName}`;
+    ? `${s.revoked} — ${roleName} | ${singleLineEvent}`
+    : `${s.verified} — ${roleName} | ${singleLineEvent}`;
   const ogImage = `${baseUrl}/products/cert-bg.png`;
 
   // Generate QR code SVG
@@ -257,7 +279,8 @@ export async function renderCredentialPage(options: RenderOptions): Promise<stri
 
   // Escaped user content
   const eName = escapeHtml(credential.recipientName);
-  const eEvent = escapeHtml(credential.eventName);
+  // Event name displayed in the hero — preserve admin-entered line breaks as <br>
+  const eEvent = escapeHtmlWithBreaks(credential.eventName);
   const eOrg = escapeHtml(credential.locale === 'zh' && credential.issuingOrganization === 'AWS User Group China'
     ? '\u4e9a\u9a6c\u900a\u4e91\u79d1\u6280 User Group China'
     : credential.issuingOrganization);

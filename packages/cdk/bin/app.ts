@@ -48,6 +48,7 @@ const apiStack = new ApiStack(app, 'PointsMall-ApiStack', {
   activitiesTable: databaseStack.activitiesTable,
   credentialsTable: databaseStack.credentialsTable,
   credentialSequencesTable: databaseStack.credentialSequencesTable,
+  activityTemplateAssociationsTable: databaseStack.activityTemplateAssociationsTable,
   wishesTable: databaseStack.wishesTable,
   wishVotesTable: databaseStack.wishVotesTable,
   activitySkillClaimsTable: databaseStack.activitySkillClaimsTable,

@@ -191,3 +191,134 @@ describe('revokeCredential', () => {
     }
   });
 });
+
+// ============================================================
+// Self-applied credential revocation (credential-self-application)
+//
+// Self-applied credentials live in the same PointsMall-Credentials table as
+// batch-imported credentials and carry extra non-empty source fields
+// (appliedByUserId / sourceActivityId / sourceRole / identityText /
+// appliedDedupeKey). Revocation MUST behave identically to batch credentials:
+// only SuperAdmin may revoke, active->revoked records revokedAt/revokedBy/
+// revokeReason, and revoking a missing or already-revoked credential is rejected.
+// _Requirements: 10.4, 10.5, 10.6, 10.7_
+// ============================================================
+
+describe('revokeCredential - self-applied credential', () => {
+  const SELF_APPLIED_ID = 'ACD-2026-Summer-UGL-0001';
+
+  // A self-applied credential fixture: same shape as a batch credential plus
+  // the non-empty self-application source markers.
+  function selfAppliedItem(overrides: Record<string, unknown> = {}) {
+    return {
+      credentialId: SELF_APPLIED_ID,
+      recipientName: 'Jane Doe',
+      eventName: 'AWS Community Day 2026 Summer',
+      identityText: 'User Group Leader',
+      role: 'UserGroupLeader',
+      issueDate: '2026-06-20',
+      locale: 'en',
+      status: 'active',
+      // self-application source markers (non-empty => self-applied origin)
+      appliedByUserId: 'user-applicant-001',
+      sourceActivityId: 'act-001',
+      sourceRole: 'UserGroupLeader',
+      appliedDedupeKey: 'user-applicant-001#act-001#UserGroupLeader',
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should let SuperAdmin revoke an active self-applied credential and record revocation fields', async () => {
+    const params = makeParams({ credentialId: SELF_APPLIED_ID });
+    const client = params.dynamoClient as any;
+
+    client.send.mockImplementation((cmd: any) => {
+      const cmdName = cmd.constructor.name;
+      if (cmdName === 'GetCommand') {
+        return Promise.resolve({ Item: selfAppliedItem() });
+      }
+      // UpdateCommand
+      return Promise.resolve({});
+    });
+
+    const result = await revokeCredential(params);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.credential.credentialId).toBe(SELF_APPLIED_ID);
+      expect(result.credential.status).toBe('revoked');
+      expect(result.credential.revokedBy).toBe('user-superadmin-001');
+      expect(result.credential.revokeReason).toBe('信息填写错误');
+      expect(result.credential.revokedAt).toBeTruthy();
+    }
+  });
+
+  it('should reject revoking a self-applied credential when caller is not SuperAdmin', async () => {
+    const params = makeParams({ credentialId: SELF_APPLIED_ID, callerRole: 'Admin' });
+
+    const result = await revokeCredential(params);
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.code).toBe('FORBIDDEN');
+    }
+    // Must not touch DynamoDB / change credential state
+    expect(params.dynamoClient.send).not.toHaveBeenCalled();
+  });
+
+  it('should return CREDENTIAL_NOT_FOUND when the self-applied credential does not exist', async () => {
+    const params = makeParams({ credentialId: SELF_APPLIED_ID });
+    const client = params.dynamoClient as any;
+
+    client.send.mockImplementation((cmd: any) => {
+      const cmdName = cmd.constructor.name;
+      if (cmdName === 'GetCommand') {
+        return Promise.resolve({ Item: undefined });
+      }
+      return Promise.resolve({});
+    });
+
+    const result = await revokeCredential(params);
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.code).toBe('CREDENTIAL_NOT_FOUND');
+    }
+  });
+
+  it('should reject revoking an already-revoked self-applied credential and leave it unchanged', async () => {
+    const params = makeParams({ credentialId: SELF_APPLIED_ID });
+    const client = params.dynamoClient as any;
+
+    const sentCommands: any[] = [];
+    client.send.mockImplementation((cmd: any) => {
+      sentCommands.push(cmd);
+      const cmdName = cmd.constructor.name;
+      if (cmdName === 'GetCommand') {
+        return Promise.resolve({
+          Item: selfAppliedItem({
+            status: 'revoked',
+            revokedAt: '2026-06-21T08:00:00.000Z',
+            revokedBy: 'user-other-superadmin',
+            revokeReason: '之前的撤销原因',
+          }),
+        });
+      }
+      return Promise.resolve({});
+    });
+
+    const result = await revokeCredential(params);
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.code).toBe('ALREADY_REVOKED');
+    }
+    // Credential must be left unchanged: no UpdateCommand should be issued
+    const updateCmds = sentCommands.filter((c) => c.constructor.name === 'UpdateCommand');
+    expect(updateCmds).toHaveLength(0);
+  });
+});

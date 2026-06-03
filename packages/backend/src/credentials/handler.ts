@@ -15,7 +15,17 @@ import { renderCredentialPage, render404Page } from './render';
 import { batchCreateCredentials } from './batch';
 import { revokeCredential } from './revoke';
 import { exportCredentialsToFeishu, type FeishuExportField } from './feishu-export';
-import type { Credential } from './types';
+import { getMyApplications } from './eligibility';
+import { applyForCredential } from './self-apply';
+import { getMyCredentials } from './my-credentials';
+import {
+  assertSuperAdmin,
+  createAssociation,
+  deleteAssociation,
+  listAssociations,
+  updateAssociation,
+} from './association';
+import type { Credential, SourceRole } from './types';
 
 // ============================================================
 // Clients & env vars — created outside handler for container reuse
@@ -26,6 +36,9 @@ const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const CREDENTIALS_TABLE = process.env.CREDENTIALS_TABLE ?? '';
 const CREDENTIAL_SEQUENCES_TABLE = process.env.CREDENTIAL_SEQUENCES_TABLE ?? '';
 const USERS_TABLE = process.env.USERS_TABLE ?? '';
+const ASSOCIATIONS_TABLE = process.env.ASSOCIATIONS_TABLE ?? '';
+const POINTS_RECORDS_TABLE = process.env.POINTS_RECORDS_TABLE ?? '';
+const ACTIVITIES_TABLE = process.env.ACTIVITIES_TABLE ?? '';
 const BASE_URL = process.env.BASE_URL ?? 'https://creds.awscommunity.cn';
 const CF_DISTRIBUTION_ID = process.env.CF_DISTRIBUTION_ID ?? '';
 
@@ -49,6 +62,16 @@ const CREDENTIAL_BATCH_PATH = '/api/admin/credentials/batch';
 const CREDENTIAL_EXPORT_FEISHU_PATH = '/api/admin/credentials/export-feishu';
 const CREDENTIAL_DETAIL_REGEX = /^\/api\/admin\/credentials\/([^/]+)$/;
 const CREDENTIAL_REVOKE_REGEX = /^\/api\/admin\/credentials\/([^/]+)\/revoke$/;
+
+// User-side self-application routes (any authenticated user)
+const USER_CREDENTIALS_PREFIX = '/api/credentials/';
+const MY_APPLICATIONS_PATH = '/api/credentials/my-applications';
+const APPLY_PATH = '/api/credentials/apply';
+const MY_CREDENTIALS_PATH = '/api/credentials/my-credentials';
+
+// Admin-side association routes (SuperAdmin only)
+const ASSOCIATION_LIST_PATH = '/api/admin/credential-associations';
+const ASSOCIATION_DETAIL_REGEX = /^\/api\/admin\/credential-associations\/([^/]+)$/;
 
 // ============================================================
 // Response helpers
@@ -423,6 +446,218 @@ async function handleRevoke(credentialId: string, event: AuthenticatedEvent): Pr
 }
 
 // ============================================================
+// User route handlers — /api/credentials/* (any authenticated user)
+// ============================================================
+
+// GET /api/credentials/my-applications — eligible + applied items
+async function handleMyApplications(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  try {
+    const result = await getMyApplications(event.user.userId, dynamoClient, {
+      pointsRecordsTable: POINTS_RECORDS_TABLE,
+      associationsTable: ASSOCIATIONS_TABLE,
+      credentialsTable: CREDENTIALS_TABLE,
+    });
+    return jsonResponse(200, result);
+  } catch (err) {
+    console.error('Error computing my applications:', err);
+    return errorResponse('INTERNAL_ERROR', '获取可申请项失败', 500);
+  }
+}
+
+// POST /api/credentials/apply — submit application & generate credential
+async function handleApply(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body) {
+    return errorResponse('INVALID_REQUEST', '请求体不能为空');
+  }
+
+  // Use ONLY the authenticated userId; ignore any client-supplied identifier (Req 9.5).
+  const input = {
+    activityId: typeof body.activityId === 'string' ? body.activityId : '',
+    sourceRole: body.sourceRole as SourceRole,
+    recipientName: typeof body.recipientName === 'string' ? body.recipientName : '',
+  };
+
+  try {
+    const result = await applyForCredential(
+      event.user.userId,
+      input,
+      dynamoClient,
+      {
+        credentialsTable: CREDENTIALS_TABLE,
+        associationsTable: ASSOCIATIONS_TABLE,
+        pointsRecordsTable: POINTS_RECORDS_TABLE,
+        credentialSequencesTable: CREDENTIAL_SEQUENCES_TABLE,
+      },
+      BASE_URL,
+    );
+
+    if (!result.success) {
+      return errorResponse(result.code, result.message, result.statusCode);
+    }
+
+    return jsonResponse(200, { credentialId: result.credentialId, url: result.url });
+  } catch (err) {
+    console.error('Error applying for credential:', err);
+    return errorResponse('INTERNAL_ERROR', '申请证书失败', 500);
+  }
+}
+
+// GET /api/credentials/my-credentials — all self-applied credentials for the user
+async function handleMyCredentials(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  try {
+    const result = await getMyCredentials(
+      event.user.userId,
+      dynamoClient,
+      { credentialsTable: CREDENTIALS_TABLE },
+      BASE_URL,
+    );
+    return jsonResponse(200, result);
+  } catch (err) {
+    console.error('Error fetching my credentials:', err);
+    return errorResponse('INTERNAL_ERROR', '获取我的证书失败', 500);
+  }
+}
+
+// ============================================================
+// User authenticated handler — /api/credentials/* (no admin gate)
+// ============================================================
+
+const userAuthenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise<APIGatewayProxyResult> => {
+  const method = event.httpMethod;
+  const path = event.path;
+
+  // GET /api/credentials/my-applications
+  if (method === 'GET' && path === MY_APPLICATIONS_PATH) {
+    return handleMyApplications(event);
+  }
+
+  // POST /api/credentials/apply
+  if (method === 'POST' && path === APPLY_PATH) {
+    return handleApply(event);
+  }
+
+  // GET /api/credentials/my-credentials
+  if (method === 'GET' && path === MY_CREDENTIALS_PATH) {
+    return handleMyCredentials(event);
+  }
+
+  return errorResponse('NOT_FOUND', '路由不存在', 404);
+});
+
+// ============================================================
+// Admin route handlers — /api/admin/credential-associations/* (SuperAdmin only)
+// ============================================================
+
+// GET /api/admin/credential-associations — list associations
+async function handleListAssociations(): Promise<APIGatewayProxyResult> {
+  try {
+    const result = await listAssociations({
+      dynamoClient,
+      associationsTable: ASSOCIATIONS_TABLE,
+    });
+    if (!result.success) {
+      return errorResponse(result.code, result.message, result.statusCode);
+    }
+    return jsonResponse(200, { associations: result.associations });
+  } catch (err) {
+    console.error('Error listing associations:', err);
+    return errorResponse('INTERNAL_ERROR', '获取关联列表失败', 500);
+  }
+}
+
+// POST /api/admin/credential-associations — create association
+async function handleCreateAssociation(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body) {
+    return errorResponse('INVALID_REQUEST', '请求体不能为空');
+  }
+
+  try {
+    const result = await createAssociation({
+      input: body,
+      createdBy: event.user.userId,
+      dynamoClient,
+      associationsTable: ASSOCIATIONS_TABLE,
+      activitiesTable: ACTIVITIES_TABLE,
+    });
+    if (!result.success) {
+      return errorResponse(result.code, result.message, result.statusCode);
+    }
+    return jsonResponse(200, result.association);
+  } catch (err) {
+    console.error('Error creating association:', err);
+    return errorResponse('INTERNAL_ERROR', '创建关联失败', 500);
+  }
+}
+
+// GET /api/admin/credential-associations/{id} — association detail
+async function handleGetAssociationDetail(associationId: string): Promise<APIGatewayProxyResult> {
+  try {
+    const result = await dynamoClient.send(
+      new GetCommand({
+        TableName: ASSOCIATIONS_TABLE,
+        Key: { associationId },
+      }),
+    );
+    if (!result.Item) {
+      return errorResponse('ASSOCIATION_NOT_FOUND', '证书模版关联不存在', 404);
+    }
+    return jsonResponse(200, result.Item);
+  } catch (err) {
+    console.error('Error fetching association detail:', err);
+    return errorResponse('INTERNAL_ERROR', '获取关联详情失败', 500);
+  }
+}
+
+// PUT /api/admin/credential-associations/{id} — update association
+async function handleUpdateAssociation(
+  associationId: string,
+  event: AuthenticatedEvent,
+): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body) {
+    return errorResponse('INVALID_REQUEST', '请求体不能为空');
+  }
+
+  try {
+    const result = await updateAssociation({
+      associationId,
+      input: body,
+      updatedBy: event.user.userId,
+      dynamoClient,
+      associationsTable: ASSOCIATIONS_TABLE,
+      activitiesTable: ACTIVITIES_TABLE,
+    });
+    if (!result.success) {
+      return errorResponse(result.code, result.message, result.statusCode);
+    }
+    return jsonResponse(200, result.association);
+  } catch (err) {
+    console.error('Error updating association:', err);
+    return errorResponse('INTERNAL_ERROR', '更新关联失败', 500);
+  }
+}
+
+// DELETE /api/admin/credential-associations/{id} — delete association
+async function handleDeleteAssociation(associationId: string): Promise<APIGatewayProxyResult> {
+  try {
+    const result = await deleteAssociation({
+      associationId,
+      dynamoClient,
+      associationsTable: ASSOCIATIONS_TABLE,
+    });
+    if (!result.success) {
+      return errorResponse(result.code, result.message, result.statusCode);
+    }
+    return jsonResponse(200, { associationId: result.associationId });
+  } catch (err) {
+    console.error('Error deleting association:', err);
+    return errorResponse('INTERNAL_ERROR', '删除关联失败', 500);
+  }
+}
+
+// ============================================================
 // Authenticated handler — all admin routes
 // ============================================================
 
@@ -435,6 +670,34 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
 
   const method = event.httpMethod;
   const path = event.path;
+
+  // ---- Activity_Template_Association routes (SuperAdmin only) ----
+  // These are matched BEFORE the credentials routes; the 'credential-associations'
+  // literal differs from 'credentials/' so there is no overlap with the
+  // CREDENTIAL_DETAIL_REGEX (/^\/api\/admin\/credentials\/([^/]+)$/).
+  if (path === ASSOCIATION_LIST_PATH || ASSOCIATION_DETAIL_REGEX.test(path)) {
+    // Tighten authorization to SuperAdmin for all association operations
+    // (Requirements 2.8, 2.9, 9.7, 9.8, 10.6, 10.7).
+    const auth = assertSuperAdmin(event.user.roles);
+    if (!auth.authorized) {
+      return errorResponse(auth.code, auth.message, auth.statusCode);
+    }
+
+    if (path === ASSOCIATION_LIST_PATH) {
+      if (method === 'GET') return handleListAssociations();
+      if (method === 'POST') return handleCreateAssociation(event);
+      return errorResponse('NOT_FOUND', '路由不存在', 404);
+    }
+
+    const detailMatch = path.match(ASSOCIATION_DETAIL_REGEX);
+    if (detailMatch) {
+      const associationId = decodeURIComponent(detailMatch[1]);
+      if (method === 'GET') return handleGetAssociationDetail(associationId);
+      if (method === 'PUT') return handleUpdateAssociation(associationId, event);
+      if (method === 'DELETE') return handleDeleteAssociation(associationId);
+      return errorResponse('NOT_FOUND', '路由不存在', 404);
+    }
+  }
 
   // GET /api/admin/credentials — list
   if (method === 'GET' && path === CREDENTIAL_LIST_PATH) {
@@ -485,6 +748,13 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     return handlePublicCredentialPage(event);
   }
 
-  // All other routes require auth
+  // User-side self-application routes: /api/credentials/* — any authenticated user
+  // (NOT gated to admins). Kept separate from the admin handler so ordinary users
+  // can reach them while admin routes retain their Admin/SuperAdmin gate.
+  if (event.path.startsWith(USER_CREDENTIALS_PREFIX)) {
+    return userAuthenticatedHandler(event);
+  }
+
+  // All other routes require auth (admin)
   return authenticatedHandler(event);
 }

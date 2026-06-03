@@ -15,11 +15,11 @@ export interface CredentialIdComponents {
  *  1 – eventPrefix  (uppercase letters, may contain hyphens between letters)
  *  2 – year         (4 digits)
  *  3 – season       (Spring|Summer|Fall|Winter)
- *  4 – roleCode     (VOL|SPK|WKS|ORG)
+ *  4 – roleCode     (VOL|SPK|WKS|ORG|UGL)
  *  5 – sequence     (4 digits, zero-padded)
  */
 const CREDENTIAL_ID_REGEX =
-  /^([A-Z](?:[A-Z-]*[A-Z])?)-(\d{4})-(Spring|Summer|Fall|Winter)-(VOL|SPK|WKS|ORG)-(\d{4})$/;
+  /^([A-Z](?:[A-Z-]*[A-Z])?)-(\d{4})-(Spring|Summer|Fall|Winter)-(VOL|SPK|WKS|ORG|UGL)-(\d{4})$/;
 
 /**
  * Format credential ID components into a string.
@@ -90,10 +90,10 @@ export function validateCredentialId(
     }
 
     // Check role code (second-to-last segment)
-    if (!/^(VOL|SPK|WKS|ORG)$/.test(secondLast)) {
+    if (!/^(VOL|SPK|WKS|ORG|UGL)$/.test(secondLast)) {
       return {
         valid: false,
-        error: `Invalid role code "${secondLast}": must be one of VOL, SPK, WKS, ORG`,
+        error: `Invalid role code "${secondLast}": must be one of VOL, SPK, WKS, ORG, UGL`,
       };
     }
 

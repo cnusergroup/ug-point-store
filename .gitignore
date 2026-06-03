@@ -16,6 +16,14 @@ response_test.json
 scan-filter.json
 syncout.json
 vals.json
+out_users.json
+_tmp_cost.json
+
+# CDK alternate synth output
+cdk.out2/
+
+# Internal project report (cost/Git history) - DO NOT commit
+商城项目汇报.md
 
 # Sensitive documents - DO NOT commit
 docs/
