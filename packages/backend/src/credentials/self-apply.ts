@@ -308,6 +308,10 @@ export async function applyForCredential(
     appliedDedupeKey,
     ...(association.eventDate ? { eventDate: association.eventDate } : {}),
     ...(association.eventLocation ? { eventLocation: association.eventLocation } : {}),
+    // "Hosted by" line: if showHostUg is set, include "User Group China - {UG名}"
+    ...(association.showHostUg && association.hostUgName
+      ? { hostByLine: `User Group China - ${association.hostUgName}` }
+      : {}),
   };
 
   await dynamoClient.send(

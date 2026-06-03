@@ -96,6 +96,8 @@ export interface NormalizedAssociation {
   issuingOrganization: string;
   eventDate?: string;
   eventLocation?: string;
+  showHostUg?: boolean;
+  hostUgName?: string;
 }
 
 export type AssociationValidationResult =
@@ -312,6 +314,22 @@ export function validateAssociationInput(
     eventDate = data.eventDate.trim();
   }
 
+  // --- showHostUg (optional boolean, default false) ---
+  const showHostUg = data.showHostUg === true;
+
+  // --- hostUgName (optional string, only meaningful when showHostUg is true) ---
+  let hostUgName: string | undefined;
+  if (showHostUg && !isAbsent(data.hostUgName)) {
+    if (typeof data.hostUgName !== 'string') {
+      return invalid('UG 名称 (hostUgName) 必须为字符串');
+    }
+    const trimmed = data.hostUgName.trim();
+    if (trimmed.length > 200) {
+      return invalid('UG 名称 (hostUgName) 长度不能超过 200 个字符');
+    }
+    hostUgName = trimmed || undefined;
+  }
+
   const normalized: NormalizedAssociation = {
     activityId,
     eventName,
@@ -323,6 +341,8 @@ export function validateAssociationInput(
     issuingOrganization,
     ...(eventDate ? { eventDate } : {}),
     ...(eventLocation ? { eventLocation } : {}),
+    ...(showHostUg ? { showHostUg: true } : {}),
+    ...(hostUgName ? { hostUgName } : {}),
   };
 
   return { valid: true, normalized };

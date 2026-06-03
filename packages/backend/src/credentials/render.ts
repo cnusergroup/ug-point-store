@@ -155,6 +155,7 @@ function getInlineStyles(baseUrl: string): string {
       line-height:1.3;margin-bottom:16px;
     }
     .appreciation{font-size:14px;color:var(--muted);max-width:480px;margin:0 auto;line-height:1.6}
+    .hosted-by{font-size:15px;color:var(--muted);margin-bottom:12px;letter-spacing:0.3px;text-transform:lowercase}
     .contribution-text{font-size:14px;color:var(--muted);margin-top:8px;max-width:480px;margin-left:auto;margin-right:auto;line-height:1.6}
     .info-grid{
       display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
@@ -463,6 +464,7 @@ export async function renderCredentialPage(options: RenderOptions): Promise<stri
       <div class="gradient-divider"></div>
       <div class="verb-line">${escapeHtml(verbLine)}</div>
       <div class="event-name">${eEvent}</div>
+      <div class="hosted-by">hosted by ${credential.hostByLine ? escapeHtml(credential.hostByLine) : 'User Group China'}</div>
       <div class="appreciation">${escapeHtml(s.appreciationText)}</div>
       ${contributionHtml}
     </div>

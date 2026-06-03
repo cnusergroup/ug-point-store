@@ -18,6 +18,7 @@ syncout.json
 vals.json
 out_users.json
 _tmp_cost.json
+tmp-q.json
 
 # CDK alternate synth output
 cdk.out2/

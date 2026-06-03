@@ -61,6 +61,8 @@ interface ActivityTemplateAssociation {
   issuingOrganization?: string;
   eventDate?: string;
   eventLocation?: string;
+  showHostUg?: boolean;
+  hostUgName?: string;
   createdAt?: string;
   createdBy?: string;
   updatedAt?: string;
@@ -195,6 +197,9 @@ export default function AdminCredentialsPage() {
   const [assocEventLocation, setAssocEventLocation] = useState('');
   const [assocIssuingOrg, setAssocIssuingOrg] = useState('');
   const [assocEventPrefix, setAssocEventPrefix] = useState('');
+  // "Hosted by UG" checkbox + auto-filled UG name from selected activity
+  const [assocShowHostUg, setAssocShowHostUg] = useState(false);
+  const [assocHostUgName, setAssocHostUgName] = useState('');
   const [assocYear, setAssocYear] = useState(String(new Date().getFullYear()));
   const [assocSeason, setAssocSeason] = useState('Summer');
   const [assocRolesForm, setAssocRolesForm] = useState<AllowedRolesForm>(emptyAllowedRolesForm());
@@ -539,6 +544,8 @@ export default function AdminCredentialsPage() {
     setAssocYear(String(new Date().getFullYear()));
     setAssocSeason('Summer');
     setAssocRolesForm(emptyAllowedRolesForm());
+    setAssocShowHostUg(false);
+    setAssocHostUgName('');
     setAssocFormError('');
     setShowAssocActivityList(false);
     setAssocActivitySearch('');
@@ -561,6 +568,8 @@ export default function AdminCredentialsPage() {
     setAssocEventPrefix(assoc.eventPrefix);
     setAssocYear(assoc.year);
     setAssocSeason(assoc.season);
+    setAssocShowHostUg(assoc.showHostUg === true);
+    setAssocHostUgName(assoc.hostUgName || '');
     const form = emptyAllowedRolesForm();
     (assoc.allowedRoles || []).forEach((r) => {
       if (form[r.role]) {
@@ -600,6 +609,10 @@ export default function AdminCredentialsPage() {
     // Pre-fill event name from the activity topic when empty for convenience.
     if (!assocEventName.trim() && activity.topic) {
       setAssocEventName(activity.topic);
+    }
+    // Auto-fill UG name for the "hosted by" checkbox.
+    if (activity.ugName) {
+      setAssocHostUgName(activity.ugName);
     }
     setShowAssocActivityList(false);
     setAssocActivitySearch('');
@@ -675,6 +688,10 @@ export default function AdminCredentialsPage() {
     if (assocEventDate.trim()) data.eventDate = assocEventDate.trim();
     if (assocEventLocation.trim()) data.eventLocation = assocEventLocation.trim();
     if (assocIssuingOrg.trim()) data.issuingOrganization = assocIssuingOrg.trim();
+    if (assocShowHostUg) {
+      data.showHostUg = true;
+      if (assocHostUgName.trim()) data.hostUgName = assocHostUgName.trim();
+    }
     return { ok: true, data };
   };
 
@@ -1389,6 +1406,34 @@ export default function AdminCredentialsPage() {
                   value={assocIssuingOrg}
                   onInput={(e) => setAssocIssuingOrg(e.detail.value)}
                 />
+              </View>
+
+              {/* Hosted by UG checkbox */}
+              <View className='form-field'>
+                <View className='assoc-roles__item' style={{ marginBottom: 0 }}>
+                  <View
+                    className='assoc-roles__toggle'
+                    onClick={() => setAssocShowHostUg(!assocShowHostUg)}
+                  >
+                    <View className={`assoc-roles__check ${assocShowHostUg ? 'assoc-roles__check--on' : ''}`}>
+                      <Text>{assocShowHostUg ? '✓' : ''}</Text>
+                    </View>
+                    <Text className='assoc-roles__label'>在证书上显示 hosted by UG 名称</Text>
+                  </View>
+                </View>
+                {assocShowHostUg && (
+                  <Input
+                    className='form-field__input'
+                    placeholder='UG 名称（选择活动后自动填入）'
+                    value={assocHostUgName}
+                    onInput={(e) => setAssocHostUgName(e.detail.value)}
+                  />
+                )}
+                <Text className='form-field__hint'>
+                  {assocShowHostUg
+                    ? `证书将显示：hosted by User Group China - ${assocHostUgName || '(UG名称)'}`
+                    : '证书将显示：hosted by User Group China'}
+                </Text>
               </View>
 
               {/* Event prefix */}

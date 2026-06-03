@@ -36,6 +36,8 @@ export interface Credential {
   sourceRole?: SourceRole; // 来源身份
   identityText?: string; // 证书展示身份文案（渲染优先使用）
   appliedDedupeKey?: string; // '{userId}#{activityId}#{sourceRole}' 并发去重键
+  // "Hosted by" line displayed on the public certificate page between event name and appreciation
+  hostByLine?: string; // e.g. "User Group China - {UG名}" or absent (default "User Group China" rendered)
 }
 
 export const ROLE_CODES: Record<CredentialRole, string> = {
@@ -77,4 +79,7 @@ export interface ActivityTemplateAssociation {
   eventLocation?: string; // 活动地点 1–200
   updatedAt?: string;
   updatedBy?: string;
+  // "Hosted by UG" — 证书显示 hosted by 行（活动名称与 Thank you 之间）
+  showHostUg?: boolean; // 是否显示具体 UG 名称
+  hostUgName?: string; // UG 名称（从活动 ugName 带入）
 }
