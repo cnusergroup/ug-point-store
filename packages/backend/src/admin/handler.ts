@@ -20,7 +20,7 @@ import { reviewContent, listAllContent, deleteContent, createCategory, updateCat
 import { listAllTags, mergeTags, deleteTag } from '../content/admin-tags';
 import { searchAwardTags, getHotAwardTags, createAwardTag, deleteAwardTag, normalizeTagName } from './award-tags';
 import { executeSpecialActivityDistribution } from './special-activity-award';
-import { updateFeatureToggles, getFeatureToggles, updateContentRolePermissions } from '../settings/feature-toggles';
+import { updateFeatureToggles, getFeatureToggles, updateContentRolePermissions, DEFAULT_POINTS_RULE_CONFIG } from '../settings/feature-toggles';
 import type { PointsRuleConfig } from '../settings/feature-toggles';
 import { checkReviewPermission } from '../content/content-permission';
 import { checkProductPermission } from './product-permission';
@@ -1371,9 +1371,30 @@ async function handleBatchDistribution(event: AuthenticatedEvent): Promise<APIGa
       usersTable: USERS_TABLE,
       senderEmail: 'store@awscommunity.cn',
     };
+
+    // Build per-user skill points map so the email shows the correct total (base + skill)
+    const skillClaimsArr = (skillClaims as { skill: string; userId: string }[] | undefined) ?? [];
+    const userSkillPointsMap = new Map<string, number>();
+    if (skillClaimsArr.length > 0) {
+      // Read config for skill point values (same config executeBatchDistribution uses)
+      const togglesForEmail = await getFeatureToggles(dynamoClient, USERS_TABLE);
+      const emailConfig = togglesForEmail.pointsRuleConfig ?? DEFAULT_POINTS_RULE_CONFIG;
+      for (const claim of skillClaimsArr) {
+        const prev = userSkillPointsMap.get(claim.userId) ?? 0;
+        const skillPts =
+          claim.skill === 'liveSupport' ? emailConfig.liveSupportPoints
+          : claim.skill === 'posterDesign' ? emailConfig.posterDesignPoints
+          : claim.skill === 'articleEditing' ? emailConfig.articleEditingPoints
+          : 0;
+        userSkillPointsMap.set(claim.userId, prev + skillPts);
+      }
+    }
+
     const uniqueUserIds = [...new Set(userIds as string[])];
     for (const userId of uniqueUserIds) {
       try {
+        // Per-user total = base activity points + any skill claim bonus for this user
+        const userTotal = (points as number) + (userSkillPointsMap.get(userId) ?? 0);
         // Fetch user's current balance (post-distribution) for the email
         const userBalanceResult = await dynamoClient.send(
           new GetCommand({
@@ -1386,7 +1407,7 @@ async function handleBatchDistribution(event: AuthenticatedEvent): Promise<APIGa
         await sendPointsEarnedEmail(
           notificationCtx,
           userId,
-          points as number,
+          userTotal,
           '管理员发放',
           currentBalance,
         );
