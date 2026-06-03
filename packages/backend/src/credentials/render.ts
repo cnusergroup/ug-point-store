@@ -155,7 +155,7 @@ function getInlineStyles(baseUrl: string): string {
       line-height:1.3;margin-bottom:16px;
     }
     .appreciation{font-size:14px;color:var(--muted);max-width:480px;margin:0 auto;line-height:1.6}
-    .hosted-by{font-size:15px;color:var(--muted);margin-bottom:12px;letter-spacing:0.3px;text-transform:lowercase}
+    .hosted-by{font-size:15px;color:var(--muted);margin-bottom:12px;letter-spacing:0.3px}
     .contribution-text{font-size:14px;color:var(--muted);margin-top:8px;max-width:480px;margin-left:auto;margin-right:auto;line-height:1.6}
     .info-grid{
       display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
