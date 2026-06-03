@@ -1431,8 +1431,8 @@ export default function AdminCredentialsPage() {
                 )}
                 <Text className='form-field__hint'>
                   {assocShowHostUg
-                    ? `证书将显示：hosted by User Group China - ${assocHostUgName || '(UG名称)'}`
-                    : '证书将显示：hosted by User Group China'}
+                    ? `证书将显示：hosted by Amazon Web Services User Group China - ${assocHostUgName || '(UG名称)'}`
+                    : '证书将显示：hosted by Amazon Web Services User Group China'}
                 </Text>
               </View>
 

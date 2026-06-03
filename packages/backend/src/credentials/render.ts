@@ -464,7 +464,7 @@ export async function renderCredentialPage(options: RenderOptions): Promise<stri
       <div class="gradient-divider"></div>
       <div class="verb-line">${escapeHtml(verbLine)}</div>
       <div class="event-name">${eEvent}</div>
-      <div class="hosted-by">hosted by ${credential.hostByLine ? escapeHtml(credential.hostByLine) : 'User Group China'}</div>
+      <div class="hosted-by">hosted by ${credential.hostByLine ? escapeHtml(credential.hostByLine) : 'Amazon Web Services User Group China'}</div>
       <div class="appreciation">${escapeHtml(s.appreciationText)}</div>
       ${contributionHtml}
     </div>

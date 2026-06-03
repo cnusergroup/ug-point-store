@@ -310,7 +310,7 @@ export async function applyForCredential(
     ...(association.eventLocation ? { eventLocation: association.eventLocation } : {}),
     // "Hosted by" line: if showHostUg is set, include "User Group China - {UG名}"
     ...(association.showHostUg && association.hostUgName
-      ? { hostByLine: `User Group China - ${association.hostUgName}` }
+      ? { hostByLine: `Amazon Web Services User Group China - ${association.hostUgName}` }
       : {}),
   };
 
