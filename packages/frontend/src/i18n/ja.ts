@@ -934,6 +934,8 @@ export const ja: TranslationDict = {
       errorTargetNotFound: '対象ユーザーが存在しません',
       adminContentReviewLabel: 'Admin コンテンツ審査',
       adminContentReviewDesc: 'Admin がコンテンツを審査（承認/拒否）できるようにする（SuperAdminは対象外）',
+      employeeContentAutoApprovedLabel: '従業員コンテンツ自動承認',
+      employeeContentAutoApprovedDesc: '有効にすると、従業員がアップロードしたコンテンツは審査をスキップし、自動的に承認されます',
       contentReviewModeLabel: 'レビューモード',
       contentReviewModeAll: 'すべての Admin',
       contentReviewModeSpecific: '指定 Admin',

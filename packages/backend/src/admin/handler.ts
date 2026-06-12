@@ -124,6 +124,7 @@ const INVITES_REVOKE_REGEX = /^\/api\/admin\/invites\/([^/]+)\/revoke$/;
 const USERS_STATUS_REGEX = /^\/api\/admin\/users\/([^/]+)\/status$/;
 const USERS_UNLOCK_REGEX = /^\/api\/admin\/users\/([^/]+)\/unlock$/;
 const USERS_DELETE_REGEX = /^\/api\/admin\/users\/([^/]+)$/;
+const USERS_LOGIN_HISTORY_REGEX = /^\/api\/admin\/users\/([^/]+)\/login-history$/;
 const CLAIMS_REVIEW_REGEX = /^\/api\/admin\/claims\/([^/]+)\/review$/;
 const CONTENT_REVIEW_REGEX = /^\/api\/admin\/content\/([^/]+)\/review$/;
 const CONTENT_DELETE_REGEX = /^\/api\/admin\/content\/([^/]+)$/;
@@ -483,6 +484,17 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
 
   if (method === 'GET' && path === '/api/admin/users') {
     return await handleListUsers(event);
+  }
+
+  // GET /api/admin/users/{id}/login-history — SuperAdmin only
+  if (method === 'GET') {
+    const loginHistoryMatch = path.match(USERS_LOGIN_HISTORY_REGEX);
+    if (loginHistoryMatch) {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleGetLoginHistory(loginHistoryMatch[1]);
+    }
   }
 
   if (method === 'GET' && path === '/api/admin/claims') {
@@ -1086,6 +1098,34 @@ async function handleDeleteImage(productId: string, imageKey: string): Promise<A
   );
 
   return jsonResponse(200, { message: '图片删除成功' });
+}
+
+/**
+ * GET /api/admin/users/{id}/login-history — SuperAdmin only.
+ * Returns lastLoginAt / lastLoginIp and the recent login history array for a user.
+ */
+async function handleGetLoginHistory(userId: string): Promise<APIGatewayProxyResult> {
+  const result = await dynamoClient.send(
+    new GetCommand({
+      TableName: USERS_TABLE,
+      Key: { userId },
+      ProjectionExpression: 'userId, email, nickname, lastLoginAt, lastLoginIp, loginHistory',
+    }),
+  );
+
+  if (!result.Item) {
+    return errorResponse('NOT_FOUND', '用户不存在', 404);
+  }
+
+  const item = result.Item;
+  return jsonResponse(200, {
+    userId: item.userId,
+    email: item.email ?? '',
+    nickname: item.nickname ?? '',
+    lastLoginAt: item.lastLoginAt ?? null,
+    lastLoginIp: item.lastLoginIp ?? null,
+    loginHistory: Array.isArray(item.loginHistory) ? item.loginHistory : [],
+  });
 }
 
 async function handleListUsers(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {

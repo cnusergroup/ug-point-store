@@ -934,6 +934,8 @@ export const en: TranslationDict = {
       errorTargetNotFound: 'Target user does not exist',
       adminContentReviewLabel: 'Admin Content Review',
       adminContentReviewDesc: 'Allow Admin to review content (approve/reject) (SuperAdmin is not affected)',
+      employeeContentAutoApprovedLabel: 'Auto-approve Employee Content',
+      employeeContentAutoApprovedDesc: 'When enabled, content uploaded by employees skips review and is approved automatically',
       contentReviewModeLabel: 'Review Mode',
       contentReviewModeAll: 'All Admins',
       contentReviewModeSpecific: 'Specific Admins',

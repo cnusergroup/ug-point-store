@@ -11,6 +11,22 @@ export interface LoginRequest {
   password: string;
 }
 
+/** 登录审计信息（来源于 API Gateway requestContext / 请求头） */
+export interface LoginAuditInfo {
+  ip?: string;
+  userAgent?: string;
+}
+
+/** 单条登录历史记录 */
+export interface LoginHistoryEntry {
+  at: string;        // ISO 时间
+  ip: string;        // 来源 IP
+  userAgent?: string;
+}
+
+/** 每个账号保留的最近登录历史条数 */
+export const MAX_LOGIN_HISTORY = 20;
+
 export interface LoginResult {
   success: boolean;
   user?: {
@@ -28,6 +44,7 @@ export async function loginUser(
   request: LoginRequest,
   dynamoClient: DynamoDBDocumentClient,
   tableName: string,
+  audit?: LoginAuditInfo,
 ): Promise<LoginResult> {
   // 1. Query user by email GSI
   const queryResult = await dynamoClient.send(
@@ -170,20 +187,54 @@ export async function loginUser(
     };
   }
 
-  // 6. Password correct — full reset of lock state
-  await dynamoClient.send(
-    new UpdateCommand({
-      TableName: tableName,
-      Key: { userId: user.userId },
-      UpdateExpression: 'SET loginFailCount = :zero, #s = :active, updatedAt = :now REMOVE lockUntil, firstFailAt',
-      ExpressionAttributeNames: { '#s': 'status' },
-      ExpressionAttributeValues: {
-        ':zero': 0,
-        ':active': 'active',
-        ':now': new Date().toISOString(),
-      },
-    }),
-  );
+  // 6. Password correct — full reset of lock state + record login audit
+  const nowIso = new Date().toISOString();
+
+  // Build the new login-history entry (only when we have a usable IP)
+  const auditIp = (audit?.ip && audit.ip.trim()) ? audit.ip.trim() : undefined;
+  const newEntry: LoginHistoryEntry | undefined = auditIp
+    ? { at: nowIso, ip: auditIp, ...(audit?.userAgent ? { userAgent: audit.userAgent } : {}) }
+    : undefined;
+
+  if (newEntry) {
+    // Prepend new entry, keep only the most recent MAX_LOGIN_HISTORY
+    const existingHistory: LoginHistoryEntry[] = Array.isArray(user.loginHistory)
+      ? (user.loginHistory as LoginHistoryEntry[])
+      : [];
+    const updatedHistory = [newEntry, ...existingHistory].slice(0, MAX_LOGIN_HISTORY);
+
+    await dynamoClient.send(
+      new UpdateCommand({
+        TableName: tableName,
+        Key: { userId: user.userId },
+        UpdateExpression:
+          'SET loginFailCount = :zero, #s = :active, updatedAt = :now, lastLoginAt = :now, lastLoginIp = :ip, loginHistory = :hist REMOVE lockUntil, firstFailAt',
+        ExpressionAttributeNames: { '#s': 'status' },
+        ExpressionAttributeValues: {
+          ':zero': 0,
+          ':active': 'active',
+          ':now': nowIso,
+          ':ip': auditIp,
+          ':hist': updatedHistory,
+        },
+      }),
+    );
+  } else {
+    // No IP available — fall back to the original reset-only update
+    await dynamoClient.send(
+      new UpdateCommand({
+        TableName: tableName,
+        Key: { userId: user.userId },
+        UpdateExpression: 'SET loginFailCount = :zero, #s = :active, updatedAt = :now REMOVE lockUntil, firstFailAt',
+        ExpressionAttributeNames: { '#s': 'status' },
+        ExpressionAttributeValues: {
+          ':zero': 0,
+          ':active': 'active',
+          ':now': nowIso,
+        },
+      }),
+    );
+  }
 
   return {
     success: true,

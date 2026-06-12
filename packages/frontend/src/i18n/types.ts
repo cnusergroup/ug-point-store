@@ -915,6 +915,8 @@ export interface TranslationDict {
       errorTargetNotFound: string;
       adminContentReviewLabel: string;
       adminContentReviewDesc: string;
+      employeeContentAutoApprovedLabel: string;
+      employeeContentAutoApprovedDesc: string;
       contentReviewModeLabel: string;
       contentReviewModeAll: string;
       contentReviewModeSpecific: string;

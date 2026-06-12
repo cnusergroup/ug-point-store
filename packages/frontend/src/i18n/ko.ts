@@ -934,6 +934,8 @@ export const ko: TranslationDict = {
       errorTargetNotFound: '대상 사용자가 존재하지 않습니다',
       adminContentReviewLabel: 'Admin 콘텐츠 심사',
       adminContentReviewDesc: 'Admin이 콘텐츠를 심사(승인/거부)할 수 있도록 허용 (SuperAdmin은 제외)',
+      employeeContentAutoApprovedLabel: '직원 콘텐츠 자동 승인',
+      employeeContentAutoApprovedDesc: '활성화하면 직원이 업로드한 콘텐츠는 심사를 건너뛰고 자동으로 승인됩니다',
       contentReviewModeLabel: '검토 모드',
       contentReviewModeAll: '모든 Admin',
       contentReviewModeSpecific: '지정 Admin',

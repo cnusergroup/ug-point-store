@@ -313,10 +313,22 @@ export async function executeExport(
       const filterType = filters.type as 'earn' | 'spend' | 'all' | undefined;
       let allRawItems: Record<string, unknown>[] = [];
 
+      // earn 记录按 activityDate（活动发生日期）过滤：放宽 createdAt 查询后再精筛。
+      // spend（兑换）记录没有 activityDate，仍按 createdAt 过滤。
+      const widenedStart = new Date(new Date(startDate).getTime() - 60 * 24 * 60 * 60 * 1000).toISOString();
+      const widenedEnd = new Date(new Date(endDate).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const adStart = startDate.substring(0, 10);
+      const adEnd = endDate.substring(0, 10);
+      const earnInActivityRange = (r: Record<string, unknown>): boolean => {
+        const ad = r.activityDate as string | undefined;
+        if (!ad) return false;
+        return ad >= adStart && ad <= adEnd;
+      };
+
       if (!filterType || filterType === 'all') {
         const [earnResult, spendResult] = await Promise.all([
           queryAllRecordsForExport(
-            dynamoClient, tables.pointsRecordsTable, 'earn', startDate, endDate,
+            dynamoClient, tables.pointsRecordsTable, 'earn', widenedStart, widenedEnd,
             filterExpressions.length > 0 ? filterExpressions : undefined,
             Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
             undefined, lambdaStartTime,
@@ -332,11 +344,21 @@ export async function executeExport(
         if (earnResult.error) return { success: false, error: earnResult.error };
         if (spendResult.error) return { success: false, error: spendResult.error };
 
-        allRawItems = [...earnResult.items, ...spendResult.items];
+        allRawItems = [...earnResult.items.filter(earnInActivityRange), ...spendResult.items];
         if (allRawItems.length > MAX_EXPORT_RECORDS) {
           return { success: false, error: { code: 'EXPORT_LIMIT_EXCEEDED', message: '导出数据量超过限制，请缩小筛选范围' } };
         }
+      } else if (filterType === 'earn') {
+        const result = await queryAllRecordsForExport(
+          dynamoClient, tables.pointsRecordsTable, 'earn', widenedStart, widenedEnd,
+          filterExpressions.length > 0 ? filterExpressions : undefined,
+          Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
+          undefined, lambdaStartTime,
+        );
+        if (result.error) return { success: false, error: result.error };
+        allRawItems = result.items.filter(earnInActivityRange);
       } else {
+        // spend：按 createdAt 过滤（兑换记录无 activityDate）
         const result = await queryAllRecordsForExport(
           dynamoClient, tables.pointsRecordsTable, filterType, startDate, endDate,
           filterExpressions.length > 0 ? filterExpressions : undefined,

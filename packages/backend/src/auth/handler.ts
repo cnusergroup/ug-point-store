@@ -53,6 +53,21 @@ function parseBody(event: APIGatewayProxyEvent): Record<string, unknown> | null 
   }
 }
 
+/**
+ * Resolve the real client IP.
+ * Requests reach API Gateway via CloudFront, so requestContext.identity.sourceIp
+ * is the CloudFront edge IP. The original client IP is the FIRST entry of the
+ * X-Forwarded-For header (client, edge, ...). Falls back to sourceIp.
+ */
+function extractClientIp(event: APIGatewayProxyEvent): string | undefined {
+  const xff = event.headers?.['X-Forwarded-For'] ?? event.headers?.['x-forwarded-for'];
+  if (xff && typeof xff === 'string') {
+    const first = xff.split(',')[0]?.trim();
+    if (first) return first;
+  }
+  return event.requestContext?.identity?.sourceIp;
+}
+
 export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const method = event.httpMethod;
   const path = event.path;
@@ -170,6 +185,10 @@ async function handleLogin(event: APIGatewayProxyEvent): Promise<APIGatewayProxy
     { email: body.email as string, password: body.password as string },
     dynamoClient,
     USERS_TABLE,
+    {
+      ip: extractClientIp(event),
+      userAgent: event.headers?.['User-Agent'] ?? event.headers?.['user-agent'],
+    },
   );
 
   if (!result.success) {

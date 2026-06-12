@@ -2080,6 +2080,19 @@ export default function AdminSettingsPage() {
                     )}
                     <View className='toggle-item'>
                       <View className='toggle-item__info'>
+                        <Text className='toggle-item__label'>{t('admin.settings.employeeContentAutoApprovedLabel')}</Text>
+                        <Text className='toggle-item__desc'>{t('admin.settings.employeeContentAutoApprovedDesc')}</Text>
+                      </View>
+                      <View className='toggle-item__switch'>
+                        <Switch
+                          checked={settings.employeeContentAutoApproved}
+                          onChange={(e) => handleToggle('employeeContentAutoApproved', e.detail.value)}
+                          color='var(--accent-primary)'
+                        />
+                      </View>
+                    </View>
+                    <View className='toggle-item'>
+                      <View className='toggle-item__info'>
                         <Text className='toggle-item__label'>{t('admin.settings.adminCategoriesLabel')}</Text>
                         <Text className='toggle-item__desc'>{t('admin.settings.adminCategoriesDesc')}</Text>
                       </View>

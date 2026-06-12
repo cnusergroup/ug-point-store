@@ -934,6 +934,8 @@ export const zhTW: TranslationDict = {
       errorTargetNotFound: '目標用戶不存在',
       adminContentReviewLabel: 'Admin 內容審核',
       adminContentReviewDesc: '允許 Admin 審核內容（通過/拒絕）（SuperAdmin 不受此限制）',
+      employeeContentAutoApprovedLabel: '員工內容自動通過',
+      employeeContentAutoApprovedDesc: '開啟後，員工上傳的內容免審核，直接進入已通過狀態',
       contentReviewModeLabel: '審批模式',
       contentReviewModeAll: '所有 Admin',
       contentReviewModeSpecific: '指定 Admin',

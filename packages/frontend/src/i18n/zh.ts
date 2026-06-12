@@ -934,6 +934,8 @@ export const zh: TranslationDict = {
       errorTargetNotFound: '目标用户不存在',
       adminContentReviewLabel: 'Admin 内容审批',
       adminContentReviewDesc: '允许 Admin 审批内容（通过/拒绝）（SuperAdmin 不受此限制）',
+      employeeContentAutoApprovedLabel: '员工内容自动通过',
+      employeeContentAutoApprovedDesc: '开启后，员工上传的内容免审批，直接进入已通过状态',
       contentReviewModeLabel: '审批模式',
       contentReviewModeAll: '所有 Admin',
       contentReviewModeSpecific: '指定 Admin',

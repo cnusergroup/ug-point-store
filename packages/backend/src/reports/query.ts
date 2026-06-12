@@ -606,6 +606,16 @@ export async function queryPointsDetail(
       expressionAttributeValues[':activityId'] = filter.activityId;
     }
 
+    // earn 记录按 activityDate（活动发生日期）过滤：放宽 createdAt key 范围，
+    // 并在 DynamoDB 端用 FilterExpression 精筛 activityDate（与分页循环兼容）。
+    // spend（兑换）记录无 activityDate，仍按 createdAt 过滤。
+    const earnWidenedStart = new Date(new Date(startDate).getTime() - 60 * 24 * 60 * 60 * 1000).toISOString();
+    const earnWidenedEnd = new Date(new Date(endDate).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const adStart = startDate.substring(0, 10);
+    const adEnd = endDate.substring(0, 10);
+    const earnFilterExpressions = [...filterExpressions, 'activityDate BETWEEN :adStart AND :adEnd'];
+    const earnExpressionAttributeValues = { ...expressionAttributeValues, ':adStart': adStart, ':adEnd': adEnd };
+
     // Decode pagination cursor
     let exclusiveStartKey: Record<string, unknown> | undefined;
     if (filter.lastKey) {
@@ -631,9 +641,9 @@ export async function queryPointsDetail(
       // Query earn and spend separately, merge and sort
       const [earnResult, spendResult] = await Promise.all([
         earnStartKey !== null ? queryByTypeAndDateRange(
-          dynamoClient, tables.pointsRecordsTable, 'earn', startDate, endDate,
-          filterExpressions.length > 0 ? filterExpressions : undefined,
-          Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
+          dynamoClient, tables.pointsRecordsTable, 'earn', earnWidenedStart, earnWidenedEnd,
+          earnFilterExpressions,
+          earnExpressionAttributeValues,
           Object.keys(expressionAttributeNames).length > 0 ? expressionAttributeNames : undefined,
           { limit: pageSize, exclusiveStartKey: earnStartKey },
         ) : Promise.resolve({ items: [] as Record<string, unknown>[], lastEvaluatedKey: undefined }),
@@ -699,11 +709,18 @@ export async function queryPointsDetail(
         }
       }
     } else {
-      // Query single type
+      // Query single type. earn 用放宽范围 + activityDate 精筛；spend 用 createdAt。
+      const isEarn = type === 'earn';
       const result = await queryByTypeAndDateRange(
-        dynamoClient, tables.pointsRecordsTable, type, startDate, endDate,
-        filterExpressions.length > 0 ? filterExpressions : undefined,
-        Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
+        dynamoClient, tables.pointsRecordsTable, type,
+        isEarn ? earnWidenedStart : startDate,
+        isEarn ? earnWidenedEnd : endDate,
+        isEarn
+          ? earnFilterExpressions
+          : (filterExpressions.length > 0 ? filterExpressions : undefined),
+        isEarn
+          ? earnExpressionAttributeValues
+          : (Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined),
         Object.keys(expressionAttributeNames).length > 0 ? expressionAttributeNames : undefined,
         { limit: pageSize, exclusiveStartKey },
       );
@@ -824,15 +841,25 @@ export async function queryUserPointsRanking(
       expressionAttributeValues[':targetRole'] = filter.targetRole;
     }
 
-    // Query all earn records in date range (full scan for aggregation)
+    // Query all earn records in date range (full scan for aggregation).
+    // Widen createdAt range to capture records whose activityDate is in range
+    // but points were distributed earlier/later, then精筛 by activityDate.
+    const widenedStart = new Date(new Date(startDate).getTime() - 60 * 24 * 60 * 60 * 1000).toISOString();
+    const widenedEnd = new Date(new Date(endDate).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
     const { items } = await queryByTypeAndDateRange(
-      dynamoClient, tables.pointsRecordsTable, 'earn', startDate, endDate,
+      dynamoClient, tables.pointsRecordsTable, 'earn', widenedStart, widenedEnd,
       filterExpressions.length > 0 ? filterExpressions : undefined,
       Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
     );
 
-    // Aggregate by user using pure function
-    const rawRecords = items as unknown as RawPointsRecord[];
+    // Filter by activityDate (活动发生日期) within the user-specified range.
+    const adStart = startDate.substring(0, 10);
+    const adEnd = endDate.substring(0, 10);
+    const rawRecords = (items as unknown as RawPointsRecord[]).filter(r => {
+      const ad = r.activityDate;
+      if (!ad) return false; // skip records without activityDate
+      return ad >= adStart && ad <= adEnd;
+    });
     const aggregated = aggregateByUser(rawRecords);
 
     // Sort by totalEarnPoints descending
@@ -905,15 +932,24 @@ export async function queryActivityPointsSummary(
       expressionAttributeValues[':ugName'] = filter.ugName;
     }
 
-    // Query all earn records in date range (full scan for aggregation)
+    // Query all earn records in date range (full scan for aggregation).
+    // Widen createdAt range, then精筛 by activityDate (活动发生日期).
+    const widenedStart = new Date(new Date(startDate).getTime() - 60 * 24 * 60 * 60 * 1000).toISOString();
+    const widenedEnd = new Date(new Date(endDate).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
     const { items } = await queryByTypeAndDateRange(
-      dynamoClient, tables.pointsRecordsTable, 'earn', startDate, endDate,
+      dynamoClient, tables.pointsRecordsTable, 'earn', widenedStart, widenedEnd,
       filterExpressions.length > 0 ? filterExpressions : undefined,
       Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
     );
 
-    // Aggregate by activity using pure function
-    const rawRecords = items as unknown as RawPointsRecord[];
+    // Filter by activityDate within the user-specified range.
+    const adStart = startDate.substring(0, 10);
+    const adEnd = endDate.substring(0, 10);
+    const rawRecords = (items as unknown as RawPointsRecord[]).filter(r => {
+      const ad = r.activityDate;
+      if (!ad) return false;
+      return ad >= adStart && ad <= adEnd;
+    });
     const aggregated = aggregateByActivity(rawRecords);
 
     // Sort by activityDate descending
