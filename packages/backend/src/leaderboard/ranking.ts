@@ -9,7 +9,7 @@ import { REGULAR_ROLES } from '@points-mall/shared';
 // ============================================================
 
 export interface RankingQueryOptions {
-  role: 'all' | 'Speaker' | 'UserGroupLeader' | 'Volunteer' | 'SpecialActivity';
+  role: 'all' | 'Speaker' | 'UserGroupLeader' | 'Volunteer' | 'SpecialActivity' | 'SpecialReward';
   limit: number;    // 1~50, 默认 20
   lastKey?: string;  // base64 编码的分页游标
 }
@@ -32,7 +32,7 @@ export interface RankingResult {
 // Constants
 // ============================================================
 
-const VALID_ROLES = ['all', 'Speaker', 'UserGroupLeader', 'Volunteer', 'SpecialActivity'] as const;
+const VALID_ROLES = ['all', 'Speaker', 'UserGroupLeader', 'Volunteer', 'SpecialActivity', 'SpecialReward'] as const;
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 const MIN_LIMIT = 1;
@@ -57,7 +57,7 @@ export function validateRankingParams(query: Record<string, string | undefined>)
   if (!(VALID_ROLES as readonly string[]).includes(role)) {
     return {
       valid: false,
-      error: { code: 'INVALID_REQUEST', message: 'role 参数无效，取值为 all、Speaker、UserGroupLeader、Volunteer 或 SpecialActivity' },
+      error: { code: 'INVALID_REQUEST', message: 'role 参数无效，取值为 all、Speaker、UserGroupLeader、Volunteer、SpecialActivity 或 SpecialReward' },
     };
   }
 
@@ -142,6 +142,7 @@ const ROLE_GSI_MAP: Record<string, { indexName: string; sortKeyField: string }> 
   UserGroupLeader:  { indexName: 'earnTotalLeader-index',   sortKeyField: 'earnTotalLeader' },
   Volunteer:        { indexName: 'earnTotalVolunteer-index', sortKeyField: 'earnTotalVolunteer' },
   SpecialActivity:  { indexName: 'earnTotalSpecialActivity-index', sortKeyField: 'earnTotalSpecialActivity' },
+  SpecialReward:    { indexName: 'earnTotalSpecialReward-index', sortKeyField: 'earnTotalSpecialReward' },
 };
 
 // ============================================================
@@ -182,29 +183,40 @@ export async function getRanking(
 
   // GSI only contains eligible users (SA/OA have no pk field, so they're excluded).
   // Simple direct query — no filtering or looping needed.
-  const result = await dynamoClient.send(
-    new QueryCommand({
-      TableName: usersTable,
-      IndexName: indexName,
-      KeyConditionExpression: 'pk = :pk',
-      ExpressionAttributeValues: { ':pk': 'ALL' },
-      ScanIndexForward: false,
-      Limit: limit,
-      ...(exclusiveStartKey && { ExclusiveStartKey: exclusiveStartKey }),
-    }),
-  );
+  // Wrap in try/catch so that if the GSI is not yet ACTIVE or the query fails, we return
+  // an explicit error response (not an empty leaderboard) without affecting other dimensions.
+  let result;
+  try {
+    result = await dynamoClient.send(
+      new QueryCommand({
+        TableName: usersTable,
+        IndexName: indexName,
+        KeyConditionExpression: 'pk = :pk',
+        ExpressionAttributeValues: { ':pk': 'ALL' },
+        ScanIndexForward: false,
+        Limit: limit,
+        ...(exclusiveStartKey && { ExclusiveStartKey: exclusiveStartKey }),
+      }),
+    );
+  } catch (err) {
+    console.error(`getRanking query failed for role=${role}, index=${indexName}:`, err);
+    return {
+      success: false,
+      error: { code: 'RANKING_QUERY_FAILED', message: '排行榜查询失败，请稍后重试' },
+    };
+  }
 
   const rawUsers = result.Items ?? [];
 
   // For role-specific tabs, filter to users who actually have that role.
-  // SpecialActivity is exceptional: any user with earnTotalSpecialActivity > 0 is eligible
-  // regardless of whether they hold Speaker/UserGroupLeader/Volunteer roles.
+  // SpecialActivity and SpecialReward are exceptional: any user appearing on their GSI is
+  // eligible regardless of whether they hold Speaker/UserGroupLeader/Volunteer roles.
   let pageUsers: Array<Record<string, unknown>>;
   if (role === 'all') {
     pageUsers = (rawUsers as Array<Record<string, unknown>>).filter(u =>
       isEligibleForRanking((u.roles as string[]) ?? []),
     );
-  } else if (role === 'SpecialActivity') {
+  } else if (role === 'SpecialActivity' || role === 'SpecialReward') {
     pageUsers = rawUsers as Array<Record<string, unknown>>;
   } else {
     pageUsers = rawUsers.filter(u => ((u.roles as string[]) ?? []).includes(role)) as Array<Record<string, unknown>>;

@@ -321,8 +321,8 @@ export default function ContentListPage() {
                       <Text className='content-card__title'>{item.title}</Text>
                       {isNew && <Text className='content-card__new-indicator'>NEW</Text>}
                     </View>
-                    {item.description && (
-                      <Text className='content-card__desc'>{item.description}</Text>
+                    {(item as { description?: string }).description && (
+                      <Text className='content-card__desc'>{(item as { description?: string }).description}</Text>
                     )}
                     <View className='content-card__meta'>
                       <Text className='content-card__category'>{item.categoryName}</Text>

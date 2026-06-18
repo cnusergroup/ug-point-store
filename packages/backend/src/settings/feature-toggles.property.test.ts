@@ -52,9 +52,6 @@ function createInMemoryClient() {
           ':ewade': 'emailWishAdoptedEnabled',
           ':ewfue': 'emailWishFulfilledEnabled',
           ':ewrje': 'emailWishRejectedEnabled',
-          ':ewade': 'emailWishAdoptedEnabled',
-          ':ewfue': 'emailWishFulfilledEnabled',
-          ':ewrje': 'emailWishRejectedEnabled',
           ':aepe': 'adminEmailProductsEnabled',
           ':aece': 'adminEmailContentEnabled',
           ':rap': 'reservationApprovalPoints',
@@ -538,7 +535,7 @@ describe('Property 6: ??ï¿½ï¿½??????Round-trip??', () => {
 // ?????ï¿½Ê¦ï¿½????????????codeRedemptionEnabled: true/false, pointsClaimEnabled:
 // true/false?????? codeRedemptionEnabled ? false ? POST /api/points/redeem-code
 // ????? FEATURE_DISABLED???? pointsClaimEnabled ? false ? POST /api/claims
-// ????? FEATURE_DISABLED???????????? true ???????????????????????ï¿?
+// ????? FEATURE_DISABLED???????????? true ???????????????????????ï¿½?
 // **Validates: Requirements 4.1, 4.2, 4.3**
 // ============================================================================
 
@@ -851,9 +848,6 @@ function createInMemoryClientWithUpdate(initialItem?: Record<string, unknown>) {
           ':enc': 'emailNewContentEnabled',
           ':ecu': 'emailContentUpdatedEnabled',
           ':ewde': 'emailWeeklyDigestEnabled',
-          ':ewade': 'emailWishAdoptedEnabled',
-          ':ewfue': 'emailWishFulfilledEnabled',
-          ':ewrje': 'emailWishRejectedEnabled',
           ':ewade': 'emailWishAdoptedEnabled',
           ':ewfue': 'emailWishFulfilledEnabled',
           ':ewrje': 'emailWishRejectedEnabled',

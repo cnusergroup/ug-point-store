@@ -1,7 +1,7 @@
 import { DynamoDBDocumentClient, PutCommand, UpdateCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { S3Client } from '@aws-sdk/client-s3';
 import { ulid } from 'ulid';
-import type { UserRole, Product, PointsProduct, CodeExclusiveProduct, ProductStatus, ProductImage, SizeOption } from '@points-mall/shared';
+import type { UserRole, Product, PointsProduct, CodeExclusiveProduct, ProductStatus, ProductImage, SizeOption, ProductBrand } from '@points-mall/shared';
 import { ErrorCodes, ErrorMessages, VALID_BRANDS } from '@points-mall/shared';
 import { moveTempImages, isTempImage } from './images';
 
@@ -160,7 +160,7 @@ export async function createPointsProduct(
     ...(input.sizeOptions !== undefined && { sizeOptions: input.sizeOptions }),
     ...(input.purchaseLimitEnabled !== undefined && { purchaseLimitEnabled: input.purchaseLimitEnabled }),
     ...(input.purchaseLimitCount !== undefined && { purchaseLimitCount: input.purchaseLimitCount }),
-    ...(input.brand && { brand: input.brand }),
+    ...(input.brand && { brand: input.brand as ProductBrand }),
   };
 
   await dynamoClient.send(
@@ -234,7 +234,7 @@ export async function createCodeExclusiveProduct(
     ...(input.sizeOptions !== undefined && { sizeOptions: input.sizeOptions }),
     ...(input.purchaseLimitEnabled !== undefined && { purchaseLimitEnabled: input.purchaseLimitEnabled }),
     ...(input.purchaseLimitCount !== undefined && { purchaseLimitCount: input.purchaseLimitCount }),
-    ...(input.brand && { brand: input.brand }),
+    ...(input.brand && { brand: input.brand as ProductBrand }),
   };
 
   await dynamoClient.send(

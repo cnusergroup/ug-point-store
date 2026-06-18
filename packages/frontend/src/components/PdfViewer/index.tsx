@@ -139,7 +139,7 @@ export default function PdfViewer({ url }: PdfViewerProps) {
       </View>
       <View
         className='pdf-viewer__canvas-wrap'
-        onContextMenu={(e) => { e.preventDefault(); }}
+        {...({ onContextMenu: (e: any) => { e.preventDefault(); } } as any)}
       >
         <canvas ref={canvasRef} className='pdf-viewer__canvas' />
       </View>

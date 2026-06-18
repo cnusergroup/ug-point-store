@@ -52,7 +52,7 @@ const INVITES_TABLE = 'Invites';
 describe('Property 2: 邮箱唯一性约束', () => {
   beforeEach(() => {
     // For email uniqueness tests, invite validation always succeeds with a single role
-    vi.mocked(validateInviteToken).mockResolvedValue({ success: true, roles: ['Speaker'] });
+    vi.mocked(validateInviteToken).mockResolvedValue({ success: true, roles: ['Speaker'], isEmployee: false });
     vi.mocked(consumeInviteToken).mockResolvedValue({ success: true });
   });
 
@@ -137,6 +137,7 @@ describe('Feature: invite-multi-role, Property 6: 注册角色完整分配（Reg
           vi.mocked(validateInviteToken).mockResolvedValue({
             success: true,
             roles: inviteRoles,
+            isEmployee: false,
           });
 
           // Mock consumeInviteToken to succeed

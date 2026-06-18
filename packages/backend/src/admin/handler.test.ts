@@ -1060,8 +1060,9 @@ describe('Admin Lambda Handler', () => {
         {
           token: 'tok-1',
           link: 'https://example.com/register?token=tok-1',
-          roles: ['Speaker', 'Volunteer'],
+          roles: ['Speaker', 'Volunteer'] as ('Speaker' | 'Volunteer')[],
           expiresAt: '2025-01-02T00:00:00.000Z',
+          isEmployee: false,
         },
       ];
       vi.mocked(batchGenerateInvites).mockResolvedValue({ success: true, invites: mockInvites });
@@ -1139,15 +1140,15 @@ describe('Admin Lambda Handler', () => {
 
   describe('GET /api/admin/content', () => {
     it('routes to listAllContent and returns results', async () => {
-      vi.mocked(listAllContent).mockResolvedValue({ items: [], lastKey: undefined });
+      vi.mocked(listAllContent).mockResolvedValue({ success: true, items: [], lastKey: undefined });
       const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/content' });
       const result = await handler(event);
       expect(result.statusCode).toBe(200);
-      expect(JSON.parse(result.body)).toEqual({ items: [], lastKey: undefined });
+      expect(JSON.parse(result.body)).toEqual({ success: true, items: [], lastKey: undefined });
     });
 
     it('passes status, pageSize and lastKey query params', async () => {
-      vi.mocked(listAllContent).mockResolvedValue({ items: [], lastKey: undefined });
+      vi.mocked(listAllContent).mockResolvedValue({ success: true, items: [], lastKey: undefined });
       const event = makeEvent({
         httpMethod: 'GET',
         path: '/api/admin/content',
@@ -1507,6 +1508,8 @@ describe('Admin Lambda Handler', () => {
           employeeContentAutoApproved: false,
           wishPoolEnabled: false,
           wishFulfilledRewardPoints: 20,
+          productManagementMode: 'all' as const,
+          productManagerIds: [],
           updatedAt: '2024-01-01T00:00:00.000Z',
           updatedBy: 'admin-user-id',
         },
@@ -2323,6 +2326,8 @@ describe('Admin Lambda Handler', () => {
           employeeContentAutoApproved: false,
           wishPoolEnabled: false,
           wishFulfilledRewardPoints: 50,
+          productManagementMode: 'all' as const,
+          productManagerIds: [],
           updatedAt: '2024-01-01T00:00:00.000Z',
           updatedBy: 'admin-user-id',
         },
@@ -2393,6 +2398,8 @@ describe('Admin Lambda Handler', () => {
           employeeContentAutoApproved: false,
           wishPoolEnabled: false,
           wishFulfilledRewardPoints: 50,
+          productManagementMode: 'all' as const,
+          productManagerIds: [],
           updatedAt: '2024-01-01T00:00:00.000Z',
           updatedBy: 'admin-user-id',
         },

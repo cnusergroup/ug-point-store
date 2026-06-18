@@ -569,6 +569,8 @@ describe('Points Lambda Handler - Routing', () => {
         internationalAvailable: 1,
         domesticThreshold: 500,
         internationalThreshold: 1000,
+        domesticUsedCount: 0,
+        internationalUsedCount: 0,
       };
       vi.mocked(getTravelQuota).mockResolvedValue(mockQuota);
       const event = makeEvent({

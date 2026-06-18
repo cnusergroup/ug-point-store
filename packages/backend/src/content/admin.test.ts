@@ -69,6 +69,7 @@ const deleteTables = {
   commentsTable: 'ContentComments',
   likesTable: 'ContentLikes',
   reservationsTable: 'ContentReservations',
+  contentTagsTable: 'ContentTags',
 };
 const bucket = 'test-bucket';
 

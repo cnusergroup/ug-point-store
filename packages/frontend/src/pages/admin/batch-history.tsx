@@ -14,6 +14,7 @@ const ROLE_CONFIG: Record<string, { labelKey: string; className: string }> = {
   Speaker: { labelKey: 'batchPoints.page.roleSpeaker', className: 'role-badge--speaker' },
   Volunteer: { labelKey: 'batchPoints.page.roleVolunteer', className: 'role-badge--volunteer' },
   SpecialActivity: { labelKey: 'batchPoints.history.roleSpecialActivity', className: 'role-badge--special-activity' },
+  SpecialReward: { labelKey: 'batchPoints.history.roleSpecialReward', className: 'role-badge--special-reward' },
 };
 
 /** activityType filter options. Empty string '' means "all". */
@@ -23,6 +24,7 @@ const ACTIVITY_TYPE_OPTIONS: { value: string; labelKey: string }[] = [
   { value: '线下活动', labelKey: 'batchPoints.history.activityTypeOffline' },
   { value: '季度贡献奖', labelKey: 'batchPoints.history.activityTypeQuarterly' },
   { value: '特殊活动', labelKey: 'batchPoints.history.activityTypeSpecial' },
+  { value: '特殊奖励', labelKey: 'batchPoints.history.activityTypeSpecialReward' },
 ];
 
 export default function BatchHistoryPage() {
@@ -45,6 +47,9 @@ export default function BatchHistoryPage() {
   // Secondary awardTagName filter (only shown when activityTypeFilter === '特殊活动')
   const [awardTagFilter, setAwardTagFilter] = useState<string>('');
 
+  // Secondary rewardTagName filter (only shown when activityTypeFilter === '特殊奖励')
+  const [rewardTagFilter, setRewardTagFilter] = useState<string>('');
+
   // Expanded record detail
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -55,7 +60,7 @@ export default function BatchHistoryPage() {
     async (
       append = false,
       cursor?: string | null,
-      filters?: { activityType?: string; awardTagName?: string },
+      filters?: { activityType?: string; awardTagName?: string; rewardTagName?: string },
     ) => {
       if (!append) setLoading(true);
       try {
@@ -63,6 +68,7 @@ export default function BatchHistoryPage() {
         if (append && cursor) url += `&lastKey=${encodeURIComponent(cursor)}`;
         if (filters?.activityType) url += `&activityType=${encodeURIComponent(filters.activityType)}`;
         if (filters?.awardTagName) url += `&awardTagName=${encodeURIComponent(filters.awardTagName)}`;
+        if (filters?.rewardTagName) url += `&rewardTagName=${encodeURIComponent(filters.rewardTagName)}`;
 
         const res = await request<{ distributions: DistributionRecord[]; lastKey?: string }>({ url });
         if (append) {
@@ -101,11 +107,12 @@ export default function BatchHistoryPage() {
     fetchHistory(false, null, {
       activityType: activityTypeFilter || undefined,
       awardTagName: awardTagFilter.trim() || undefined,
+      rewardTagName: rewardTagFilter.trim() || undefined,
     });
     // Reset expanded state when filters change so users see consistent results
     setExpandedId(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activityTypeFilter, awardTagFilter]);
+  }, [activityTypeFilter, awardTagFilter, rewardTagFilter]);
 
   // Client-side filter by activity topic or UG name
   const filteredRecords = useMemo(() => {
@@ -129,15 +136,17 @@ export default function BatchHistoryPage() {
       fetchHistory(true, lastKey, {
         activityType: activityTypeFilter || undefined,
         awardTagName: awardTagFilter.trim() || undefined,
+        rewardTagName: rewardTagFilter.trim() || undefined,
       });
     }
-  }, [searchQuery, filteredRecords.length, lastKey, loading, fetchHistory, activityTypeFilter, awardTagFilter]);
+  }, [searchQuery, filteredRecords.length, lastKey, loading, fetchHistory, activityTypeFilter, awardTagFilter, rewardTagFilter]);
 
   const handleLoadMore = () => {
     if (lastKey) {
       fetchHistory(true, lastKey, {
         activityType: activityTypeFilter || undefined,
         awardTagName: awardTagFilter.trim() || undefined,
+        rewardTagName: rewardTagFilter.trim() || undefined,
       });
     }
   };
@@ -182,6 +191,7 @@ export default function BatchHistoryPage() {
   const selectedActivityTypeIndex = Math.max(0, activityTypeValues.indexOf(activityTypeFilter));
 
   const showAwardTagFilter = activityTypeFilter === '特殊活动';
+  const showRewardTagFilter = activityTypeFilter === '特殊奖励';
 
   return (
     <View className='batch-history'>
@@ -220,6 +230,10 @@ export default function BatchHistoryPage() {
                   if (newValue !== '特殊活动') {
                     setAwardTagFilter('');
                   }
+                  // Clear rewardTag filter when switching away from "特殊奖励"
+                  if (newValue !== '特殊奖励') {
+                    setRewardTagFilter('');
+                  }
                 }}
               >
                 <View className='bh-filter__select'>
@@ -240,6 +254,21 @@ export default function BatchHistoryPage() {
                   value={awardTagFilter}
                   onInput={(e) => setAwardTagFilter(e.detail.value)}
                   placeholder={t('batchPoints.history.awardTagFilterPlaceholder')}
+                />
+              </View>
+            )}
+
+            {/* Secondary filter: rewardTagName, only when "特殊奖励" is selected */}
+            {showRewardTagFilter && (
+              <View className='bh-filter__group'>
+                <Text className='bh-filter__label'>
+                  {t('batchPoints.history.rewardTagLabel')}
+                </Text>
+                <Input
+                  className='bh-filter__input'
+                  value={rewardTagFilter}
+                  onInput={(e) => setRewardTagFilter(e.detail.value)}
+                  placeholder={t('batchPoints.history.rewardTagFilterPlaceholder')}
                 />
               </View>
             )}
@@ -278,6 +307,9 @@ export default function BatchHistoryPage() {
                     // Prefer the more detailed record (cached detail) for awardTag display
                     const awardTagDisplay =
                       detail?.awardTagDisplayName ?? record.awardTagDisplayName;
+                    // Reward tag display (SpecialReward records only)
+                    const rewardTagDisplay =
+                      detail?.rewardTagDisplayName ?? record.rewardTagDisplayName;
 
                     return (
                       <View
@@ -303,7 +335,7 @@ export default function BatchHistoryPage() {
                           {record.activityTopic && (
                             <View className='bh-activity-summary'>
                               {record.activityType && (
-                                <Text className={`bh-activity-badge bh-activity-badge--${record.activityType === '线上活动' ? 'online' : record.activityType === '特殊活动' ? 'special' : 'offline'}`}>
+                                <Text className={`bh-activity-badge bh-activity-badge--${record.activityType === '线上活动' ? 'online' : record.activityType === '特殊活动' ? 'special' : record.activityType === '特殊奖励' ? 'special-reward' : 'offline'}`}>
                                   {record.activityType}
                                 </Text>
                               )}
@@ -321,6 +353,16 @@ export default function BatchHistoryPage() {
                                 {t('batchPoints.history.awardTagLabel')}:
                               </Text>
                               <Text className='bh-award-tag-row__value'>{awardTagDisplay}</Text>
+                            </View>
+                          )}
+
+                          {/* Reward tag inline pill (SpecialReward only) */}
+                          {rewardTagDisplay && (
+                            <View className='bh-award-tag-row'>
+                              <Text className='bh-award-tag-row__label'>
+                                {t('batchPoints.history.rewardTagLabel')}:
+                              </Text>
+                              <Text className='bh-award-tag-row__value'>{rewardTagDisplay}</Text>
                             </View>
                           )}
 
@@ -359,7 +401,7 @@ export default function BatchHistoryPage() {
                                 <View className='bh-activity-detail__grid'>
                                   <View className='bh-activity-detail__row'>
                                     <Text className='bh-activity-detail__label'>{t('batchPoints.history.activityTypeLabel' as any)}</Text>
-                                    <Text className={`bh-activity-badge bh-activity-badge--${record.activityType === '线上活动' ? 'online' : record.activityType === '特殊活动' ? 'special' : 'offline'}`}>
+                                    <Text className={`bh-activity-badge bh-activity-badge--${record.activityType === '线上活动' ? 'online' : record.activityType === '特殊活动' ? 'special' : record.activityType === '特殊奖励' ? 'special-reward' : 'offline'}`}>
                                       {record.activityType || '-'}
                                     </Text>
                                   </View>
@@ -382,6 +424,15 @@ export default function BatchHistoryPage() {
                                         {t('batchPoints.history.awardTagLabel')}
                                       </Text>
                                       <Text className='bh-activity-detail__value'>{awardTagDisplay}</Text>
+                                    </View>
+                                  )}
+                                  {/* RewardTag row in detail (only when present) */}
+                                  {rewardTagDisplay && (
+                                    <View className='bh-activity-detail__row'>
+                                      <Text className='bh-activity-detail__label'>
+                                        {t('batchPoints.history.rewardTagLabel')}
+                                      </Text>
+                                      <Text className='bh-activity-detail__value'>{rewardTagDisplay}</Text>
                                     </View>
                                   )}
                                 </View>

@@ -5,7 +5,7 @@
 // Validates: Requirements 8.6, 8.7, 8.8, 8.9
 
 import { describe, it, expect, vi } from 'vitest';
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react';
 
 interface MyCredential {

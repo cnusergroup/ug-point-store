@@ -187,12 +187,6 @@ function isPdf(fileName: string): boolean {
   return getFileExtension(fileName) === 'pdf';
 }
 
-/** Check if file is an Office document (PPT/PPTX/DOC/DOCX) */
-function isOfficeDoc(fileName: string): boolean {
-  const ext = getFileExtension(fileName);
-  return ['ppt', 'pptx', 'doc', 'docx'].includes(ext);
-}
-
 export default function ContentDetailPage() {
   const router = useRouter();
   const contentId = router.params.id || '';

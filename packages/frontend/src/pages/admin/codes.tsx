@@ -5,7 +5,7 @@ import { useAppStore } from '../../store';
 import { request, RequestError } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
-import { TicketIcon, ClaimIcon } from '../../components/icons';
+import { TicketIcon } from '../../components/icons';
 import './codes.scss';
 
 interface CodeInfo {

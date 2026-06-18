@@ -1050,7 +1050,7 @@ describe('Feature: ug-leader-assignment, Property 3: getMyUGs returns exactly th
         fc.string({ minLength: 5, maxLength: 26, unit: fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz0123456789'.split('')) }),
         // Generate UGs that all have the target userId as leaderId but are inactive
         fc.array(
-          ugRecordWithLeaderArb.map(ug => ({ ...ug, status: 'inactive' as const })),
+          ugRecordWithLeaderArb.map(ug => ({ ...ug, status: 'inactive' as 'active' | 'inactive' })),
           { minLength: 1, maxLength: 10 },
         ),
         async (userId, inactiveUGs) => {

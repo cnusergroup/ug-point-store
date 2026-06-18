@@ -483,6 +483,7 @@ export async function executeExport(
         targetRole: r.targetRole,
         isEmployee: nicknameMap.get(r.userId)?.isEmployee ?? false,
         earnTotalSpecialActivity: r.earnTotalSpecialActivity,
+        earnTotalSpecialReward: r.earnTotalSpecialReward,
       }));
 
       // Apply isEmployee filter if specified

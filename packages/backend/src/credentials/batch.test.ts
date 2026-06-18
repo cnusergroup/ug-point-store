@@ -41,7 +41,7 @@ describe('batchCreateCredentials', () => {
 
   it('should create credentials for all valid CSV rows', async () => {
     const params = makeParams();
-    const client = params.dynamoClient;
+    const client = params.dynamoClient as any;
 
     // Mock sequence generator: first call for VOL (1 row), second for SPK (1 row)
     let callCount = 0;
@@ -104,7 +104,7 @@ describe('batchCreateCredentials', () => {
     ].join('\n');
 
     const params = makeParams({ csvContent });
-    const client = params.dynamoClient;
+    const client = params.dynamoClient as any;
 
     client.send.mockImplementation((cmd: any) => {
       const cmdName = cmd.constructor.name;
@@ -133,7 +133,7 @@ describe('batchCreateCredentials', () => {
     ].join('\n');
 
     const params = makeParams({ csvContent });
-    const client = params.dynamoClient;
+    const client = params.dynamoClient as any;
 
     // Reserve 3 sequences for VOL, starting at 5 (endSequence=7, count=3, start=5)
     client.send.mockImplementation((cmd: any) => {
@@ -158,7 +158,7 @@ describe('batchCreateCredentials', () => {
   it('should set batchId on each credential written to DynamoDB', async () => {
     const csvContent = 'recipientName,role,eventName\nAlice,Speaker,Event A';
     const params = makeParams({ csvContent });
-    const client = params.dynamoClient;
+    const client = params.dynamoClient as any;
 
     const putItems: any[] = [];
     client.send.mockImplementation((cmd: any) => {
@@ -183,7 +183,7 @@ describe('batchCreateCredentials', () => {
   it('should use custom issuingOrganization from CSV when provided', async () => {
     const csvContent = 'recipientName,role,eventName,issuingOrganization\nAlice,Speaker,Event A,Custom Org';
     const params = makeParams({ csvContent });
-    const client = params.dynamoClient;
+    const client = params.dynamoClient as any;
 
     const putItems: any[] = [];
     client.send.mockImplementation((cmd: any) => {
@@ -205,7 +205,7 @@ describe('batchCreateCredentials', () => {
   it('should default locale to zh when not specified', async () => {
     const csvContent = 'recipientName,role,eventName\nAlice,Speaker,Event A';
     const params = makeParams({ csvContent });
-    const client = params.dynamoClient;
+    const client = params.dynamoClient as any;
 
     const putItems: any[] = [];
     client.send.mockImplementation((cmd: any) => {
@@ -232,7 +232,7 @@ describe('batchCreateCredentials', () => {
     ].join('\n');
 
     const params = makeParams({ csvContent });
-    const client = params.dynamoClient;
+    const client = params.dynamoClient as any;
 
     let putCallCount = 0;
     client.send.mockImplementation((cmd: any) => {
@@ -264,7 +264,7 @@ describe('batchCreateCredentials', () => {
   it('should include optional fields in credential when provided in CSV', async () => {
     const csvContent = 'recipientName,role,eventName,eventDate,eventLocation,contribution\nAlice,Speaker,Event A,2026-06-15,Shanghai,Keynote talk';
     const params = makeParams({ csvContent });
-    const client = params.dynamoClient;
+    const client = params.dynamoClient as any;
 
     const putItems: any[] = [];
     client.send.mockImplementation((cmd: any) => {

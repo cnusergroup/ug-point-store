@@ -553,4 +553,10 @@
     color: var(--warning);
     border: 1px solid rgba(245, 158, 11, 0.25);
   }
+
+  &--special-reward {
+    background: rgba(124, 109, 240, 0.15);
+    color: var(--accent-primary);
+    border: 1px solid rgba(124, 109, 240, 0.25);
+  }
 }

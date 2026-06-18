@@ -252,7 +252,7 @@ describe('Content Lambda Handler', () => {
 
   describe('GET /api/content/categories', () => {
     it('routes to listCategories and returns results', async () => {
-      vi.mocked(listCategories).mockResolvedValue({ categories: [{ categoryId: 'c1', name: 'Tech', createdAt: '2024-01-01' }] });
+      vi.mocked(listCategories).mockResolvedValue({ success: true, categories: [{ categoryId: 'c1', name: 'Tech', createdAt: '2024-01-01' }] });
       const event = makeEvent({ httpMethod: 'GET', path: '/api/content/categories' });
       const result = await handler(event);
       expect(result.statusCode).toBe(200);

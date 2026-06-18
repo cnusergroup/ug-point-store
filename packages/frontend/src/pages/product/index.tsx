@@ -56,6 +56,7 @@ const ROLE_CONFIG: Record<UserRole, { label: string; icon: string; className: st
   Volunteer: { label: 'Volunteer', icon: '♥', className: 'role-item--volunteer' },
   Admin: { label: 'Admin', icon: '⚙', className: 'role-item--admin' },
   SuperAdmin: { label: 'SuperAdmin', icon: '◈', className: 'role-item--superadmin' },
+  OrderAdmin: { label: 'OrderAdmin', icon: '⚙', className: 'role-item--admin' },
 };
 
 export default function ProductDetailPage() {

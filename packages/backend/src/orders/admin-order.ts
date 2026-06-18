@@ -610,7 +610,7 @@ export async function importOrderStatuses(
   try {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(fileBuffer);
+    await workbook.xlsx.load(fileBuffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
 
     const ws = workbook.worksheets[0];
     if (!ws) {

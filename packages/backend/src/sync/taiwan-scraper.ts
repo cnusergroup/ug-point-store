@@ -380,7 +380,9 @@ function handleFetchError(err: unknown, source: string): ScrapeResult {
  */
 function parseAwsugNetEventCard(
   $: cheerio.CheerioAPI,
-  el: cheerio.Element,
+  // cheerio bundles its own domhandler copy and does not export a usable Element type;
+  // the element comes from `.each` callbacks where its concrete type is cheerio-internal.
+  el: any,
   sourceUrl: string,
 ): ScrapedEvent | null {
   const $el = $(el);

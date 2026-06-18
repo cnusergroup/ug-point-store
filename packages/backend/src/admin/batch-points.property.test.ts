@@ -255,6 +255,11 @@ describe('Feature: admin-batch-points, Property 3: Batch distribution increases 
             targetRole: 'Speaker',
             distributorId: 'admin-001',
             distributorNickname: 'Admin',
+            activityId: 'act-1',
+            activityType: '线上活动',
+            activityUG: 'UG',
+            activityTopic: 'T',
+            activityDate: '2026-01-01',
           };
 
           const result = await executeBatchDistribution(input, mockClient, {
@@ -338,6 +343,11 @@ describe('Feature: admin-batch-points, Property 4: Distribution record and resul
             targetRole: 'Volunteer',
             distributorId: 'admin-001',
             distributorNickname: 'Admin',
+            activityId: 'act-1',
+            activityType: '线上活动',
+            activityUG: 'UG',
+            activityTopic: 'T',
+            activityDate: '2026-01-01',
           };
 
           const result = await executeBatchDistribution(input, mockClient, {
@@ -419,6 +429,11 @@ describe('Feature: admin-batch-points, Property 5: Duplicate userIds are dedupli
             targetRole: 'Speaker',
             distributorId: 'admin-001',
             distributorNickname: 'Admin',
+            activityId: 'act-1',
+            activityType: '线上活动',
+            activityUG: 'UG',
+            activityTopic: 'T',
+            activityDate: '2026-01-01',
           };
 
           const result = await executeBatchDistribution(input, mockClient, {

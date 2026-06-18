@@ -85,13 +85,6 @@ interface PointsRuleConfig {
 
 type NotificationType = 'pointsEarned' | 'newOrder' | 'orderShipped' | 'newProduct' | 'newContent' | 'contentUpdated' | 'weeklyDigest' | 'wishAdopted' | 'wishFulfilled' | 'wishRejected';
 
-interface EmailToggleConfig {
-  key: keyof FeatureToggles;
-  notificationType: NotificationType;
-  labelKey: string;
-  descKey: string;
-}
-
 interface TravelSponsorshipSettings {
   travelSponsorshipEnabled: boolean;
   domesticThreshold: number;
@@ -627,19 +620,6 @@ export default function AdminSettingsPage() {
   const [pointsRuleSaving, setPointsRuleSaving] = useState(false);
 
   const [activeCategory, setActiveCategory] = useState<string>('feature-toggles');
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
-
-  const toggleSection = (sectionKey: string) => {
-    setCollapsedSections((prev) => {
-      const next = new Set(prev);
-      if (next.has(sectionKey)) {
-        next.delete(sectionKey);
-      } else {
-        next.add(sectionKey);
-      }
-      return next;
-    });
-  };
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);
@@ -1121,7 +1101,7 @@ export default function AdminSettingsPage() {
     fetchSyncedActivities(true);
   }, [isAuthenticated, isSuperAdmin, fetchSettings, fetchTravelSettings, fetchInviteSettings, fetchAdminUsers, fetchUGs, fetchSyncConfig, fetchMeetupSyncConfig, fetchWebsiteSyncConfig, fetchSyncedActivities]);
 
-  const handleToggle = async (key: keyof FeatureToggles, newValue: boolean) => {
+  const handleToggle = async (key: keyof FeatureToggles, newValue: boolean | number) => {
     const prev = { ...settings };
     const updated = { ...settings, [key]: newValue };
     setSettings(updated);
@@ -1388,7 +1368,7 @@ export default function AdminSettingsPage() {
     }
   };
 
-  const handleFrequencyChange = async (newFrequency: 'daily' | 'weekly' | 'monthly') => {
+  const handleFrequencyChange = async (newFrequency: 'realtime' | 'daily' | 'weekly' | 'monthly') => {
     if (newFrequency === settings.leaderboardUpdateFrequency) return;
     const prev = { ...settings };
     const updated = { ...settings, leaderboardUpdateFrequency: newFrequency };

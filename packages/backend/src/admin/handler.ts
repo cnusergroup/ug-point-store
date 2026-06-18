@@ -19,7 +19,9 @@ import { reviewClaim, listAllClaims } from '../claims/review';
 import { reviewContent, listAllContent, deleteContent, createCategory, updateCategory, deleteCategory } from '../content/admin';
 import { listAllTags, mergeTags, deleteTag } from '../content/admin-tags';
 import { searchAwardTags, getHotAwardTags, createAwardTag, deleteAwardTag, normalizeTagName } from './award-tags';
+import { searchRewardTags, getHotRewardTags, createRewardTag, deleteRewardTag } from './reward-tags';
 import { executeSpecialActivityDistribution } from './special-activity-award';
+import { executeSpecialRewardDistribution } from './special-reward-award';
 import { updateFeatureToggles, getFeatureToggles, updateContentRolePermissions, DEFAULT_POINTS_RULE_CONFIG } from '../settings/feature-toggles';
 import type { PointsRuleConfig } from '../settings/feature-toggles';
 import { checkReviewPermission } from '../content/content-permission';
@@ -82,6 +84,7 @@ const ACTIVITIES_TABLE = process.env.ACTIVITIES_TABLE ?? '';
 const SYNC_FUNCTION_NAME = process.env.SYNC_FUNCTION_NAME ?? '';
 const ACTIVITY_SKILL_CLAIMS_TABLE = process.env.ACTIVITY_SKILL_CLAIMS_TABLE ?? '';
 const AWARD_TAGS_TABLE = process.env.AWARD_TAGS_TABLE ?? '';
+const REWARD_TAGS_TABLE = process.env.REWARD_TAGS_TABLE ?? '';
 
 const CORS_HEADERS = {
   'Content-Type': 'application/json',
@@ -135,6 +138,7 @@ const BATCH_POINTS_ADJUST_REGEX = /^\/api\/admin\/batch-points\/([^/]+)\/adjust$
 const TRAVEL_REVIEW_REGEX = /^\/api\/admin\/travel\/([^/]+)\/review$/;
 const TAGS_DELETE_REGEX = /^\/api\/admin\/tags\/([^/]+)$/;
 const AWARD_TAG_BY_ID_REGEX = /^\/api\/admin\/award-tags\/([^/]+)$/;
+const REWARD_TAG_BY_ID_REGEX = /^\/api\/admin\/reward-tags\/([^/]+)$/;
 const EMAIL_TEMPLATES_UPDATE_REGEX = /^\/api\/admin\/email-templates\/([^/]+)\/([^/]+)$/;
 const UGS_STATUS_REGEX = /^\/api\/admin\/ugs\/([^/]+)\/status$/;
 const UGS_RENAME_REGEX = /^\/api\/admin\/ugs\/([^/]+)$/;
@@ -352,6 +356,13 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
       }
       return await handleCreateAwardTag(event);
     }
+    // POST /api/admin/reward-tags — SuperAdmin only (create RewardTag)
+    if (path === '/api/admin/reward-tags') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleCreateRewardTag(event);
+    }
     if (path === '/api/admin/superadmin/transfer') {
       if (!isSuperAdmin(event.user.roles as UserRole[])) {
         return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
@@ -384,6 +395,14 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
         return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
       }
       return await handleSpecialActivityAward(event);
+    }
+
+    // POST /api/admin/special-reward-award — SuperAdmin only
+    if (path === '/api/admin/special-reward-award') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleSpecialRewardAward(event);
     }
 
     // POST /api/admin/ugs — SuperAdmin only
@@ -519,6 +538,22 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
       return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
     }
     return await handleSearchAwardTags(event);
+  }
+
+  // GET /api/admin/reward-tags/hot — SuperAdmin only (must check before prefix match)
+  if (method === 'GET' && path === '/api/admin/reward-tags/hot') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handleGetHotRewardTags();
+  }
+
+  // GET /api/admin/reward-tags?prefix=...&limit=10 — SuperAdmin only
+  if (method === 'GET' && path === '/api/admin/reward-tags') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handleSearchRewardTags(event);
   }
 
   // GET /api/admin/ugs/my-ugs — Admin/SuperAdmin
@@ -765,6 +800,15 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
         return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
       }
       return await handleDeleteAwardTag(awardTagDeleteMatch[1]);
+    }
+
+    // DELETE /api/admin/reward-tags/:tagId — SuperAdmin only
+    const rewardTagDeleteMatch = path.match(REWARD_TAG_BY_ID_REGEX);
+    if (rewardTagDeleteMatch && path.startsWith('/api/admin/reward-tags/')) {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleDeleteRewardTag(rewardTagDeleteMatch[1]);
     }
 
     const deleteImageMatch = path.match(PRODUCTS_DELETE_IMAGE_REGEX);
@@ -1622,6 +1666,89 @@ async function handleSpecialActivityAward(event: AuthenticatedEvent): Promise<AP
   });
 }
 
+// ---- Special Reward Award Handler ----
+
+async function handleSpecialRewardAward(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || typeof body !== 'object') {
+    return errorResponse('INVALID_REQUEST', '请求体无效', 400);
+  }
+
+  const { points, rewardTagName, userIds, awardDate } = body as Record<string, unknown>;
+
+  // event.user does not carry nickname (auth middleware only populates userId/email/roles),
+  // so fetch the distributor nickname from Users table — mirrors handleSpecialActivityAward.
+  const distributorResult = await dynamoClient.send(
+    new GetCommand({ TableName: USERS_TABLE, Key: { userId: event.user.userId }, ProjectionExpression: 'nickname' }),
+  );
+  const distributorNickname = (distributorResult.Item?.nickname as string | undefined) ?? '';
+
+  const result = await executeSpecialRewardDistribution(
+    {
+      points: points as number,
+      rewardTagName: rewardTagName as string,
+      userIds: userIds as string[],
+      awardDate: awardDate as string,
+      distributorId: event.user.userId,
+      distributorNickname,
+    },
+    dynamoClient,
+    {
+      usersTable: USERS_TABLE,
+      pointsRecordsTable: POINTS_RECORDS_TABLE,
+      batchDistributionsTable: BATCH_DISTRIBUTIONS_TABLE,
+      rewardTagsTable: REWARD_TAGS_TABLE,
+    },
+  );
+
+  if (!result.success) {
+    const code = result.error!.code;
+    // Per design.md "Backend API Contract":
+    //   INVALID_REQUEST / ACTIVITY_NOT_FOUND / DUPLICATE_REWARD_TAG_DISTRIBUTION / BATCH_TOO_LARGE -> 400
+    //   INTERNAL_ERROR -> 500
+    const statusCode = code === 'INTERNAL_ERROR' ? 500 : 400;
+    // For DUPLICATE_REWARD_TAG_DISTRIBUTION the error object carries duplicateUserIds —
+    // pass the whole error through so the client can highlight conflicting users.
+    return jsonResponse(statusCode, result.error);
+  }
+
+  // Best-effort email notifications — mirror handleSpecialActivityAward / handleQuarterlyAward:
+  // sequential per-user GetCommand + sendPointsEarnedEmail wrapped in try/catch so a single
+  // failure neither blocks subsequent emails nor the 201 response (requirements 11.1–11.4).
+  try {
+    const notificationCtx: NotificationContext = {
+      sesClient,
+      dynamoClient,
+      emailTemplatesTable: EMAIL_TEMPLATES_TABLE,
+      usersTable: USERS_TABLE,
+      senderEmail: 'store@awscommunity.cn',
+    };
+    const uniqueUserIds = [...new Set(userIds as string[])];
+    for (const userId of uniqueUserIds) {
+      try {
+        const userBalanceResult = await dynamoClient.send(
+          new GetCommand({ TableName: USERS_TABLE, Key: { userId }, ProjectionExpression: 'points' }),
+        );
+        const currentBalance = userBalanceResult.Item?.points ?? 0;
+        // source='特殊奖励' reuses the existing points_earned template, no new template introduced.
+        await sendPointsEarnedEmail(notificationCtx, userId, points as number, '特殊奖励', currentBalance);
+      } catch (emailErr) {
+        console.error(`[Email] Failed to send special-reward-award email to user ${userId}:`, emailErr);
+      }
+    }
+  } catch (err) {
+    console.error('[Email] Failed to send special-reward-award emails:', err);
+  }
+
+  return jsonResponse(201, {
+    distributionId: result.distributionId,
+    successCount: result.successCount,
+    totalPoints: result.totalPoints,
+    rewardTagId: result.rewardTagId,
+    rewardTagName: result.rewardTagName,
+  });
+}
+
 // ---- Quarterly Award Handler ----
 
 async function handleQuarterlyAward(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
@@ -1738,6 +1865,8 @@ async function handleListDistributionHistory(event: AuthenticatedEvent): Promise
   const activityType = event.queryStringParameters?.activityType;
   const rawAwardTagName = event.queryStringParameters?.awardTagName;
   const awardTagName = rawAwardTagName ? normalizeTagName(rawAwardTagName) : undefined;
+  const rawRewardTagName = event.queryStringParameters?.rewardTagName;
+  const rewardTagName = rawRewardTagName ? normalizeTagName(rawRewardTagName) : undefined;
 
   const result = await listDistributionHistory(
     {
@@ -1746,6 +1875,7 @@ async function handleListDistributionHistory(event: AuthenticatedEvent): Promise
       distributorId,
       ...(activityType && { activityType }),
       ...(awardTagName && { awardTagName }),
+      ...(rewardTagName && { rewardTagName }),
     },
     dynamoClient,
     BATCH_DISTRIBUTIONS_TABLE,
@@ -2195,6 +2325,62 @@ async function handleDeleteAwardTag(tagId: string): Promise<APIGatewayProxyResul
   }
 
   return jsonResponse(200, { message: '奖项标签已删除' });
+}
+
+// ---- RewardTag Management Route Handlers (special-reward-award) ----
+
+async function handleSearchRewardTags(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const prefix = event.queryStringParameters?.prefix ?? '';
+  const limitStr = event.queryStringParameters?.limit;
+  const limit = limitStr ? parseInt(limitStr, 10) : 10;
+
+  const result = await searchRewardTags(prefix, limit, dynamoClient, REWARD_TAGS_TABLE);
+
+  return jsonResponse(200, { tags: result.tags });
+}
+
+async function handleGetHotRewardTags(): Promise<APIGatewayProxyResult> {
+  const result = await getHotRewardTags(dynamoClient, REWARD_TAGS_TABLE);
+
+  return jsonResponse(200, { tags: result.tags });
+}
+
+async function handleCreateRewardTag(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || typeof body.displayName !== 'string') {
+    return errorResponse('INVALID_REQUEST', 'Missing required field: displayName', 400);
+  }
+
+  const result = await createRewardTag(
+    {
+      displayName: body.displayName,
+      createdBy: event.user.userId,
+    },
+    dynamoClient,
+    REWARD_TAGS_TABLE,
+  );
+
+  if (!result.success) {
+    const code = result.error!.code;
+    // 409 for TAG_ALREADY_EXISTS, otherwise default mapping (400 for INVALID_REQUEST)
+    const statusCode = code === 'TAG_ALREADY_EXISTS' ? 409 : 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(201, { tag: result.tag });
+}
+
+async function handleDeleteRewardTag(tagId: string): Promise<APIGatewayProxyResult> {
+  const result = await deleteRewardTag(tagId, dynamoClient, REWARD_TAGS_TABLE);
+
+  if (!result.success) {
+    const code = result.error!.code;
+    // TAG_NOT_FOUND -> 404, TAG_IN_USE -> 400
+    const statusCode = code === 'TAG_NOT_FOUND' ? 404 : 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { message: '奖励标签已删除' });
 }
 
 // ---- SuperAdmin Transfer Route Handler ----

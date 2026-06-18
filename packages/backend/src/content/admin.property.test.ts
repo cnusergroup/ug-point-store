@@ -6,7 +6,7 @@ import type { UserRole, ContentStatus } from '@points-mall/shared';
 
 // ─── Helpers ───────────────────────────────────────────────
 
-const ALL_ROLES: UserRole[] = ['UserGroupLeader', 'CommunityBuilder', 'Speaker', 'Volunteer', 'Admin', 'SuperAdmin'];
+const ALL_ROLES: UserRole[] = ['UserGroupLeader', 'Speaker', 'Volunteer', 'Admin', 'SuperAdmin'];
 
 function makeContentItem(overrides?: Partial<Record<string, any>>) {
   return {
@@ -43,7 +43,7 @@ const roleSubsetArb: fc.Arbitrary<UserRole[]> = fc
   .subarray(ALL_ROLES, { minLength: 1 })
   .filter((arr) => arr.length > 0);
 
-describe('Property 4: 内容审核权限校验', { tags: ['Feature: content-hub, Property 4: 内容审核权限校验'] }, () => {
+describe('Property 4: 内容审核权限校验', () => {
   it('不含 SuperAdmin 的角色集合被拒绝，含 SuperAdmin 的角色集合通过', () => {
     fc.assert(
       fc.property(roleSubsetArb, (roles) => {
@@ -82,7 +82,7 @@ const contentItemArb = fc.record({
   createdAt: fc.integer({ min: 1672531200000, max: 1735689600000 }).map((ts) => new Date(ts).toISOString()),
 }).map((r) => makeContentItem({ contentId: r.contentId, status: r.status, createdAt: r.createdAt }));
 
-describe('Property 5: 管理端状态筛选正确性', { tags: ['Feature: content-hub, Property 5: 管理端状态筛选正确性'] }, () => {
+describe('Property 5: 管理端状态筛选正确性', () => {
   it('筛选后每条记录 status 等于指定值', async () => {
     await fc.assert(
       fc.asyncProperty(
@@ -136,7 +136,7 @@ function createMockDynamoForReview(item: ReturnType<typeof makeContentItem>) {
 
 const rejectReasonArb = fc.string({ minLength: 1, maxLength: 200 });
 
-describe('Property 6: 内容审核状态流转正确性', { tags: ['Feature: content-hub, Property 6: 内容审核状态流转正确性'] }, () => {
+describe('Property 6: 内容审核状态流转正确性', () => {
   it('pending→approve→approved', async () => {
     await fc.assert(
       fc.asyncProperty(fc.uuid(), fc.uuid(), async (contentId, reviewerId) => {

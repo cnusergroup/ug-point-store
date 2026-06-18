@@ -77,6 +77,7 @@ const USER_RANKING_COLUMNS: ColumnDef[] = [
   { key: 'userId', label: '用户ID' },
   { key: 'totalEarnPoints', label: '获取积分总额' },
   { key: 'earnTotalSpecialActivity', label: '特殊活动积分' },
+  { key: 'earnTotalSpecialReward', label: '特殊奖励积分' },
   { key: 'targetRole', label: '身份' },
   { key: 'isEmployee', label: '是否AWS员工' },
 ];
@@ -160,7 +161,7 @@ const INACTIVE_UGL_COLUMNS: ColumnDef[] = [
   { key: 'email', label: '邮箱' },
   { key: 'ugName', label: '负责UG' },
   { key: 'createdAt', label: '注册时间' },
-  { key: 'lastActiveDate', label: '最后活跃时间' },
+  { key: 'lastActiveDate', label: '最后活跃(活动日期)' },
 ];
 
 /** 获取报表列定义 */
@@ -255,6 +256,7 @@ export function formatUserRankingForExport(records: (UserRankingRecord & { isEmp
     userId: r.userId,
     totalEarnPoints: r.totalEarnPoints,
     earnTotalSpecialActivity: r.earnTotalSpecialActivity ?? 0,
+    earnTotalSpecialReward: r.earnTotalSpecialReward ?? 0,
     targetRole: r.targetRole,
     isEmployee: r.isEmployee === true ? '是' : '否',
   }));
@@ -387,7 +389,8 @@ export function formatInactiveUGLForExport(
     email: r.email,
     ugName: r.ugName,
     createdAt: formatDateTime(r.createdAt),
-    lastActiveDate: r.lastActiveDate ? formatDateTime(r.lastActiveDate) : '-',
+    // lastActiveDate 现为「活动日期」(YYYY-MM-DD)，直接展示，不做时区/时间格式化
+    lastActiveDate: r.lastActiveDate ? r.lastActiveDate : '-',
   }));
 }
 

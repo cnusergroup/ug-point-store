@@ -392,20 +392,8 @@ export async function executeBatchDistribution(
     // Total = activityPoints + skillPoints
     const totalUserPoints = activityPoints + skillPoints;
     const currentBalance = userBalances.get(userId) ?? 0;
-    const newBalance = currentBalance + totalUserPoints;
-    const recordId = ulid();
 
-    // Build source string based on scenario
-    const source = buildMergedSource(
-      isActivityUser,
-      isSkillUser ? userSkills : undefined,
-      input.targetRole,
-      input.activityUG,
-      input.activityTopic,
-      input.activityDate,
-    );
-
-    // a. Update user points — increment points, earnTotal, earnTotalLeader by total amount
+    // Determine the earn field for the granting identity
     const roleFieldMap: Record<string, string> = {
       Speaker: 'earnTotalSpeaker',
       UserGroupLeader: 'earnTotalLeader',
@@ -413,41 +401,106 @@ export async function executeBatchDistribution(
     };
     const roleField = roleFieldMap[input.targetRole] ?? 'earnTotalSpeaker';
 
-    transactItems.push({
-      Update: {
-        TableName: tables.usersTable,
-        Key: { userId },
-        UpdateExpression: `SET points = points + :pv, earnTotal = if_not_exists(earnTotal, :zero) + :pv, #rf = if_not_exists(#rf, :zero) + :pv, updatedAt = :now`,
-        ExpressionAttributeNames: { '#rf': roleField },
-        ExpressionAttributeValues: {
-          ':pv': totalUserPoints,
-          ':zero': 0,
-          ':now': now,
+    // a. Update user table.
+    //    - points / earnTotal always increment by the total (base + skill) → unchanged behavior
+    //    - activity base points → granting-identity field (roleField)
+    //    - skill points → earnTotalVolunteer (technical skill claims are classified as Volunteer)
+    //    When the granting identity is Volunteer, roleField IS earnTotalVolunteer, so we must
+    //    merge into a single += (base + skill) expression to avoid two SET clauses on one field.
+    if (input.targetRole === 'Volunteer') {
+      transactItems.push({
+        Update: {
+          TableName: tables.usersTable,
+          Key: { userId },
+          UpdateExpression: `SET points = points + :pv, earnTotal = if_not_exists(earnTotal, :zero) + :pv, earnTotalVolunteer = if_not_exists(earnTotalVolunteer, :zero) + :pv, updatedAt = :now`,
+          ExpressionAttributeValues: {
+            ':pv': totalUserPoints,
+            ':zero': 0,
+            ':now': now,
+          },
         },
-      },
-    });
+      });
+    } else {
+      transactItems.push({
+        Update: {
+          TableName: tables.usersTable,
+          Key: { userId },
+          UpdateExpression: `SET points = points + :pv, earnTotal = if_not_exists(earnTotal, :zero) + :pv, #rf = if_not_exists(#rf, :zero) + :av, earnTotalVolunteer = if_not_exists(earnTotalVolunteer, :zero) + :sv, updatedAt = :now`,
+          ExpressionAttributeNames: { '#rf': roleField },
+          ExpressionAttributeValues: {
+            ':pv': totalUserPoints,
+            ':av': activityPoints,
+            ':sv': skillPoints,
+            ':zero': 0,
+            ':now': now,
+          },
+        },
+      });
+    }
 
-    // b. Write single merged PointsRecord
-    transactItems.push({
-      Put: {
-        TableName: tables.pointsRecordsTable,
-        Item: {
-          recordId,
-          userId,
-          type: 'earn',
-          amount: totalUserPoints,
-          source,
-          balanceAfter: newBalance,
-          createdAt: now,
-          activityId: input.activityId,
-          activityType: input.activityType,
-          activityUG: input.activityUG,
-          activityTopic: input.activityTopic,
-          activityDate: input.activityDate,
-          targetRole: input.targetRole,
+    // b. Write split PointsRecords:
+    //    - base points → one record with targetRole = granting identity
+    //    - skill points → one record with targetRole = 'Volunteer'
+    //    balanceAfter accumulates sequentially: base first, then skill.
+    if (activityPoints > 0) {
+      const baseSource = buildMergedSource(
+        true,
+        undefined, // base record never includes skills
+        input.targetRole,
+        input.activityUG,
+        input.activityTopic,
+        input.activityDate,
+      );
+      transactItems.push({
+        Put: {
+          TableName: tables.pointsRecordsTable,
+          Item: {
+            recordId: ulid(),
+            userId,
+            type: 'earn',
+            amount: activityPoints,
+            source: baseSource,
+            balanceAfter: currentBalance + activityPoints,
+            createdAt: now,
+            activityId: input.activityId,
+            activityType: input.activityType,
+            activityUG: input.activityUG,
+            activityTopic: input.activityTopic,
+            activityDate: input.activityDate,
+            targetRole: input.targetRole,
+          },
         },
-      },
-    });
+      });
+    }
+
+    if (skillPoints > 0 && userSkills) {
+      const skillSource = buildSkillSource(
+        userSkills,
+        input.activityUG,
+        input.activityTopic,
+        input.activityDate,
+      );
+      transactItems.push({
+        Put: {
+          TableName: tables.pointsRecordsTable,
+          Item: {
+            recordId: ulid(),
+            userId,
+            type: 'earn',
+            amount: skillPoints,
+            source: skillSource,
+            balanceAfter: currentBalance + activityPoints + skillPoints,
+            createdAt: now,
+            activityId: input.activityId,
+            activityType: input.activityType,
+            activityUG: input.activityUG,
+            activityTopic: input.activityTopic,
+            activityDate: input.activityDate,
+            targetRole: 'Volunteer',
+          },
+        },
+      });
+    }
   }
 
   // 3b. Build skill claim transact items and append to the same transaction
@@ -664,6 +717,21 @@ export function buildMergedSource(
   }
 }
 
+/**
+ * Build the `source` field for a skill-points PointsRecord (classified as Volunteer).
+ *
+ * Format: "技能认领:Volunteer|{ugName}|{topic}|{date}|技能:{skills joined by +}"
+ * Clearly identifies the record as a technical skill claim and lists the skill types.
+ */
+export function buildSkillSource(
+  skills: SkillType[],
+  activityUG: string,
+  activityTopic: string,
+  activityDate: string,
+): string {
+  return `技能认领:Volunteer|${activityUG}|${activityTopic}|${activityDate}|技能:${skills.join('+')}`;
+}
+
 // ============================================================
 // History query
 // ============================================================
@@ -676,6 +744,8 @@ export interface ListDistributionHistoryOptions {
   activityType?: string;
   /** Optional filter on normalized awardTagName; only meaningful for SpecialActivity records */
   awardTagName?: string;
+  /** Optional filter on normalized rewardTagName; only meaningful for SpecialReward records */
+  rewardTagName?: string;
 }
 
 export interface ListDistributionHistoryResult {
@@ -743,6 +813,10 @@ export async function listDistributionHistory(
   if (options.awardTagName) {
     filterClauses.push('awardTagName = :atag');
     filterValues[':atag'] = options.awardTagName;
+  }
+  if (options.rewardTagName) {
+    filterClauses.push('rewardTagName = :rtag');
+    filterValues[':rtag'] = options.rewardTagName;
   }
   const filterExpression = filterClauses.length > 0 ? filterClauses.join(' AND ') : undefined;
 

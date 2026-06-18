@@ -117,7 +117,7 @@ describe('batchGenerateInvites', () => {
    * batchGenerateInvites passes roles array (not single role) to batchCreateInvites
    */
   it('passes roles array to batchCreateInvites', async () => {
-    const roles: UserRole[] = ['CommunityBuilder', 'Volunteer', 'Speaker'];
+    const roles: UserRole[] = ['UserGroupLeader', 'Volunteer', 'Speaker'];
     mockBatchCreateInvites.mockResolvedValue({ success: true, invites: [] });
 
     await batchGenerateInvites(3, roles, mockDynamoClient, INVITES_TABLE, REGISTER_BASE_URL);

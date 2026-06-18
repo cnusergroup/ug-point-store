@@ -54,13 +54,13 @@ export default function OfficeViewer({ url, fileName }: OfficeViewerProps) {
           <View
             className='office-viewer__overlay-left'
             onClick={handlePrev}
-            title='上一页'
+            {...({ title: '上一页' } as any)}
           />
           {/* Right half: next page */}
           <View
             className='office-viewer__overlay-right'
             onClick={handleNext}
-            title='下一页'
+            {...({ title: '下一页' } as any)}
           />
         </View>
       </View>

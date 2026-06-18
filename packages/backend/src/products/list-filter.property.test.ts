@@ -8,7 +8,7 @@ import type { UserRole, ProductType, ProductStatus } from '@points-mall/shared';
 // 按类型筛选时所有商品类型一致，按角色筛选时所有商品允许该角色兑换。
 // Validates: Requirements 5.6, 5.7
 
-const ALL_ROLES: UserRole[] = ['UserGroupLeader', 'CommunityBuilder', 'Speaker', 'Volunteer'];
+const ALL_ROLES: UserRole[] = ['UserGroupLeader', 'Speaker', 'Volunteer'];
 
 const productTypeArb = fc.constantFrom<ProductType>('points', 'code_exclusive');
 const productStatusArb = fc.constantFrom<ProductStatus>('active', 'inactive');
@@ -40,13 +40,13 @@ const productArb = fc
           pointsCost: fc.integer({ min: 1, max: 10000 }),
           allowedRoles: allowedRolesArb,
         })
-        .map((ext) => ({ ...base, ...ext }));
+        .map((ext) => ({ ...base, ...ext }) as Record<string, unknown>);
     }
     return fc
       .record({
         eventInfo: fc.string({ minLength: 1, maxLength: 50 }),
       })
-      .map((ext) => ({ ...base, ...ext }));
+      .map((ext) => ({ ...base, ...ext }) as Record<string, unknown>);
   });
 
 const TABLE = 'Products';

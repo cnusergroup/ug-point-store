@@ -29,3 +29,17 @@ cdk.out2/
 # Sensitive documents - DO NOT commit
 docs/
 
+# UGL data exports containing user PII (emails/names) - DO NOT commit to public repo
+UGL用户清单.md
+UGL积分汇总-2026年1-5月.md
+
+# Stray TypeScript build artifacts emitted into src (should not be committed)
+packages/backend/src/sync/taiwan-date-parser.js
+packages/backend/src/sync/taiwan-date-parser.js.map
+packages/backend/src/sync/taiwan-date-parser.d.ts
+packages/backend/src/sync/taiwan-date-parser.d.ts.map
+packages/backend/src/sync/taiwan-scraper.js
+packages/backend/src/sync/taiwan-scraper.js.map
+packages/backend/src/sync/taiwan-scraper.d.ts
+packages/backend/src/sync/taiwan-scraper.d.ts.map
+

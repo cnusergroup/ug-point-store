@@ -126,7 +126,7 @@ export async function listProducts(
 
   // Map to ProductListItem with locked field
   const result: ProductListItem[] = paged.map((item) => {
-    const product = item as Product & { pointsCost?: number; allowedRoles?: UserRole[] | 'all'; eventInfo?: string };
+    const product = item as unknown as Product & { pointsCost?: number; allowedRoles?: UserRole[] | 'all'; eventInfo?: string };
     let locked = false;
 
     if (product.type === 'points') {

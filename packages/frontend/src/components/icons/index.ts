@@ -12,6 +12,7 @@ export { LocationIcon } from './LocationIcon';
 export { ClaimIcon } from './ClaimIcon';
 export { SettingsIcon } from './SettingsIcon';
 export { GiftIcon } from './GiftIcon';
+export { TrophyIcon } from './TrophyIcon';
 export { LockIcon } from './LockIcon';
 export { PackageIcon } from './PackageIcon';
 export { RefreshIcon } from './RefreshIcon';

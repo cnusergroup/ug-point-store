@@ -9,7 +9,7 @@ import type { UserRole, ProductType } from '@points-mall/shared';
 // { success: true, data: <product> } with the complete product data including status: 'inactive'.
 // **Validates: Requirements 2.1, 2.2**
 
-const ALL_ROLES: UserRole[] = ['UserGroupLeader', 'CommunityBuilder', 'Speaker', 'Volunteer'];
+const ALL_ROLES: UserRole[] = ['UserGroupLeader', 'Speaker', 'Volunteer'];
 
 const productTypeArb = fc.constantFrom<ProductType>('points', 'code_exclusive');
 
@@ -53,13 +53,13 @@ const inactiveProductArb = fc
           pointsCost: fc.integer({ min: 1, max: 10000 }),
           allowedRoles: allowedRolesArb,
         })
-        .map((ext) => ({ ...base, ...ext }));
+        .map((ext) => ({ ...base, ...ext }) as Record<string, unknown>);
     }
     return fc
       .record({
         eventInfo: fc.string({ minLength: 1, maxLength: 50 }),
       })
-      .map((ext) => ({ ...base, ...ext }));
+      .map((ext) => ({ ...base, ...ext }) as Record<string, unknown>);
   });
 
 const TABLE = 'Products';
@@ -75,7 +75,7 @@ describe('Property 1: Bug Condition — Inactive product detail returns data', (
     await fc.assert(
       fc.asyncProperty(inactiveProductArb, async (product) => {
         const client = createMockDynamoClient(product);
-        const result = await getProductDetail(product.productId, client, TABLE);
+        const result = await getProductDetail(product.productId as string, client, TABLE);
 
         // Must return success
         expect(result.success).toBe(true);

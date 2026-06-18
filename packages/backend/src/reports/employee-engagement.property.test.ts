@@ -231,7 +231,7 @@ describe('Feature: employee-engagement-report, Property 8: 员工集合完整性
           // Collect expected non-empty targetRole values
           const expectedRoles = new Set<string>();
           for (const r of employeeRecords) {
-            if (r.targetRole && r.targetRole !== '') {
+            if (r.targetRole) {
               expectedRoles.add(r.targetRole);
             }
           }
@@ -239,7 +239,7 @@ describe('Feature: employee-engagement-report, Property 8: 员工集合完整性
           // Collect expected non-empty activityUG values
           const expectedUGs = new Set<string>();
           for (const r of employeeRecords) {
-            if (r.activityUG && r.activityUG !== '') {
+            if (r.activityUG) {
               expectedUGs.add(r.activityUG);
             }
           }

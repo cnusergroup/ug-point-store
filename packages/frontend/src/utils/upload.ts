@@ -38,8 +38,6 @@ export async function uploadWithRetry(
   maxRetries: number = 2,
   retryDelay: number = 2000,
 ): Promise<Response> {
-  let lastError: Error | undefined;
-
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const response = await fetch(url, options);
@@ -60,7 +58,6 @@ export async function uploadWithRetry(
       }
 
       // 其他 HTTP 错误：记录后重试
-      lastError = new Error(`Upload failed with status ${response.status}`);
     } catch (err) {
       // UploadError 不重试，直接抛出
       if (err instanceof UploadError) {
@@ -68,7 +65,6 @@ export async function uploadWithRetry(
       }
 
       // 网络错误（fetch 本身抛出的异常）：记录后重试
-      lastError = err instanceof Error ? err : new Error(String(err));
     }
 
     // 还有重试机会则等待后继续

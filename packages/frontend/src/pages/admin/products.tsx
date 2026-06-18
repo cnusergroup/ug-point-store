@@ -96,6 +96,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
   Volunteer: 'Volunteer',
   Admin: 'Admin',
   SuperAdmin: 'SuperAdmin',
+  OrderAdmin: 'OrderAdmin',
 };
 
 type FormMode = 'hidden' | 'create' | 'edit';

@@ -74,6 +74,7 @@ const ROLE_CONFIG: Record<UserRole, { label: string; className: string }> = {
   Volunteer: { label: 'Volunteer', className: 'role-badge--volunteer' },
   Admin: { label: 'Admin', className: 'role-badge--admin' },
   SuperAdmin: { label: 'SuperAdmin', className: 'role-badge--superadmin' },
+  OrderAdmin: { label: 'OrderAdmin', className: 'role-badge--admin' },
 };
 
 const ALL_ROLES: UserRole[] = ['UserGroupLeader', 'Speaker', 'Volunteer'];
@@ -231,26 +232,6 @@ export default function IndexPage() {
   const handleCardClick = (product: ProductListItem) => {
     if (product.locked) return;
     Taro.navigateTo({ url: `/pages/product/index?id=${product.productId}` });
-  };
-
-  const renderRoleBadges = (allowedRoles?: UserRole[] | 'all') => {
-    if (!allowedRoles) return null;
-    if (allowedRoles === 'all') {
-      return (
-        <View className='product-card__roles'>
-          <Text className='role-badge role-badge--all'>{t('mall.everyone')}</Text>
-        </View>
-      );
-    }
-    return (
-      <View className='product-card__roles'>
-        {allowedRoles.map((role) => (
-          <Text key={role} className={`role-badge ${ROLE_CONFIG[role]?.className || ''}`}>
-            {ROLE_CONFIG[role]?.label || role}
-          </Text>
-        ))}
-      </View>
-    );
   };
 
   const renderProductCard = (product: ProductListItem, index: number) => {

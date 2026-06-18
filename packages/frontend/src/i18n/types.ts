@@ -337,6 +337,7 @@ export interface TranslationDict {
     phoneLabel: string;
     phonePlaceholder: string;
     phoneError: string;
+    countryCodeLabel: string;
     detailAddressLabel: string;
     detailAddressPlaceholder: string;
     detailAddressError: string;
@@ -361,6 +362,8 @@ export interface TranslationDict {
     statusShipped: string;
     statusInTransit: string;
     statusDelivered: string;
+    statusCancelled: string;
+    refundInfo: string;
   };
   orderDetail: {
     title: string;
@@ -462,6 +465,7 @@ export interface TranslationDict {
     phoneLabel: string;
     phonePlaceholder: string;
     phoneError: string;
+    countryCodeLabel: string;
     detailAddressLabel: string;
     detailAddressPlaceholder: string;
     detailAddressError: string;
@@ -545,8 +549,12 @@ export interface TranslationDict {
       batchPointsDesc: string;
       batchHistoryTitle: string;
       batchHistoryDesc: string;
+      quarterlyAwardTitle: string;
+      quarterlyAwardDesc: string;
       specialActivityAwardTitle: string;
       specialActivityAwardDesc: string;
+      specialRewardAwardTitle: string;
+      specialRewardAwardDesc: string;
       travelTitle: string;
       travelDesc: string;
       tagsTitle: string;
@@ -563,6 +571,8 @@ export interface TranslationDict {
       reportsDesc: string;
       credentialsTitle: string;
       credentialsDesc: string;
+      wishesTitle: string;
+      wishesDesc: string;
       categoryProducts: string;
       categoryOrders: string;
       categoryUsers: string;
@@ -757,6 +767,19 @@ export interface TranslationDict {
       shippingUpdated: string;
       statusTransitionInvalid: string;
       updateFailed: string;
+      statusCancelled: string;
+      cancelButton: string;
+      cancelDialogTitle: string;
+      cancelDialogMessage: string;
+      cancelConfirmButton: string;
+      cancelSuccess: string;
+      cancelSuccessUserDeleted: string;
+      statsCancelled: string;
+      exportPending: string;
+      exportFailed: string;
+      importStatus: string;
+      importFailed: string;
+      importSuccess: string;
     };
     wishes: {
       title: string;
@@ -950,6 +973,7 @@ export interface TranslationDict {
       categoryInviteSettings: string;
       categoryUGManagement: string;
       categoryActivitySync: string;
+      categoryPointsRule: string;
       categorySuperAdmin: string;
       categoryHelp: string;
       sectionFeatureTogglesTitle: string;
@@ -1022,6 +1046,31 @@ export interface TranslationDict {
         templateValidationSubject: string;
         templateValidationBody: string;
       };
+      pointsRuleTitle: string;
+      pointsRuleDesc: string;
+      uglPointsPerEvent: string;
+      volunteerPointsPerEvent: string;
+      volunteerMaxPerEvent: string;
+      speakerTypeAPoints: string;
+      speakerTypeBPoints: string;
+      speakerRoundtablePoints: string;
+      pointsRuleSaveButton: string;
+      pointsRuleSaving: string;
+      pointsRuleSaveSuccess: string;
+      pointsRuleSaveFailed: string;
+      pointsRuleValidationError: string;
+      brandLogoSectionTitle: string;
+      brandLogoSectionDesc: string;
+      brandLogoDetailLabel: string;
+      brandLogoDetailDesc: string;
+      brandLogoListLabel: string;
+      brandLogoListDesc: string;
+      employeeStoreLabel: string;
+      employeeStoreDesc: string;
+      wishPoolLabel: string;
+      wishPoolDesc: string;
+      wishRewardPointsLabel: string;
+      wishRewardPointsDesc: string;
     };
     reports: {
       title: string;
@@ -1062,6 +1111,7 @@ export interface TranslationDict {
       colRank: string;
       colTotalEarnPoints: string;
       colTotalEarnSpecialActivity: string;
+      colTotalEarnSpecialReward: string;
       colRole: string;
       colActivityDate: string;
       colUGLCount: string;
@@ -1074,7 +1124,6 @@ export interface TranslationDict {
       exportFailed: string;
       exportLimitExceeded: string;
       exportTimeout: string;
-      // Insight report tab labels
       tabPopularProducts: string;
       tabHotContent: string;
       tabContentContributors: string;
@@ -1082,7 +1131,7 @@ export interface TranslationDict {
       tabTravelStatistics: string;
       tabInviteConversion: string;
       tabEmployeeEngagement: string;
-      // Insight report filter labels
+      tabInactiveUGL: string;
       filterProductType: string;
       filterProductTypeAll: string;
       filterProductTypePoints: string;
@@ -1101,14 +1150,12 @@ export interface TranslationDict {
       filterTravelCategoryAll: string;
       filterTravelCategoryDomestic: string;
       filterTravelCategoryInternational: string;
-      // Popular products columns
       colProductName: string;
       colProductType: string;
       colRedemptionCount: string;
       colTotalPointsSpent: string;
       colCurrentStock: string;
       colStockConsumptionRate: string;
-      // Hot content columns
       colTitle: string;
       colUploaderNickname: string;
       colCategoryName: string;
@@ -1116,37 +1163,41 @@ export interface TranslationDict {
       colCommentCount: string;
       colReservationCount: string;
       colEngagementScore: string;
-      // Content contributors columns (colRank and colNickname already exist above)
       colApprovedCount: string;
       colTotalLikes: string;
       colTotalComments: string;
-      // Inventory alert columns (colProductName, colProductType, colCurrentStock already above)
       colTotalStock: string;
       colProductStatus: string;
-      // Travel statistics columns
       colPeriod: string;
       colTotalApplications: string;
       colRejectedCount: string;
       colPendingCount: string;
       colApprovalRate: string;
       colTotalSponsoredAmount: string;
-      // Invite conversion MetricCards
       metricTotalInvites: string;
       metricUsedCount: string;
       metricExpiredCount: string;
       metricPendingCount: string;
       metricConversionRate: string;
-      // Employee engagement MetricCards
       metricTotalEmployees: string;
       metricActiveEmployees: string;
       metricEngagementRate: string;
       metricEmployeeTotalPoints: string;
       metricTotalActivities: string;
-      // Employee engagement columns
       colLastActiveTime: string;
       colPrimaryRoles: string;
       colUGList: string;
-      // States
+      inactiveUGL: {
+        quarterLabel: string;
+        totalCount: string;
+        emptyState: string;
+        colNickname: string;
+        colEmail: string;
+        colUGName: string;
+        colCreatedAt: string;
+        colLastActive: string;
+        noLastActive: string;
+      };
       emptyData: string;
       loadingData: string;
     };
@@ -1399,6 +1450,12 @@ export interface TranslationDict {
     featureDisabledDesc: string;
     backButton: string;
   };
+  store: {
+    employeeBlocked: {
+      title: string;
+      description: string;
+    };
+  };
   upload: {
     tokenExpired: string;
     networkUnstable: string;
@@ -1569,6 +1626,16 @@ export interface TranslationDict {
       confirmActivityUG: string;
       selectActivityFirst: string;
       noResponsibleUGs: string;
+      speakerTypeLabel: string;
+      speakerTypeA: string;
+      speakerTypeB: string;
+      speakerTypeRoundtable: string;
+      autoPointsLabel: string;
+      volunteerLimitError: string;
+      confirmSpeakerType: string;
+      confirmPointsRule: string;
+      userAlreadyAwarded: string;
+      selectSpeakerTypeFirst: string;
     };
     adjust: {
       title: string;
@@ -1597,6 +1664,10 @@ export interface TranslationDict {
       confirmSubmit: string;
       submitting: string;
       successToast: string;
+      deletionConfirmTitle: string;
+      deletionConfirmMessage: string;
+      deletionConfirmButton: string;
+      deletionSuccessToast: string;
       errorToast: string;
     };
     history: {
@@ -1637,6 +1708,10 @@ export interface TranslationDict {
       awardTagFilterPlaceholder: string;
       awardTagLabel: string;
       roleSpecialActivity: string;
+      activityTypeSpecialReward: string;
+      roleSpecialReward: string;
+      rewardTagLabel: string;
+      rewardTagFilterPlaceholder: string;
     };
   };
   ugManagement: {
@@ -1672,6 +1747,8 @@ export interface TranslationDict {
     removeSuccess: string;
     assignFailed: string;
     removeFailed: string;
+    renameSuccess: string;
+    renameFailed: string;
   };
   leaderSelector: {
     title: string;
@@ -1850,6 +1927,7 @@ export interface TranslationDict {
     roleLeader: string;
     roleVolunteer: string;
     roleSpecialActivity: string;
+    roleSpecialReward: string;
     rank: string;
     nickname: string;
     earnTotal: string;
@@ -1859,6 +1937,9 @@ export interface TranslationDict {
     updateFrequencyMonthly: string;
     batchTemplate: string;
     reservationTemplate: string;
+    quarterlyAwardTemplate: string;
+    specialActivityTemplate: string;
+    specialRewardTemplate: string;
     rankingEmpty: string;
     announcementEmpty: string;
     loading: string;
@@ -2090,6 +2171,64 @@ export interface TranslationDict {
     noMatch: string;
     usageCount: string;
     createNew: string;
+  };
+  rewardTagPicker: {
+    placeholder: string;
+    noHotTags: string;
+    noMatch: string;
+    usageCount: string;
+    createNew: string;
+    errorTooLong: string;
+    errorInvalidChars: string;
+  };
+  specialRewardAward: {
+    title: string;
+    backButton: string;
+    formCardTitle: string;
+    activityLabel: string;
+    awardDateLabel: string;
+    pointsLabel: string;
+    pointsPlaceholder: string;
+    rewardTagLabel: string;
+    rewardTagHint: string;
+    userSectionTitle: string;
+    selectAll: string;
+    deselectAll: string;
+    searchPlaceholder: string;
+    noUsers: string;
+    noUsersSearch: string;
+    loading: string;
+    loadMore: string;
+    pickDateHint: string;
+    awardedBadge: string;
+    submitButton: string;
+    submitting: string;
+    confirmTitle: string;
+    confirmActivity: string;
+    confirmAwardDate: string;
+    confirmRewardTagName: string;
+    confirmCount: string;
+    confirmPointsPerPerson: string;
+    confirmTotalPoints: string;
+    confirmCancel: string;
+    confirmSubmit: string;
+    successToast: string;
+    errorBatchTooLarge: string;
+    errorMissingActivity: string;
+    errorMissingPoints: string;
+    errorMissingRewardTag: string;
+    errorMissingUsers: string;
+    errorMissingDate: string;
+    errorPointsInvalid: string;
+    errorActivityNotFound: string;
+    errorDuplicateRewardTagDistribution: string;
+    errorTagInUse: string;
+    errorTagAlreadyExists: string;
+    errorTagNotFound: string;
+    errorInvalidRequest: string;
+    errorForbidden: string;
+    errorUnauthorized: string;
+    errorDefault: string;
   };
   specialActivityAward: {
     title: string;

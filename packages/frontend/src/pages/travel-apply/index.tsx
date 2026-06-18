@@ -35,7 +35,7 @@ export default function TravelApplyPage() {
 
   // URL params
   const [applicationId, setApplicationId] = useState<string | null>(null);
-  const [initialCategory, setInitialCategory] = useState<TravelCategory>('domestic');
+  const [, setInitialCategory] = useState<TravelCategory>('domestic');
   const isEditMode = !!applicationId;
 
   // Form state

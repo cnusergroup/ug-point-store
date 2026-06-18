@@ -25,7 +25,16 @@ export interface InactiveUGLRecord {
   email: string;
   ugName: string;
   createdAt: string;
+  /** 最后活跃日期：取最近一条 qualifying 记录的「活动日期」（activityDate, YYYY-MM-DD）；
+   *  若该记录无 activityDate 则回退为其 createdAt 的日期部分。无 qualifying 记录则为 null。 */
   lastActiveDate: string | null;
+}
+
+/** 取一条记录的「有效活动日期」：优先活动日期 activityDate，否则回退到 createdAt 的日期部分。 */
+function effectiveActivityDate(record: { createdAt?: string; activityDate?: string }): string | null {
+  if (record.activityDate && record.activityDate.trim()) return record.activityDate.trim();
+  if (record.createdAt && record.createdAt.length >= 10) return record.createdAt.substring(0, 10);
+  return null;
 }
 
 /** Inactive UGL 查询筛选条件 */
@@ -94,13 +103,14 @@ export function computeInactiveUGLs(
 }
 
 /**
- * 从 qualifying records 中找到指定用户的最近一条记录的 createdAt。
+ * 从 qualifying records 中找到指定用户「最后活跃」的活动日期。
  * 仅考虑 targetRole 为 'UserGroupLeader' 或 'SpecialActivity' 的记录。
- * 如果没有匹配记录，返回 null。
+ * 活跃日期取记录的活动日期（activityDate），缺失时回退为 createdAt 的日期部分。
+ * 返回所有匹配记录中最大的活动日期（YYYY-MM-DD）；无匹配记录返回 null。
  */
 export function findLastActiveDate(
   userId: string,
-  records: Array<{ userId: string; createdAt: string; targetRole?: string }>,
+  records: Array<{ userId: string; createdAt: string; activityDate?: string; targetRole?: string }>,
 ): string | null {
   let maxDate: string | null = null;
 
@@ -110,8 +120,9 @@ export function findLastActiveDate(
       (record.targetRole === 'UserGroupLeader' ||
         record.targetRole === 'SpecialActivity')
     ) {
-      if (maxDate === null || record.createdAt > maxDate) {
-        maxDate = record.createdAt;
+      const eff = effectiveActivityDate(record);
+      if (eff !== null && (maxDate === null || eff > maxDate)) {
+        maxDate = eff;
       }
     }
   }
@@ -364,10 +375,14 @@ async function buildLeaderUGMap(
 }
 
 /**
- * Query the most recent qualifying PointsRecord for a user.
- * Uses userId-createdAt-index GSI (PK=userId, ScanIndexForward=false, Limit=10)
- * with FilterExpression for targetRole IN (UGL, SpecialActivity).
- * Returns the createdAt of the first matching record, or null if none found.
+ * Query the user's "last active" activity date.
+ * Scans all qualifying PointsRecords for the user (targetRole IN (UGL, SpecialActivity))
+ * via userId-createdAt-index and returns the maximum effective activity date
+ * (activityDate, or the createdAt date when activityDate is missing).
+ *
+ * Note: records must be aggregated (not just the createdAt-latest one) because the most
+ * recently distributed record may carry an older activityDate than an earlier distribution.
+ * Returns YYYY-MM-DD, or null if no qualifying record exists.
  */
 async function queryLastActiveDate(
   dynamoClient: DynamoDBDocumentClient,
@@ -375,12 +390,7 @@ async function queryLastActiveDate(
   userId: string,
 ): Promise<string | null> {
   let lastEvaluatedKey: Record<string, unknown> | undefined;
-
-  // Query in reverse chronological order with a small page size.
-  // Since FilterExpression is applied after Limit, we may need multiple pages
-  // to find a matching record. Limit attempts to avoid infinite loops.
-  const MAX_PAGES = 5;
-  let pages = 0;
+  let maxDate: string | null = null;
 
   do {
     const result = await dynamoClient.send(
@@ -394,22 +404,23 @@ async function queryLastActiveDate(
           ':ugl': 'UserGroupLeader',
           ':sa': 'SpecialActivity',
         },
-        ScanIndexForward: false,
-        Limit: 10,
+        ProjectionExpression: 'createdAt, activityDate, targetRole',
         ...(lastEvaluatedKey && { ExclusiveStartKey: lastEvaluatedKey }),
       }),
     );
 
-    const items = result.Items ?? [];
-    if (items.length > 0) {
-      // Items are sorted by createdAt desc (ScanIndexForward=false),
-      // so the first matching item is the most recent.
-      return items[0].createdAt as string;
+    for (const item of result.Items ?? []) {
+      const eff = effectiveActivityDate({
+        createdAt: item.createdAt as string | undefined,
+        activityDate: item.activityDate as string | undefined,
+      });
+      if (eff !== null && (maxDate === null || eff > maxDate)) {
+        maxDate = eff;
+      }
     }
 
     lastEvaluatedKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
-    pages++;
-  } while (lastEvaluatedKey && pages < MAX_PAGES);
+  } while (lastEvaluatedKey);
 
-  return null;
+  return maxDate;
 }

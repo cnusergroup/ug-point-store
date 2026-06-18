@@ -1,6 +1,5 @@
 import { useState, useCallback } from 'react';
 import { View, Text } from '@tarojs/components';
-import Taro from '@tarojs/taro';
 import { useAppStore } from '../../store';
 import { RequestError } from '../../utils/request';
 import { goBack } from '../../utils/navigation';

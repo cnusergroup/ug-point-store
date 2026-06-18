@@ -6,7 +6,7 @@ import { request } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
 import type { Locale } from '../../i18n/types';
-import { KeyIcon, LogoutIcon, AdminIcon, ChevronRightIcon, ArrowLeftIcon, GlobeIcon, SettingsIcon, MailIcon } from '../../components/icons';
+import { KeyIcon, LogoutIcon, AdminIcon, ChevronRightIcon, GlobeIcon, SettingsIcon, MailIcon } from '../../components/icons';
 import PageToolbar from '../../components/PageToolbar';
 import './index.scss';
 

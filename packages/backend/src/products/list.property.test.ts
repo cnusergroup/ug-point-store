@@ -8,7 +8,7 @@ import type { UserRole, ProductType, ProductStatus } from '@points-mall/shared';
 // 且应包含所有 active 状态的商品。
 // Validates: Requirements 5.1, 8.5
 
-const ALL_ROLES: UserRole[] = ['UserGroupLeader', 'CommunityBuilder', 'Speaker', 'Volunteer'];
+const ALL_ROLES: UserRole[] = ['UserGroupLeader', 'Speaker', 'Volunteer'];
 
 const productTypeArb = fc.constantFrom<ProductType>('points', 'code_exclusive');
 const productStatusArb = fc.constantFrom<ProductStatus>('active', 'inactive');
@@ -35,11 +35,11 @@ const productArb = fc.record({
     return fc.record({
       pointsCost: fc.integer({ min: 1, max: 10000 }),
       allowedRoles: allowedRolesArb,
-    }).map((ext) => ({ ...base, ...ext }));
+    }).map((ext) => ({ ...base, ...ext }) as Record<string, unknown>);
   }
   return fc.record({
     eventInfo: fc.string({ minLength: 1, maxLength: 50 }),
-  }).map((ext) => ({ ...base, ...ext }));
+  }).map((ext) => ({ ...base, ...ext }) as Record<string, unknown>);
 });
 
 const TABLE = 'Products';

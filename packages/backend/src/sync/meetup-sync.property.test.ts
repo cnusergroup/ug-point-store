@@ -5,7 +5,7 @@
  * Properties: 4 (masked PUT retains values), 5 (group failure isolation), 6 (deduplication)
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import fc from 'fast-check';
 import type { MeetupSyncConfig } from './handler';
 import type { MeetupGroup, MeetupCookieAuth, MeetupEvent, MeetupGroupResult } from './meetup-api';
@@ -196,7 +196,10 @@ vi.mock('./meetup-api', () => ({
 }));
 
 // Import after mocking
-const { syncMeetupActivities } = await import('./handler');
+let syncMeetupActivities: typeof import('./handler').syncMeetupActivities;
+beforeAll(async () => {
+  ({ syncMeetupActivities } = await import('./handler'));
+});
 
 describe('Feature: meetup-sync, Property 5: group failure isolation', () => {
   beforeEach(() => {

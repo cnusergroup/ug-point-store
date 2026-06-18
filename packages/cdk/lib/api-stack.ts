@@ -31,6 +31,7 @@ export interface ApiStackProps extends cdk.StackProps {
   travelApplicationsTable: dynamodb.Table;
   contentTagsTable: dynamodb.Table;
   awardTagsTable: dynamodb.Table;
+  rewardTagsTable: dynamodb.Table;
   emailTemplatesTable: dynamodb.Table;
   ugsTable: dynamodb.Table;
   activitiesTable: dynamodb.Table;
@@ -60,7 +61,7 @@ export class ApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
-    const { usersTable, productsTable, codesTable, redemptionsTable, pointsRecordsTable, cartTable, addressesTable, ordersTable, invitesTable, claimsTable, contentItemsTable, contentCategoriesTable, contentCommentsTable, contentLikesTable, contentReservationsTable, batchDistributionsTable, travelApplicationsTable, contentTagsTable, awardTagsTable, emailTemplatesTable, ugsTable, activitiesTable, credentialsTable, credentialSequencesTable, activityTemplateAssociationsTable, wishesTable, wishVotesTable, activitySkillClaimsTable } = props;
+    const { usersTable, productsTable, codesTable, redemptionsTable, pointsRecordsTable, cartTable, addressesTable, ordersTable, invitesTable, claimsTable, contentItemsTable, contentCategoriesTable, contentCommentsTable, contentLikesTable, contentReservationsTable, batchDistributionsTable, travelApplicationsTable, contentTagsTable, awardTagsTable, rewardTagsTable, emailTemplatesTable, ugsTable, activitiesTable, credentialsTable, credentialSequencesTable, activityTemplateAssociationsTable, wishesTable, wishVotesTable, activitySkillClaimsTable } = props;
 
     // --- SSM Parameter for JWT Secret ---
     const jwtSecretParam = new ssm.StringParameter(this, 'JwtSecretParam', {
@@ -157,6 +158,7 @@ export class ApiStack extends cdk.Stack {
     adminFn.addEnvironment('TRAVEL_APPLICATIONS_TABLE', travelApplicationsTable.tableName);
     adminFn.addEnvironment('CONTENT_TAGS_TABLE', contentTagsTable.tableName);
     adminFn.addEnvironment('AWARD_TAGS_TABLE', awardTagsTable.tableName);
+    adminFn.addEnvironment('REWARD_TAGS_TABLE', rewardTagsTable.tableName);
     adminFn.addEnvironment('UGS_TABLE', ugsTable.tableName);
     adminFn.addEnvironment('ACTIVITIES_TABLE', activitiesTable.tableName);
     adminFn.addEnvironment('ACTIVITY_SKILL_CLAIMS_TABLE', activitySkillClaimsTable.tableName);

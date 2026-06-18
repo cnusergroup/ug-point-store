@@ -349,7 +349,6 @@ describe('Property 3: detectLocale respects priority chain', () => {
         fc.constantFrom(...MATCHING_PRIMARY_SUBTAGS),
         countryCookieArb,
         (browserTag, cookie) => {
-          let cookieCallOrder = -1;
           let browserCallOrder = -1;
           let callCounter = 0;
 
@@ -359,7 +358,7 @@ describe('Property 3: detectLocale respects priority chain', () => {
               return browserTag;
             },
             getCountryCookie: () => {
-              cookieCallOrder = callCounter++;
+              callCounter++;
               return cookie.value;
             },
           });

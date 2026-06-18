@@ -28,7 +28,7 @@ interface AnnouncementResponse {
   lastKey?: string | null;
 }
 
-type RoleFilter = 'all' | 'Speaker' | 'UserGroupLeader' | 'Volunteer' | 'SpecialActivity';
+type RoleFilter = 'all' | 'Speaker' | 'UserGroupLeader' | 'Volunteer' | 'SpecialActivity' | 'SpecialReward';
 type MainTab = 'ranking' | 'announcement';
 
 /* ---- Role badge mapping ---- */
@@ -37,12 +37,16 @@ const ROLE_BADGE_CLASS: Record<string, string> = {
   UserGroupLeader: 'role-badge--leader',
   Speaker: 'role-badge--speaker',
   Volunteer: 'role-badge--volunteer',
+  SpecialActivity: 'role-badge--special-activity',
+  SpecialReward: 'role-badge--special-reward',
 };
 
 const ROLE_DISPLAY_LABEL: Record<string, string> = {
   UserGroupLeader: 'Leader',
   Speaker: 'Speaker',
   Volunteer: 'Volunteer',
+  SpecialActivity: '特殊活动',
+  SpecialReward: '特殊奖励',
 };
 
 /* ---- Relative time helper ---- */
@@ -103,6 +107,7 @@ function RankingTab({
     { value: 'UserGroupLeader', labelKey: 'leaderboard.roleLeader' },
     { value: 'Volunteer', labelKey: 'leaderboard.roleVolunteer' },
     { value: 'SpecialActivity', labelKey: 'leaderboard.roleSpecialActivity' },
+    { value: 'SpecialReward', labelKey: 'leaderboard.roleSpecialReward' },
   ];
 
   const fetchRanking = useCallback(async (reset = false) => {
@@ -306,6 +311,7 @@ function AnnouncementTab() {
 
   const isBatchRecord = (source: string) => source.startsWith('批量发放:');
   const isSpecialActivityRecord = (source: string) => source.startsWith('特殊活动:');
+  const isSpecialRewardRecord = (source: string) => source.startsWith('特殊奖励:');
   const isQuarterlyAward = (item: LeaderboardAnnouncementItem) => item.activityType === '季度贡献奖';
 
   const formatRecord = (item: LeaderboardAnnouncementItem): string => {
@@ -329,6 +335,16 @@ function AnnouncementTab() {
         activityTopic: item.activityTopic || parts[0] || '—',
         activityDate: item.activityDate || parts[2] || '—',
         awardTagName,
+        amount: item.amount,
+      });
+    }
+    // Special reward award — parse source: '特殊奖励:{tagName}|{date}'（不关联活动）
+    if (isSpecialRewardRecord(item.source)) {
+      const parts = item.source.replace('特殊奖励:', '').split('|');
+      const rewardTagName = parts[0] || '—';
+      return t('leaderboard.specialRewardTemplate' as any, {
+        recipientNickname: item.recipientNickname,
+        rewardTagName,
         amount: item.amount,
       });
     }

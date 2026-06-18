@@ -93,6 +93,7 @@ const ROLE_CONFIG: Record<UserRole, { label: string; className: string }> = {
   Volunteer: { label: 'Volunteer', className: 'role-badge--volunteer' },
   Admin: { label: 'Admin', className: 'role-badge--admin' },
   SuperAdmin: { label: 'SuperAdmin', className: 'role-badge--superadmin' },
+  OrderAdmin: { label: 'OrderAdmin', className: 'role-badge--admin' },
 };
 
 /** Quick action items for 2×2 grid */

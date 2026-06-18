@@ -121,6 +121,13 @@ export default function LoginPage() {
     Taro.navigateTo({ url: '/pages/forgot-password/index' });
   }, []);
 
+  // The WeChat login UI is commented out ("hidden for now"). These remain
+  // referenced so the feature can be re-enabled without re-wiring. The `void`
+  // statements mark them as intentionally used for the type checker.
+  void wechatQrUrl;
+  void handleWechatLogin;
+  void goToRegister;
+
   return (
     <View className='login-page'>
       <View className='login-page__bg-glow login-page__bg-glow--left' />

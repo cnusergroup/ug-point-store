@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   validateBatchDistributionInput,
   executeBatchDistribution,
@@ -779,5 +779,242 @@ describe('executeBatchDistribution — skipPointsValidation', () => {
 
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe('DUPLICATE_DISTRIBUTION');
+  });
+});
+
+// ============================================================
+// 9. Skill-points split — base / skill / volunteer classification
+//    需求: 1.1–1.6, 2.1–2.2
+// ============================================================
+
+describe('executeBatchDistribution — skill-points split into Volunteer', () => {
+  let client: ReturnType<typeof createMockDynamoClient>;
+  let savedSkillClaimsTable: string | undefined;
+
+  // Config including skill point values
+  const SKILL_CONFIG = {
+    uglPointsPerEvent: 50,
+    volunteerPointsPerEvent: 30,
+    volunteerMaxPerEvent: 10,
+    speakerTypeAPoints: 100,
+    speakerTypeBPoints: 50,
+    speakerRoundtablePoints: 50,
+    liveSupportPoints: 20,
+    posterDesignPoints: 15,
+    articleEditingPoints: 10,
+  };
+
+  beforeEach(() => {
+    client = createMockDynamoClient();
+    // Ensure skill-claim Put items are NOT appended to the transaction so the
+    // PointsRecords split assertions have a deterministic item count.
+    savedSkillClaimsTable = process.env.ACTIVITY_SKILL_CLAIMS_TABLE;
+    delete process.env.ACTIVITY_SKILL_CLAIMS_TABLE;
+  });
+
+  afterEach(() => {
+    if (savedSkillClaimsTable === undefined) {
+      delete process.env.ACTIVITY_SKILL_CLAIMS_TABLE;
+    } else {
+      process.env.ACTIVITY_SKILL_CLAIMS_TABLE = savedSkillClaimsTable;
+    }
+  });
+
+  // ----------------------------------------------------------
+  // 场景一：基础分 + 技能分（同一用户既在 userIds 又在 skillClaims）
+  // 需求 1.1, 1.4, 1.5, 1.6, 2.1, 2.2
+  // ----------------------------------------------------------
+  it('场景一 基础+技能：写两条记录，基础分计入发放身份、技能分计入 Volunteer', async () => {
+    // feature-toggles
+    client.send.mockResolvedValueOnce({
+      Item: { userId: 'feature-toggles', pointsRuleConfig: SKILL_CONFIG },
+    });
+    // skill claims validation BatchGet (u1 active)
+    client.send.mockResolvedValueOnce({
+      Responses: { [USERS_TABLE]: [{ userId: 'u1', status: 'active' }] },
+    });
+    // awarded users query (empty)
+    client.send.mockResolvedValueOnce({ Items: [] });
+    // balances BatchGet
+    client.send.mockResolvedValueOnce({
+      Responses: { [USERS_TABLE]: [{ userId: 'u1', points: 100, nickname: 'Alice', email: 'a@test.com' }] },
+    });
+    // TransactWriteCommand
+    client.send.mockResolvedValueOnce({});
+    // PutCommand distribution record
+    client.send.mockResolvedValueOnce({});
+
+    const result = await executeBatchDistribution(
+      makeValidInput({
+        userIds: ['u1'],
+        points: 50,
+        targetRole: 'UserGroupLeader',
+        speakerType: undefined,
+        skillClaims: [{ skill: 'liveSupport', userId: 'u1' }],
+      }),
+      client,
+      TABLES,
+    );
+
+    expect(result.success).toBe(true);
+
+    const txCmd = client.send.mock.calls[4][0];
+    expect(txCmd.constructor.name).toBe('TransactWriteCommand');
+    const items = txCmd.input.TransactItems;
+    // 1 Update + 2 Put (base + skill)
+    expect(items).toHaveLength(3);
+
+    // User table update: total(70) → points/earnTotal; base(50) → earnTotalLeader; skill(20) → earnTotalVolunteer
+    const update = items[0].Update;
+    expect(update.Key).toEqual({ userId: 'u1' });
+    expect(update.ExpressionAttributeNames['#rf']).toBe('earnTotalLeader');
+    expect(update.ExpressionAttributeValues[':pv']).toBe(70); // base + skill
+    expect(update.ExpressionAttributeValues[':av']).toBe(50); // base
+    expect(update.ExpressionAttributeValues[':sv']).toBe(20); // skill
+    // points / earnTotal both increment by the combined total (unchanged behavior)
+    expect(update.UpdateExpression).toContain('points = points + :pv');
+    expect(update.UpdateExpression).toContain('earnTotal = if_not_exists(earnTotal, :zero) + :pv');
+    expect(update.UpdateExpression).toContain('#rf = if_not_exists(#rf, :zero) + :av');
+    expect(update.UpdateExpression).toContain('earnTotalVolunteer = if_not_exists(earnTotalVolunteer, :zero) + :sv');
+
+    // Base record: granting identity, amount = base points
+    const base = items[1].Put.Item;
+    expect(base.amount).toBe(50);
+    expect(base.targetRole).toBe('UserGroupLeader');
+    expect(base.balanceAfter).toBe(150); // 100 + 50
+    expect(base.activityId).toBe('act-001');
+
+    // Skill record: Volunteer, amount = skill points, balanceAfter accumulates after base
+    const skill = items[2].Put.Item;
+    expect(skill.amount).toBe(20);
+    expect(skill.targetRole).toBe('Volunteer');
+    expect(skill.balanceAfter).toBe(170); // 100 + 50 + 20
+    // activity info retained on skill record (需求 1.4)
+    expect(skill.activityId).toBe('act-001');
+    expect(skill.activityUG).toBe('Tokyo');
+    expect(skill.activityTopic).toBe('AWS Summit');
+    expect(skill.activityDate).toBe('2024-06-15');
+    // skill source clearly identifies skill claim + skill type (需求 1.5)
+    expect(skill.source).toContain('技能认领');
+    expect(skill.source).toContain('liveSupport');
+  });
+
+  // ----------------------------------------------------------
+  // 场景二：纯技能分（用户只在 skillClaims，不在 userIds）
+  // 需求 1.2, 2.1, 2.2
+  // ----------------------------------------------------------
+  it('场景二 纯技能：仅在 skillClaims 的用户只写一条 Volunteer 记录', async () => {
+    // feature-toggles
+    client.send.mockResolvedValueOnce({
+      Item: { userId: 'feature-toggles', pointsRuleConfig: SKILL_CONFIG },
+    });
+    // skill claims validation BatchGet (u2 active)
+    client.send.mockResolvedValueOnce({
+      Responses: { [USERS_TABLE]: [{ userId: 'u2', status: 'active' }] },
+    });
+    // awarded users query (empty)
+    client.send.mockResolvedValueOnce({ Items: [] });
+    // balances BatchGet (both base user u1 and skill-only user u2)
+    client.send.mockResolvedValueOnce({
+      Responses: {
+        [USERS_TABLE]: [
+          { userId: 'u1', points: 100, nickname: 'Alice', email: 'a@test.com' },
+          { userId: 'u2', points: 80, nickname: 'Bob', email: 'b@test.com' },
+        ],
+      },
+    });
+    // TransactWriteCommand
+    client.send.mockResolvedValueOnce({});
+    // PutCommand distribution record
+    client.send.mockResolvedValueOnce({});
+
+    const result = await executeBatchDistribution(
+      makeValidInput({
+        userIds: ['u1'],
+        points: 50,
+        targetRole: 'UserGroupLeader',
+        speakerType: undefined,
+        skillClaims: [{ skill: 'posterDesign', userId: 'u2' }],
+      }),
+      client,
+      TABLES,
+    );
+
+    expect(result.success).toBe(true);
+
+    const txCmd = client.send.mock.calls[4][0];
+    const items = txCmd.input.TransactItems;
+    // u1: Update + base Put; u2: Update + skill Put = 4 items
+    expect(items).toHaveLength(4);
+
+    // u2 user update: nothing into base field (av=0), skill → earnTotalVolunteer
+    const u2Update = items[2].Update;
+    expect(u2Update.Key).toEqual({ userId: 'u2' });
+    expect(u2Update.ExpressionAttributeValues[':pv']).toBe(15); // skill only
+    expect(u2Update.ExpressionAttributeValues[':av']).toBe(0); // no base
+    expect(u2Update.ExpressionAttributeValues[':sv']).toBe(15); // skill
+
+    // u2 has exactly one PointsRecord and it is the Volunteer skill record
+    const u2Puts = items.filter((i: any) => i.Put && i.Put.Item.userId === 'u2');
+    expect(u2Puts).toHaveLength(1);
+    const u2Skill = u2Puts[0].Put.Item;
+    expect(u2Skill.amount).toBe(15);
+    expect(u2Skill.targetRole).toBe('Volunteer');
+    expect(u2Skill.balanceAfter).toBe(95); // 80 + 0 + 15
+    expect(u2Skill.activityId).toBe('act-001');
+  });
+
+  // ----------------------------------------------------------
+  // 场景三：纯基础分（无技能认领，维持原行为）
+  // 需求 1.3, 2.1, 2.2
+  // ----------------------------------------------------------
+  it('场景三 纯基础：无技能认领时写一条发放身份记录、无 Volunteer 记录', async () => {
+    // feature-toggles
+    client.send.mockResolvedValueOnce({
+      Item: { userId: 'feature-toggles', pointsRuleConfig: SKILL_CONFIG },
+    });
+    // awarded users query (empty) — no skill validation BatchGet since no skillClaims
+    client.send.mockResolvedValueOnce({ Items: [] });
+    // balances BatchGet
+    client.send.mockResolvedValueOnce({
+      Responses: { [USERS_TABLE]: [{ userId: 'u1', points: 100, nickname: 'Alice', email: 'a@test.com' }] },
+    });
+    // TransactWriteCommand
+    client.send.mockResolvedValueOnce({});
+    // PutCommand distribution record
+    client.send.mockResolvedValueOnce({});
+
+    const result = await executeBatchDistribution(
+      makeValidInput({
+        userIds: ['u1'],
+        points: 50,
+        targetRole: 'UserGroupLeader',
+        speakerType: undefined,
+      }),
+      client,
+      TABLES,
+    );
+
+    expect(result.success).toBe(true);
+
+    const txCmd = client.send.mock.calls[3][0];
+    const items = txCmd.input.TransactItems;
+    // 1 Update + 1 base Put
+    expect(items).toHaveLength(2);
+
+    const update = items[0].Update;
+    expect(update.ExpressionAttributeNames['#rf']).toBe('earnTotalLeader');
+    expect(update.ExpressionAttributeValues[':pv']).toBe(50); // base only
+    expect(update.ExpressionAttributeValues[':av']).toBe(50);
+    expect(update.ExpressionAttributeValues[':sv']).toBe(0); // no skill
+
+    const base = items[1].Put.Item;
+    expect(base.amount).toBe(50);
+    expect(base.targetRole).toBe('UserGroupLeader');
+    expect(base.balanceAfter).toBe(150); // 100 + 50
+
+    // no Volunteer skill record produced
+    const volunteerPuts = items.filter((i: any) => i.Put && i.Put.Item.targetRole === 'Volunteer');
+    expect(volunteerPuts).toHaveLength(0);
   });
 });

@@ -106,6 +106,8 @@ interface UserRankingRecord {
   isEmployee?: boolean;
   /** Special-activity earnings within the filtered date range (backend computes from PointsRecords with targetRole='SpecialActivity') */
   earnTotalSpecialActivity?: number;
+  /** Special-reward earnings within the filtered date range (backend computes from PointsRecords with targetRole='SpecialReward') */
+  earnTotalSpecialReward?: number;
 }
 
 interface ActivitySummaryRecord {
@@ -229,7 +231,7 @@ const REPORT_TABS: { key: ReportTab; labelKey: string }[] = [
   { key: 'inactive-ugl', labelKey: 'admin.reports.tabInactiveUGL' },
 ];
 
-const ROLE_OPTIONS = ['UserGroupLeader', 'Speaker', 'Volunteer', 'SpecialActivity'];
+const ROLE_OPTIONS = ['UserGroupLeader', 'Speaker', 'Volunteer', 'SpecialActivity', 'SpecialReward'];
 const TYPE_OPTIONS: { value: string; labelKey: string }[] = [
   { value: 'all', labelKey: 'admin.reports.filterTypeAll' },
   { value: 'earn', labelKey: 'admin.reports.filterTypeEarn' },
@@ -775,6 +777,7 @@ function getColumns(tab: ReportTab, t: (key: string) => string): ColumnDef[] {
         { key: 'nickname', labelKey: 'admin.reports.colNickname', width: '160px' },
         { key: 'totalEarnPoints', labelKey: 'admin.reports.colTotalEarnPoints', width: '140px', render: (r: UserRankingRecord) => <Text style={{ fontFamily: 'var(--font-display)', fontWeight: '600' }}>{r.totalEarnPoints}</Text> },
         { key: 'earnTotalSpecialActivity', labelKey: 'admin.reports.colTotalEarnSpecialActivity', width: '140px', render: (r: UserRankingRecord) => <Text style={{ fontFamily: 'var(--font-display)', fontWeight: '600' }}>{r.earnTotalSpecialActivity ?? 0}</Text> },
+        { key: 'earnTotalSpecialReward', labelKey: 'admin.reports.colTotalEarnSpecialReward', width: '140px', render: (r: UserRankingRecord) => <Text style={{ fontFamily: 'var(--font-display)', fontWeight: '600' }}>{r.earnTotalSpecialReward ?? 0}</Text> },
         { key: 'targetRole', labelKey: 'admin.reports.colRole', width: '140px' },
         { key: 'isEmployee', labelKey: 'admin.reports.colIsEmployee', width: '80px', render: (r: UserRankingRecord) => <Text className={r.isEmployee ? 'employee-badge' : ''}>{r.isEmployee ? '是' : '否'}</Text> },
       ];

@@ -73,7 +73,7 @@ export interface UGActivitySummaryResult {
 export interface UserRankingFilter {
   startDate?: string;
   endDate?: string;
-  targetRole?: string; // UserGroupLeader | Speaker | Volunteer | SpecialActivity | all
+  targetRole?: string; // UserGroupLeader | Speaker | Volunteer | SpecialActivity | SpecialReward | all
   pageSize?: number;   // 默认 50，最大 100
   lastKey?: string;    // base64 编码的 offset 值
 }
@@ -88,6 +88,8 @@ export interface UserRankingRecord {
   isEmployee?: boolean;
   /** 该用户在筛选时间范围内累计获得的特殊活动积分（来自 PointsRecords 中 targetRole='SpecialActivity' 的记录） */
   earnTotalSpecialActivity?: number;
+  /** 该用户在筛选时间范围内累计获得的特殊奖励积分（来自 PointsRecords 中 targetRole='SpecialReward' 的记录） */
+  earnTotalSpecialReward?: number;
 }
 
 /** 用户积分排行查询结果 */
@@ -277,19 +279,23 @@ export function aggregateByUG(records: RawPointsRecord[]): UGActivitySummaryReco
 
 /**
  * Aggregate raw earn records by userId.
- * Returns { userId, totalEarnPoints, targetRole, earnTotalSpecialActivity }[] (unsorted, no rank yet).
+ * Returns { userId, totalEarnPoints, targetRole, earnTotalSpecialActivity, earnTotalSpecialReward }[] (unsorted, no rank yet).
  *
  * `earnTotalSpecialActivity` accumulates only records where `targetRole === 'SpecialActivity'`,
  * supporting the special-activity-award report column. When the input does not contain any
  * SpecialActivity records (e.g. caller filtered by `targetRole='Speaker'` upstream), the field
  * will remain 0 for all users.
+ *
+ * `earnTotalSpecialReward` accumulates only records where `targetRole === 'SpecialReward'`,
+ * supporting the special-reward-award report column. When the input does not contain any
+ * SpecialReward records, the field will remain 0 for all users.
  */
-export function aggregateByUser(records: RawPointsRecord[]): { userId: string; totalEarnPoints: number; targetRole: string; earnTotalSpecialActivity: number }[] {
-  const map = new Map<string, { totalEarnPoints: number; targetRole: string; earnTotalSpecialActivity: number }>();
+export function aggregateByUser(records: RawPointsRecord[]): { userId: string; totalEarnPoints: number; targetRole: string; earnTotalSpecialActivity: number; earnTotalSpecialReward: number }[] {
+  const map = new Map<string, { totalEarnPoints: number; targetRole: string; earnTotalSpecialActivity: number; earnTotalSpecialReward: number }>();
 
   for (const r of records) {
     if (!map.has(r.userId)) {
-      map.set(r.userId, { totalEarnPoints: 0, targetRole: r.targetRole ?? '', earnTotalSpecialActivity: 0 });
+      map.set(r.userId, { totalEarnPoints: 0, targetRole: r.targetRole ?? '', earnTotalSpecialActivity: 0, earnTotalSpecialReward: 0 });
     }
     const entry = map.get(r.userId)!;
     entry.totalEarnPoints += r.amount;
@@ -297,15 +303,18 @@ export function aggregateByUser(records: RawPointsRecord[]): { userId: string; t
     if (r.targetRole) entry.targetRole = r.targetRole;
     // Accumulate special-activity-award sum separately
     if (r.targetRole === 'SpecialActivity') entry.earnTotalSpecialActivity += r.amount;
+    // Accumulate special-reward-award sum separately
+    if (r.targetRole === 'SpecialReward') entry.earnTotalSpecialReward += r.amount;
   }
 
-  const result: { userId: string; totalEarnPoints: number; targetRole: string; earnTotalSpecialActivity: number }[] = [];
+  const result: { userId: string; totalEarnPoints: number; targetRole: string; earnTotalSpecialActivity: number; earnTotalSpecialReward: number }[] = [];
   for (const [userId, data] of map) {
     result.push({
       userId,
       totalEarnPoints: data.totalEarnPoints,
       targetRole: data.targetRole,
       earnTotalSpecialActivity: data.earnTotalSpecialActivity,
+      earnTotalSpecialReward: data.earnTotalSpecialReward,
     });
   }
   return result;
@@ -895,6 +904,7 @@ export async function queryUserPointsRanking(
         : r.targetRole,
       isEmployee: userDetailsMap.get(r.userId)?.isEmployee ?? false,
       earnTotalSpecialActivity: r.earnTotalSpecialActivity,
+      earnTotalSpecialReward: r.earnTotalSpecialReward,
     }));
 
     // Encode next offset as lastKey

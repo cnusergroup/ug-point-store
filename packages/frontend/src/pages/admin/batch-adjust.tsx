@@ -248,8 +248,9 @@ export default function BatchAdjustPage() {
       });
       const record = res.distribution;
       setOriginalRecord(record);
-      // batch-adjust only supports identity-points roles; SpecialActivity is excluded
-      if (record.targetRole !== 'SpecialActivity') {
+      // batch-adjust only supports identity-points roles; the special-award
+      // roles (SpecialActivity / SpecialReward) are excluded.
+      if (record.targetRole !== 'SpecialActivity' && record.targetRole !== 'SpecialReward') {
         setTargetRole(record.targetRole);
       }
       setSpeakerType(record.speakerType || null);
@@ -413,10 +414,6 @@ export default function BatchAdjustPage() {
       (u) => u.nickname.toLowerCase().includes(q) || u.email.toLowerCase().includes(q),
     );
   }, [users, searchQuery]);
-
-  const handleLoadMore = () => {
-    // No longer needed — all users loaded at once
-  };
 
   // Selection handlers
   const toggleUser = (userId: string) => {

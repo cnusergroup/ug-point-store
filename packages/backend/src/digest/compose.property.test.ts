@@ -43,6 +43,7 @@ const isoDateArb = fc
 
 /** Generate a product record */
 const productArb: fc.Arbitrary<DigestProduct> = fc.record({
+  productId: fc.uuid(),
   name: fc.string({ minLength: 1, maxLength: 30 }),
   pointsCost: fc.integer({ min: 0, max: 10000 }),
   createdAt: isoDateArb,
@@ -50,6 +51,7 @@ const productArb: fc.Arbitrary<DigestProduct> = fc.record({
 
 /** Generate a content item record */
 const contentItemArb: fc.Arbitrary<DigestContentItem> = fc.record({
+  contentId: fc.uuid(),
   title: fc.string({ minLength: 1, maxLength: 60 }),
   authorName: fc.string({ minLength: 1, maxLength: 20 }),
   createdAt: isoDateArb,

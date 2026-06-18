@@ -365,11 +365,7 @@ export default function BatchPointsPage() {
     setSpeakerType(null);
   };
 
-  const handleLoadMore = () => {
-    // No longer needed �?all users loaded at once
-  };
-
-  // Selection handlers �?skip awarded users
+  // Selection handlers — skip awarded users
   const toggleUser = (userId: string) => {
     if (awardedUserIds.has(userId)) return;
     setSelectedIds((prev) => {

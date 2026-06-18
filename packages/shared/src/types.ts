@@ -125,8 +125,8 @@ export interface CodeExclusiveProduct extends Product {
 /** 积分记录类型 */
 export type PointsRecordType = 'earn' | 'spend' | 'refund' | 'adjust';
 
-/** 积分记录目标角色（用于身份分与特殊活动积分区分） */
-export type PointsRecordTargetRole = 'Speaker' | 'UserGroupLeader' | 'Volunteer' | 'SpecialActivity';
+/** 积分记录目标角色（用于身份分、特殊活动积分与特殊奖励积分区分） */
+export type PointsRecordTargetRole = 'Speaker' | 'UserGroupLeader' | 'Volunteer' | 'SpecialActivity' | 'SpecialReward';
 
 /** 积分记录 */
 export interface PointsRecord {
@@ -137,12 +137,16 @@ export interface PointsRecord {
   source: string;
   balanceAfter: number;
   createdAt: string;
-  /** 关联的目标角色：身份分（Speaker/UGL/Volunteer）或特殊活动积分（SpecialActivity） */
+  /** 关联的目标角色：身份分（Speaker/UGL/Volunteer）、特殊活动积分（SpecialActivity）或特殊奖励积分（SpecialReward） */
   targetRole?: PointsRecordTargetRole;
   /** 关联的奖项 Tag ID（仅 targetRole==='SpecialActivity' 时存在） */
   awardTagId?: string;
   /** 关联的奖项 Tag 归一化名称（仅 targetRole==='SpecialActivity' 时存在） */
   awardTagName?: string;
+  /** 关联的奖励 Tag ID（仅 targetRole==='SpecialReward' 时存在） */
+  rewardTagId?: string;
+  /** 关联的奖励 Tag 归一化名称（仅 targetRole==='SpecialReward' 时存在） */
+  rewardTagName?: string;
 }
 
 /** 兑换方式 */
@@ -624,6 +628,21 @@ export interface AwardTag {
   createdBy: string;
 }
 
+/**
+ * 奖励标签元数据记录（PointsMall-RewardTags 表）。
+ * 用于 special-reward-award 功能，与 AwardTag/ContentTag 存储完全隔离，
+ * 但复用同一套名校验规则（AWARD_TAG_FORBIDDEN_CHARS / AWARD_TAG_MAX_LENGTH）。
+ */
+export interface RewardTag {
+  tagId: string;
+  tagName: string;
+  displayName: string;
+  usageCount: number;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+}
+
 // ============================================================
 // 内容中心校验辅助函数
 // ============================================================
@@ -675,7 +694,7 @@ export interface DistributionRecord {
   distributionId: string;
   distributorId: string;
   distributorNickname: string;
-  targetRole: 'UserGroupLeader' | 'Speaker' | 'Volunteer' | 'SpecialActivity';
+  targetRole: 'UserGroupLeader' | 'Speaker' | 'Volunteer' | 'SpecialActivity' | 'SpecialReward';
   speakerType?: 'typeA' | 'typeB' | 'roundtable';
   recipientIds: string[];
   recipientDetails?: { userId: string; nickname: string; email: string }[];
@@ -699,6 +718,12 @@ export interface DistributionRecord {
   awardTagName?: string;
   /** 关联的奖项 Tag 用户原文（仅 targetRole==='SpecialActivity' 时存在，用于 UI 展示） */
   awardTagDisplayName?: string;
+  /** 关联的奖励 Tag ID（仅 targetRole==='SpecialReward' 时存在） */
+  rewardTagId?: string;
+  /** 关联的奖励 Tag 归一化名称（仅 targetRole==='SpecialReward' 时存在） */
+  rewardTagName?: string;
+  /** 关联的奖励 Tag 用户原文（仅 targetRole==='SpecialReward' 时存在，用于 UI 展示） */
+  rewardTagDisplayName?: string;
 }
 
 // ============================================================

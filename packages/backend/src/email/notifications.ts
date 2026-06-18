@@ -62,7 +62,7 @@ async function isEmailEnabled(
   try {
     const toggles = await getFeatureToggles(ctx.dynamoClient, ctx.usersTable);
     const field = TOGGLE_MAP[type];
-    return (toggles as Record<string, unknown>)[field] === true;
+    return (toggles as unknown as Record<string, unknown>)[field] === true;
   } catch {
     return false;
   }
@@ -224,7 +224,7 @@ export async function sendNewOrderEmail(
     // Find all Admin/SuperAdmin/OrderAdmin users
     // Admin users only receive if adminOrdersEnabled is true
     const toggles = await getFeatureToggles(ctx.dynamoClient, ctx.usersTable);
-    const adminOrdersEnabled = (toggles as Record<string, unknown>).adminOrdersEnabled === true;
+    const adminOrdersEnabled = (toggles as unknown as Record<string, unknown>).adminOrdersEnabled === true;
 
     const adminUsers: { email: string; nickname: string; locale: EmailLocale }[] = [];
 

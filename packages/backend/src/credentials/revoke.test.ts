@@ -28,7 +28,7 @@ describe('revokeCredential', () => {
 
   it('should revoke an active credential successfully', async () => {
     const params = makeParams();
-    const client = params.dynamoClient;
+    const client = params.dynamoClient as any;
 
     client.send.mockImplementation((cmd: any) => {
       const cmdName = cmd.constructor.name;
@@ -83,7 +83,7 @@ describe('revokeCredential', () => {
 
   it('should return CREDENTIAL_NOT_FOUND when credential does not exist', async () => {
     const params = makeParams();
-    const client = params.dynamoClient;
+    const client = params.dynamoClient as any;
 
     client.send.mockImplementation((cmd: any) => {
       const cmdName = cmd.constructor.name;
@@ -103,7 +103,7 @@ describe('revokeCredential', () => {
 
   it('should return ALREADY_REVOKED when credential is already revoked', async () => {
     const params = makeParams();
-    const client = params.dynamoClient;
+    const client = params.dynamoClient as any;
 
     client.send.mockImplementation((cmd: any) => {
       const cmdName = cmd.constructor.name;
@@ -131,7 +131,7 @@ describe('revokeCredential', () => {
 
   it('should use UpdateCommand with correct expression to set revocation fields', async () => {
     const params = makeParams();
-    const client = params.dynamoClient;
+    const client = params.dynamoClient as any;
 
     const sentCommands: any[] = [];
     client.send.mockImplementation((cmd: any) => {
@@ -167,7 +167,7 @@ describe('revokeCredential', () => {
 
   it('should record a valid ISO timestamp for revokedAt', async () => {
     const params = makeParams();
-    const client = params.dynamoClient;
+    const client = params.dynamoClient as any;
 
     client.send.mockImplementation((cmd: any) => {
       const cmdName = cmd.constructor.name;

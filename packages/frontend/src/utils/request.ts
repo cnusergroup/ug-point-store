@@ -121,7 +121,7 @@ export async function request<T = unknown>(options: RequestOptions): Promise<T> 
 
     // 其他业务错误
     if (errorData?.code && errorData?.message) {
-      const { code, message, ...rest } = errorData as Record<string, unknown>;
+      const { code, message, ...rest } = errorData as unknown as Record<string, unknown>;
       throw new RequestError(
         code as string,
         message as string,

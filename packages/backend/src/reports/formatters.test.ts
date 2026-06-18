@@ -57,7 +57,7 @@ describe('getColumnDefs', () => {
   it('returns correct columns for user-points-ranking', () => {
     const cols = getColumnDefs('user-points-ranking');
     const keys = cols.map(c => c.key);
-    expect(keys).toEqual(['rank', 'nickname', 'userId', 'totalEarnPoints', 'earnTotalSpecialActivity', 'targetRole', 'isEmployee']);
+    expect(keys).toEqual(['rank', 'nickname', 'userId', 'totalEarnPoints', 'earnTotalSpecialActivity', 'earnTotalSpecialReward', 'targetRole', 'isEmployee']);
     expect(cols.find(c => c.key === 'rank')!.label).toBe('排名');
     expect(cols.find(c => c.key === 'earnTotalSpecialActivity')!.label).toBe('特殊活动积分');
     expect(cols.find(c => c.key === 'isEmployee')!.label).toBe('是否AWS员工');
@@ -266,7 +266,7 @@ describe('formatUserRankingForExport', () => {
     const rows = formatUserRankingForExport(records);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toEqual({
-      rank: 1, nickname: 'TopUser', userId: 'u1', totalEarnPoints: 999, earnTotalSpecialActivity: 0, targetRole: 'Speaker', isEmployee: '否',
+      rank: 1, nickname: 'TopUser', userId: 'u1', totalEarnPoints: 999, earnTotalSpecialActivity: 0, earnTotalSpecialReward: 0, targetRole: 'Speaker', isEmployee: '否',
     });
   });
 

@@ -10,7 +10,7 @@ import type { UserRole, ProductType } from '@points-mall/shared';
 // and normal data return for active products.
 // **Validates: Requirements 3.1, 3.2**
 
-const ALL_ROLES: UserRole[] = ['UserGroupLeader', 'CommunityBuilder', 'Speaker', 'Volunteer'];
+const ALL_ROLES: UserRole[] = ['UserGroupLeader', 'Speaker', 'Volunteer'];
 
 const productTypeArb = fc.constantFrom<ProductType>('points', 'code_exclusive');
 
@@ -54,13 +54,13 @@ const activeProductArb = fc
           pointsCost: fc.integer({ min: 1, max: 10000 }),
           allowedRoles: allowedRolesArb,
         })
-        .map((ext) => ({ ...base, ...ext }));
+        .map((ext) => ({ ...base, ...ext }) as Record<string, unknown>);
     }
     return fc
       .record({
         eventInfo: fc.string({ minLength: 1, maxLength: 50 }),
       })
-      .map((ext) => ({ ...base, ...ext }));
+      .map((ext) => ({ ...base, ...ext }) as Record<string, unknown>);
   });
 
 const TABLE = 'Products';
@@ -76,7 +76,7 @@ describe('Property 2: Preservation — Active/missing product behavior preserved
     await fc.assert(
       fc.asyncProperty(activeProductArb, async (product) => {
         const client = createMockDynamoClient(product);
-        const result = await getProductDetail(product.productId, client, TABLE);
+        const result = await getProductDetail(product.productId as string, client, TABLE);
 
         // Must return success
         expect(result.success).toBe(true);

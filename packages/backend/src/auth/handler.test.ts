@@ -137,7 +137,7 @@ describe('Auth Lambda Handler - Routing', () => {
         success: true,
         user: { userId: 'u1', email: 'a@b.com', nickname: 'N', roles: [], points: 0, emailVerified: true },
       });
-      vi.mocked(generateToken).mockReturnValue('jwt-token');
+      vi.mocked(generateToken).mockResolvedValue('jwt-token');
       const event = makeEvent({
         httpMethod: 'POST',
         path: '/api/auth/login',
@@ -272,11 +272,11 @@ describe('Auth Lambda Handler - Routing', () => {
 
   describe('POST /api/auth/refresh', () => {
     it('verifies existing token and returns new token', () => {
-      vi.mocked(verifyToken).mockReturnValue({
+      vi.mocked(verifyToken).mockResolvedValue({
         valid: true,
         payload: { userId: 'u1', email: 'a@b.com', roles: ['Speaker'] } as any,
       });
-      vi.mocked(generateToken).mockReturnValue('new-jwt');
+      vi.mocked(generateToken).mockResolvedValue('new-jwt');
       const event = makeEvent({
         httpMethod: 'POST',
         path: '/api/auth/refresh',
@@ -302,7 +302,7 @@ describe('Auth Lambda Handler - Routing', () => {
     });
 
     it('returns 401 when token is expired', async () => {
-      vi.mocked(verifyToken).mockReturnValue({ valid: false, error: 'TOKEN_EXPIRED' });
+      vi.mocked(verifyToken).mockResolvedValue({ valid: false, error: 'TOKEN_EXPIRED' });
       const event = makeEvent({
         httpMethod: 'POST',
         path: '/api/auth/refresh',
@@ -314,7 +314,7 @@ describe('Auth Lambda Handler - Routing', () => {
     });
 
     it('returns 401 when token is invalid', async () => {
-      vi.mocked(verifyToken).mockReturnValue({ valid: false, error: 'INVALID_TOKEN' });
+      vi.mocked(verifyToken).mockResolvedValue({ valid: false, error: 'INVALID_TOKEN' });
       const event = makeEvent({
         httpMethod: 'POST',
         path: '/api/auth/refresh',
@@ -328,7 +328,7 @@ describe('Auth Lambda Handler - Routing', () => {
 
   describe('POST /api/auth/change-password', () => {
     it('returns 200 on successful password change', async () => {
-      vi.mocked(verifyToken).mockReturnValue({
+      vi.mocked(verifyToken).mockResolvedValue({
         valid: true,
         payload: { userId: 'u1', email: 'a@b.com', roles: [] } as any,
       });
@@ -359,7 +359,7 @@ describe('Auth Lambda Handler - Routing', () => {
     });
 
     it('returns 400 when body fields are missing', async () => {
-      vi.mocked(verifyToken).mockReturnValue({
+      vi.mocked(verifyToken).mockResolvedValue({
         valid: true,
         payload: { userId: 'u1', email: 'a@b.com', roles: [] } as any,
       });
@@ -375,7 +375,7 @@ describe('Auth Lambda Handler - Routing', () => {
     });
 
     it('returns error when changePassword fails', async () => {
-      vi.mocked(verifyToken).mockReturnValue({
+      vi.mocked(verifyToken).mockResolvedValue({
         valid: true,
         payload: { userId: 'u1', email: 'a@b.com', roles: [] } as any,
       });

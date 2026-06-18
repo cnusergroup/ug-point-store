@@ -188,7 +188,7 @@ describe('getTemplate', () => {
       body: '<p>Test</p>',
       updatedAt: '2024-01-01T00:00:00.000Z',
     };
-    const dynamo = createMockDynamoClient({ getItem: mockTemplate });
+    const dynamo = createMockDynamoClient({ getItem: mockTemplate as unknown as Record<string, unknown> });
 
     const result = await getTemplate(dynamo, 'TestTable', 'pointsEarned', 'zh');
 

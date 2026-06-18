@@ -4,7 +4,7 @@ import Taro from '@tarojs/taro';
 import { useAppStore } from '../../store';
 import { request } from '../../utils/request';
 import { useTranslation } from '../../i18n';
-import { PackageIcon, TicketIcon, ProfileIcon, ClaimIcon, ShoppingBagIcon, GlobeIcon, SettingsIcon, GiftIcon, ClockIcon, LocationIcon, TagIcon, MailIcon } from '../../components/icons';
+import { PackageIcon, TicketIcon, ProfileIcon, ClaimIcon, ShoppingBagIcon, GlobeIcon, SettingsIcon, GiftIcon, ClockIcon, LocationIcon, TagIcon, MailIcon, TrophyIcon } from '../../components/icons';
 import './index.scss';
 
 interface DashboardCategory {
@@ -126,6 +126,15 @@ const ADMIN_LINKS = [
     titleKey: 'admin.dashboard.specialActivityAwardTitle',
     descKey: 'admin.dashboard.specialActivityAwardDesc',
     url: '/pages/admin/special-activity-award',
+    superAdminOnly: true,
+  },
+  {
+    key: 'special-reward-award',
+    category: 'operations',
+    icon: TrophyIcon,
+    titleKey: 'admin.dashboard.specialRewardAwardTitle',
+    descKey: 'admin.dashboard.specialRewardAwardDesc',
+    url: '/pages/admin/special-reward-award',
     superAdminOnly: true,
   },
   {

@@ -281,7 +281,7 @@ export function formatCsv(rows: CsvCredentialRow[]): string {
 
   for (const row of rows) {
     const fields = EXPECTED_HEADERS.map((h) => {
-      const value = (row as Record<string, string | undefined>)[h] ?? '';
+      const value = (row as unknown as Record<string, string | undefined>)[h] ?? '';
       return quoteField(value);
     });
     lines.push(fields.join(','));
