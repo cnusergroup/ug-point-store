@@ -31,6 +31,13 @@ vi.mock('./codes', () => ({
   listCodes: vi.fn(),
   disableCode: vi.fn(),
 }));
+vi.mock('./codes-distribution', () => ({
+  distributeCodes: vi.fn(),
+  resendCodeEmail: vi.fn(),
+}));
+vi.mock('./user-search', () => ({
+  searchUsers: vi.fn(),
+}));
 vi.mock('./products', () => ({
   createPointsProduct: vi.fn(),
   createCodeExclusiveProduct: vi.fn(),
@@ -161,6 +168,8 @@ vi.mock('../middleware/auth-middleware', () => ({
 import { handler } from './handler';
 import { assignRoles } from './roles';
 import { batchGeneratePointsCodes, generateProductCodes, listCodes, disableCode } from './codes';
+import { distributeCodes, resendCodeEmail } from './codes-distribution';
+import { searchUsers } from './user-search';
 import { createPointsProduct, createCodeExclusiveProduct, updateProduct, setProductStatus } from './products';
 import { getUploadUrl, deleteImage } from './images';
 import { listUsers, setUserStatus, deleteUser, unlockUser } from './users';
@@ -300,6 +309,132 @@ describe('Admin Lambda Handler', () => {
       const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/codes' });
       const result = await handler(event);
       expect(result.statusCode).toBe(200);
+    });
+  });
+
+  // Code 分发/重发/用户查询路由的鉴权与转发（Req 10.1/10.2/10.4）
+  describe('Code distribution route authorization & forwarding', () => {
+    describe('non-admin role (Volunteer) is forbidden', () => {
+      it('returns 403 for GET /api/admin/user-search', async () => {
+        mockUserRoles = ['Volunteer'];
+        const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/user-search' });
+        const result = await handler(event);
+        expect(result.statusCode).toBe(403);
+        expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+        expect(searchUsers).not.toHaveBeenCalled();
+      });
+
+      it('returns 403 for POST /api/admin/codes/distribute', async () => {
+        mockUserRoles = ['Volunteer'];
+        const event = makeEvent({
+          httpMethod: 'POST',
+          path: '/api/admin/codes/distribute',
+          body: JSON.stringify({ productIds: ['p1'], recipients: [{ userId: 'u1', allocatedCount: 1 }] }),
+        });
+        const result = await handler(event);
+        expect(result.statusCode).toBe(403);
+        expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+        expect(distributeCodes).not.toHaveBeenCalled();
+      });
+
+      it('returns 403 for POST /api/admin/codes/{codeId}/resend', async () => {
+        mockUserRoles = ['Volunteer'];
+        const event = makeEvent({ httpMethod: 'POST', path: '/api/admin/codes/code-123/resend' });
+        const result = await handler(event);
+        expect(result.statusCode).toBe(403);
+        expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+        expect(resendCodeEmail).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('GET /api/admin/user-search forwards parsed params (Admin)', () => {
+      it('forwards keyword/role/pageSize to searchUsers and returns 200', async () => {
+        mockUserRoles = ['Admin'];
+        vi.mocked(searchUsers).mockResolvedValue({ users: [], lastKey: undefined });
+        const event = makeEvent({
+          httpMethod: 'GET',
+          path: '/api/admin/user-search',
+          queryStringParameters: { keyword: 'alice', role: 'Speaker', pageSize: '10' },
+        });
+        const result = await handler(event);
+        expect(result.statusCode).toBe(200);
+        expect(searchUsers).toHaveBeenCalledWith(
+          expect.objectContaining({ keyword: 'alice', role: 'Speaker', pageSize: 10 }),
+          expect.anything(),
+          '',
+        );
+      });
+    });
+
+    describe('POST /api/admin/codes/distribute forwards body (SuperAdmin)', () => {
+      it('forwards productIds/recipients to distributeCodes and returns 201', async () => {
+        mockUserRoles = ['SuperAdmin'];
+        const summary = {
+          batchId: 'batch-1',
+          totalCodes: 2,
+          sentSuccess: ['u1'],
+          sentFailed: [],
+          skippedNoEmail: [],
+        };
+        vi.mocked(distributeCodes).mockResolvedValue({ success: true, data: summary as any });
+        const event = makeEvent({
+          httpMethod: 'POST',
+          path: '/api/admin/codes/distribute',
+          body: JSON.stringify({
+            productIds: ['p1', 'p2'],
+            recipients: [{ userId: 'u1', allocatedCount: 2 }],
+          }),
+        });
+        const result = await handler(event);
+        expect(result.statusCode).toBe(201);
+        expect(JSON.parse(result.body)).toEqual(summary);
+        expect(distributeCodes).toHaveBeenCalledWith(
+          { productIds: ['p1', 'p2'], recipients: [{ userId: 'u1', allocatedCount: 2 }] },
+          expect.anything(),
+        );
+      });
+
+      it('returns 400 when productIds or recipients are missing', async () => {
+        mockUserRoles = ['SuperAdmin'];
+        const event = makeEvent({
+          httpMethod: 'POST',
+          path: '/api/admin/codes/distribute',
+          body: JSON.stringify({ productIds: ['p1'] }),
+        });
+        const result = await handler(event);
+        expect(result.statusCode).toBe(400);
+        expect(distributeCodes).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('POST /api/admin/codes/{codeId}/resend forwards codeId (Admin)', () => {
+      it('forwards codeId to resendCodeEmail and returns 200', async () => {
+        mockUserRoles = ['Admin'];
+        vi.mocked(resendCodeEmail).mockResolvedValue({
+          success: true,
+          data: { codeId: 'code-123', emailStatus: 'sent' },
+        });
+        const event = makeEvent({ httpMethod: 'POST', path: '/api/admin/codes/code-123/resend' });
+        const result = await handler(event);
+        expect(result.statusCode).toBe(200);
+        expect(JSON.parse(result.body)).toEqual({ codeId: 'code-123', emailStatus: 'sent' });
+        expect(resendCodeEmail).toHaveBeenCalledWith('code-123', expect.anything());
+      });
+    });
+  });
+
+  // 邮件模板编辑仅 SuperAdmin（Req 10.3）
+  describe('PUT /api/admin/email-templates/{type}/{locale} authorization', () => {
+    it('returns 403 when a non-SuperAdmin (Admin) attempts to edit a template', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'PUT',
+        path: '/api/admin/email-templates/points_earned/zh',
+        body: JSON.stringify({ subject: 'x', bodyHtml: '<p>x</p>' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
     });
   });
 

@@ -173,6 +173,28 @@ describe('getRequiredVariables', () => {
     const vars = getRequiredVariables('newContent');
     expect(vars).toEqual(['nickname', 'contentList']);
   });
+
+  // ----------------------------------------------------------
+  // codeDistribution variable set (Task 6.4 — SMOKE)
+  // Validates: Requirements 7.1, 7.4
+  // ----------------------------------------------------------
+
+  it('should expose exactly the codeDistribution variables', () => {
+    const vars = getRequiredVariables('codeDistribution');
+    expect(vars).toEqual(['nickname', 'codeList', 'productNames', 'codeCount', 'storeUrl']);
+  });
+
+  it('should recognize codeDistribution as a managed template type (non-empty variable set)', () => {
+    // Template management resolves variables via the variable map; a recognized
+    // type yields a non-empty list, an unrecognized one yields [].
+    const vars = getRequiredVariables('codeDistribution');
+    expect(vars.length).toBeGreaterThan(0);
+  });
+
+  it('should expose codeDistribution variables without duplicates', () => {
+    const vars = getRequiredVariables('codeDistribution');
+    expect(new Set(vars).size).toBe(vars.length);
+  });
 });
 
 // ============================================================

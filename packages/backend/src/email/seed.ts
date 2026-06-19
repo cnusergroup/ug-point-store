@@ -649,6 +649,96 @@ const wishRejectedTemplates: Record<EmailLocale, { subject: string; body: string
 };
 
 // ============================================================
+// codeDistribution templates
+// ============================================================
+
+// Store CTA button parameterized to {{storeUrl}} so the default template
+// always carries a mall link even when no template is configured (Req 7.6).
+const STORE_LINK_VAR_ZH = '<p style="margin-top:16px;text-align:center;"><a href="{{storeUrl}}" style="display:inline-block;padding:10px 24px;background:#6366f1;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">前往积分兑换广场</a></p>';
+const STORE_LINK_VAR_EN = '<p style="margin-top:16px;text-align:center;"><a href="{{storeUrl}}" style="display:inline-block;padding:10px 24px;background:#6366f1;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">Visit Builder Store</a></p>';
+const STORE_LINK_VAR_JA = '<p style="margin-top:16px;text-align:center;"><a href="{{storeUrl}}" style="display:inline-block;padding:10px 24px;background:#6366f1;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">ポイント交換広場へ</a></p>';
+const STORE_LINK_VAR_KO = '<p style="margin-top:16px;text-align:center;"><a href="{{storeUrl}}" style="display:inline-block;padding:10px 24px;background:#6366f1;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">포인트 교환 광장으로</a></p>';
+const STORE_LINK_VAR_ZHTW = '<p style="margin-top:16px;text-align:center;"><a href="{{storeUrl}}" style="display:inline-block;padding:10px 24px;background:#6366f1;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">前往積分兌換廣場</a></p>';
+
+const codeDistributionTemplates: Record<EmailLocale, { subject: string; body: string }> = {
+  zh: {
+    subject: '🎁 你的兑换码到啦，快来积分兑换广场兑换吧！',
+    body: wrap([
+      '<h2 style="color:#6366f1;">Hi {{nickname}}，你的兑换码到啦！</h2>',
+      '<p style="font-size:16px;color:#334155;">你收到了 <strong style="color:#6366f1;">{{codeCount}}</strong> 个专属兑换码，可用于兑换以下候选商品（择一兑换）：</p>',
+      '<p style="color:#64748b;white-space:pre-line;">候选商品：<strong>{{productNames}}</strong></p>',
+      HR,
+      '<h3 style="color:#334155;margin-bottom:8px;">🎟️ 你的兑换码</h3>',
+      '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;font-family:monospace;color:#0f172a;">{{codeList}}</div>',
+      '<p style="margin-top:24px;color:#64748b;">前往积分兑换广场，输入兑换码并选择想要的商品即可完成兑换～ 🛍️</p>',
+      HR,
+      STORE_LINK_VAR_ZH,
+      FOOTER_ZH,
+    ].join('\n  ')),
+  },
+  en: {
+    subject: '🎁 Your redemption codes have arrived!',
+    body: wrap([
+      '<h2 style="color:#6366f1;">Hi {{nickname}}, your redemption codes are here!</h2>',
+      '<p style="font-size:16px;color:#334155;">You have received <strong style="color:#6366f1;">{{codeCount}}</strong> exclusive redemption code(s), redeemable for one of the following products:</p>',
+      '<p style="color:#64748b;white-space:pre-line;">Candidate products: <strong>{{productNames}}</strong></p>',
+      HR,
+      '<h3 style="color:#334155;margin-bottom:8px;">🎟️ Your Codes</h3>',
+      '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;font-family:monospace;color:#0f172a;">{{codeList}}</div>',
+      '<p style="margin-top:24px;color:#64748b;">Head to the Builder Store, enter your code and pick the product you want! 🛍️</p>',
+      HR,
+      STORE_LINK_VAR_EN,
+      FOOTER_EN,
+    ].join('\n  ')),
+  },
+  ja: {
+    subject: '🎁 交換コードが届きました！',
+    body: wrap([
+      '<h2 style="color:#6366f1;">{{nickname}} さん、交換コードが届きました！</h2>',
+      '<p style="font-size:16px;color:#334155;">専用交換コードを <strong style="color:#6366f1;">{{codeCount}}</strong> 個受け取りました。以下の候補商品から1つ選んで交換できます：</p>',
+      '<p style="color:#64748b;white-space:pre-line;">候補商品：<strong>{{productNames}}</strong></p>',
+      HR,
+      '<h3 style="color:#334155;margin-bottom:8px;">🎟️ あなたの交換コード</h3>',
+      '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;font-family:monospace;color:#0f172a;">{{codeList}}</div>',
+      '<p style="margin-top:24px;color:#64748b;">ポイント交換広場でコードを入力し、お好きな商品を選んで交換しましょう！ 🛍️</p>',
+      HR,
+      STORE_LINK_VAR_JA,
+      FOOTER_JA,
+    ].join('\n  ')),
+  },
+  ko: {
+    subject: '🎁 교환 코드가 도착했습니다!',
+    body: wrap([
+      '<h2 style="color:#6366f1;">{{nickname}} 님, 교환 코드가 도착했습니다!</h2>',
+      '<p style="font-size:16px;color:#334155;">전용 교환 코드 <strong style="color:#6366f1;">{{codeCount}}</strong>개를 받았습니다. 다음 후보 상품 중 하나를 선택하여 교환할 수 있습니다:</p>',
+      '<p style="color:#64748b;white-space:pre-line;">후보 상품: <strong>{{productNames}}</strong></p>',
+      HR,
+      '<h3 style="color:#334155;margin-bottom:8px;">🎟️ 내 교환 코드</h3>',
+      '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;font-family:monospace;color:#0f172a;">{{codeList}}</div>',
+      '<p style="margin-top:24px;color:#64748b;">포인트 교환 광장에서 코드를 입력하고 원하는 상품을 선택해 교환하세요! 🛍️</p>',
+      HR,
+      STORE_LINK_VAR_KO,
+      FOOTER_KO,
+    ].join('\n  ')),
+  },
+  'zh-TW': {
+    subject: '🎁 你的兌換碼到啦，快來積分兌換廣場兌換吧！',
+    body: wrap([
+      '<h2 style="color:#6366f1;">Hi {{nickname}}，你的兌換碼到啦！</h2>',
+      '<p style="font-size:16px;color:#334155;">你收到了 <strong style="color:#6366f1;">{{codeCount}}</strong> 個專屬兌換碼，可用於兌換以下候選商品（擇一兌換）：</p>',
+      '<p style="color:#64748b;white-space:pre-line;">候選商品：<strong>{{productNames}}</strong></p>',
+      HR,
+      '<h3 style="color:#334155;margin-bottom:8px;">🎟️ 你的兌換碼</h3>',
+      '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;font-family:monospace;color:#0f172a;">{{codeList}}</div>',
+      '<p style="margin-top:24px;color:#64748b;">前往積分兌換廣場，輸入兌換碼並選擇想要的商品即可完成兌換～ 🛍️</p>',
+      HR,
+      STORE_LINK_VAR_ZHTW,
+      FOOTER_ZHTW,
+    ].join('\n  ')),
+  },
+};
+
+// ============================================================
 // Template map by notification type
 // ============================================================
 
@@ -663,17 +753,18 @@ const TEMPLATE_MAP: Record<NotificationType, Record<EmailLocale, { subject: stri
   wishAdopted: wishAdoptedTemplates,
   wishFulfilled: wishFulfilledTemplates,
   wishRejected: wishRejectedTemplates,
+  codeDistribution: codeDistributionTemplates,
 };
 
 const ALL_LOCALES: EmailLocale[] = ['zh', 'en', 'ja', 'ko', 'zh-TW'];
-const ALL_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest', 'wishAdopted', 'wishFulfilled', 'wishRejected'];
+const ALL_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest', 'wishAdopted', 'wishFulfilled', 'wishRejected', 'codeDistribution'];
 
 // ============================================================
 // Public API
 // ============================================================
 
 /**
- * Return all 50 default email templates (10 notification types × 5 locales).
+ * Return all 55 default email templates (11 notification types × 5 locales).
  */
 export function getDefaultTemplates(): EmailTemplate[] {
   const now = new Date().toISOString();
@@ -700,7 +791,7 @@ export function getDefaultTemplates(): EmailTemplate[] {
 const DYNAMO_BATCH_WRITE_LIMIT = 25;
 
 /**
- * Seed all 50 default templates into DynamoDB using BatchWriteCommand.
+ * Seed all 55 default templates into DynamoDB using BatchWriteCommand.
  * DynamoDB BatchWriteCommand supports max 25 items per request,
  * so we split into batches of 25.
  */

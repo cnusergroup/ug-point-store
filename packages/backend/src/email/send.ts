@@ -14,7 +14,8 @@ export type NotificationType =
   | 'weeklyDigest'
   | 'wishAdopted'
   | 'wishFulfilled'
-  | 'wishRejected';
+  | 'wishRejected'
+  | 'codeDistribution';
 
 export type EmailLocale = 'zh' | 'en' | 'ja' | 'ko' | 'zh-TW';
 

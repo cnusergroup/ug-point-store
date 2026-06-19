@@ -4,7 +4,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { ErrorHttpStatus } from '@points-mall/shared';
 import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware';
 import { redeemWithPoints } from './points-redemption';
-import { redeemWithCode } from './code-redemption';
+import { redeemWithCode, lookupCodeCandidates } from './code-redemption';
 import { getRedemptionHistory } from './history';
 
 // Create client outside handler for Lambda container reuse
@@ -54,6 +54,11 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
   // POST /api/redemptions/points
   if (method === 'POST' && path === '/api/redemptions/points') {
     return await handleRedeemWithPoints(event);
+  }
+
+  // POST /api/redemptions/code/lookup (more specific path checked before /code)
+  if (method === 'POST' && path === '/api/redemptions/code/lookup') {
+    return await handleLookupCodeCandidates(event);
   }
 
   // POST /api/redemptions/code
@@ -113,6 +118,26 @@ async function handleRedeemWithPoints(event: AuthenticatedEvent): Promise<APIGat
   }
 
   return jsonResponse(200, { redemptionId: result.redemptionId, orderId: result.orderId });
+}
+
+async function handleLookupCodeCandidates(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || !body.code) {
+    return errorResponse('INVALID_REQUEST', 'Missing required field: code', 400);
+  }
+
+  const result = await lookupCodeCandidates(body.code as string, dynamoClient, {
+    codesTable: CODES_TABLE,
+    productsTable: PRODUCTS_TABLE,
+  });
+
+  if (!result.success) {
+    const code = result.error!.code;
+    const status = (ErrorHttpStatus as Record<string, number>)[code] ?? 400;
+    return jsonResponse(status, result.error);
+  }
+
+  return jsonResponse(200, { candidates: result.candidates });
 }
 
 async function handleRedeemWithCode(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {

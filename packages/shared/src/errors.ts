@@ -15,6 +15,8 @@ export const ErrorCodes = {
   CODE_PRODUCT_MISMATCH: 'CODE_PRODUCT_MISMATCH',
   /** 该商品仅支持 Code 兑换 (400) - 需求 7.4 */
   CODE_ONLY_PRODUCT: 'CODE_ONLY_PRODUCT',
+  /** 所选商品不在兑换码候选集合中 / 候选集合无效 (400) - code-user-email-distribution 需求 1.6, 2.3, 8.2 */
+  INVALID_PRODUCT_SELECTION: 'INVALID_PRODUCT_SELECTION',
   /** 积分不足 (400) - 需求 6.4 */
   INSUFFICIENT_POINTS: 'INSUFFICIENT_POINTS',
   /** 商品库存不足 (400) - 需求 6.6 */
@@ -219,6 +221,8 @@ export const ErrorCodes = {
   INVALID_WISH_DESCRIPTION: 'INVALID_WISH_DESCRIPTION',
   /** 关闭原因格式无效 (400) - 需求 2.3 */
   INVALID_CLOSE_REASON: 'INVALID_CLOSE_REASON',
+  /** 重发目标用户无有效邮箱 (400) - code-user-email-distribution 需求 9.4 */
+  NO_EMAIL: 'NO_EMAIL',
 } as const;
 
 /** 错误码类型 */
@@ -232,6 +236,7 @@ export const ErrorHttpStatus: Record<ErrorCode, number> = {
   [ErrorCodes.CODE_EXHAUSTED]: 400,
   [ErrorCodes.CODE_PRODUCT_MISMATCH]: 400,
   [ErrorCodes.CODE_ONLY_PRODUCT]: 400,
+  [ErrorCodes.INVALID_PRODUCT_SELECTION]: 400,
   [ErrorCodes.INSUFFICIENT_POINTS]: 400,
   [ErrorCodes.OUT_OF_STOCK]: 400,
   [ErrorCodes.TOKEN_EXPIRED]: 401,
@@ -334,6 +339,7 @@ export const ErrorHttpStatus: Record<ErrorCode, number> = {
   [ErrorCodes.INVALID_WISH_TITLE]: 400,
   [ErrorCodes.INVALID_WISH_DESCRIPTION]: 400,
   [ErrorCodes.INVALID_CLOSE_REASON]: 400,
+  [ErrorCodes.NO_EMAIL]: 400,
 };
 
 /** 错误码对应的默认错误消息 */
@@ -344,6 +350,7 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.CODE_EXHAUSTED]: '兑换码已达使用上限',
   [ErrorCodes.CODE_PRODUCT_MISMATCH]: '兑换码与商品不匹配',
   [ErrorCodes.CODE_ONLY_PRODUCT]: '该商品仅支持 Code 兑换',
+  [ErrorCodes.INVALID_PRODUCT_SELECTION]: '所选商品不在兑换码候选集合中',
   [ErrorCodes.INSUFFICIENT_POINTS]: '积分不足',
   [ErrorCodes.OUT_OF_STOCK]: '商品库存不足',
   [ErrorCodes.TOKEN_EXPIRED]: '访问令牌已过期，请重新登录',
@@ -446,4 +453,5 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.INVALID_WISH_TITLE]: '许愿标题格式无效（1-50 字符）',
   [ErrorCodes.INVALID_WISH_DESCRIPTION]: '许愿描述格式无效（1-500 字符）',
   [ErrorCodes.INVALID_CLOSE_REASON]: '关闭原因格式无效（1-200 字符）',
+  [ErrorCodes.NO_EMAIL]: '重发目标用户没有有效邮箱地址',
 };

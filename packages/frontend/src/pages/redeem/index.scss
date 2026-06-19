@@ -455,6 +455,115 @@
   }
 }
 
+/* ---- Candidate Product Selection (multi-candidate code) ---- */
+.redeem-candidates {
+  background: var(--bg-surface);
+  border: 1px solid var(--card-border);
+  border-radius: var(--space-3);
+  padding: var(--space-5);
+  margin-bottom: var(--space-6);
+
+  &__title {
+    display: block;
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: var(--space-2);
+    text-align: center;
+  }
+
+  &__subtitle {
+    display: block;
+    font-size: var(--text-body-sm);
+    color: var(--text-tertiary);
+    margin-bottom: var(--space-5);
+    text-align: center;
+  }
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-3);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+
+    & + & {
+      margin-top: var(--space-3);
+    }
+
+    &:hover {
+      border-color: var(--card-border-hover);
+      background: var(--bg-hover);
+    }
+
+    &--disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+
+      &:hover {
+        border-color: var(--card-border);
+        background: transparent;
+      }
+    }
+  }
+
+  &__image {
+    width: 56px;
+    height: 56px;
+    border-radius: var(--radius-md);
+    flex-shrink: 0;
+  }
+
+  &__image-placeholder {
+    width: 56px;
+    height: 56px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(135deg, var(--bg-surface), var(--bg-elevated));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  &__info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  &__name {
+    font-family: var(--font-display);
+    font-size: var(--text-body-lg);
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__stock {
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+
+    &--out {
+      color: var(--error);
+    }
+  }
+
+  &__arrow {
+    font-size: 22px;
+    color: var(--text-tertiary);
+    flex-shrink: 0;
+    padding-right: var(--space-2);
+  }
+}
+
 /* ---- Address Selector ---- */
 .redeem-address {
   background: var(--bg-surface);

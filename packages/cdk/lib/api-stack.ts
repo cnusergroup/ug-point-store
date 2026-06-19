@@ -563,7 +563,10 @@ export class ApiStack extends cdk.Stack {
     const redemptionInt = new apigateway.LambdaIntegration(redemptionFn);
     const redemptions = api.addResource('redemptions');
     redemptions.addResource('points').addMethod('POST', redemptionInt);
-    redemptions.addResource('code').addMethod('POST', redemptionInt);
+    const redemptionCode = redemptions.addResource('code');
+    redemptionCode.addMethod('POST', redemptionInt);
+    // Multi-candidate lookup: returns candidate products for a code so the user can pick one.
+    redemptionCode.addResource('lookup').addMethod('POST', redemptionInt);
     redemptions.addResource('history').addMethod('GET', redemptionInt);
 
     // Order Lambda integration — defined early because it's also used for admin order routes

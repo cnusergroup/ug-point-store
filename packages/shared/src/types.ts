@@ -175,6 +175,9 @@ export type CodeType = 'points' | 'product';
 /** Code 状态 */
 export type CodeStatus = 'active' | 'disabled' | 'exhausted';
 
+/** Code 邮件发送状态 */
+export type CodeEmailStatus = 'sent' | 'failed' | 'no_email' | 'pending';
+
 /** Code 信息 */
 export interface CodeInfo {
   codeId: string;
@@ -182,12 +185,21 @@ export interface CodeInfo {
   type: CodeType;
   name?: string;
   pointsValue?: number;
+  /** 兼容镜像字段：候选集合恰好 1 个商品时写入 */
   productId?: string;
+  /** 候选商品集合（有序，1–10），多商品候选兑换码的权威字段 */
+  productIds?: string[];
   maxUses: number;
   currentUses: number;
   status: CodeStatus;
   usedBy: string[];
   createdAt: string;
+  /** 该码被分配到的收件用户（分发批次） */
+  allocatedUserId?: string;
+  /** 所属分发批次标识 */
+  batchId?: string;
+  /** 该码的邮件发送状态 */
+  emailStatus?: CodeEmailStatus;
 }
 
 /** 错误响应 */

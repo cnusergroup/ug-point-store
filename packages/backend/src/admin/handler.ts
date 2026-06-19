@@ -1,6 +1,6 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand, QueryCommand, BatchGetCommand } from '@aws-sdk/lib-dynamodb';
 import { SESClient } from '@aws-sdk/client-ses';
 import { S3Client } from '@aws-sdk/client-s3';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
@@ -9,6 +9,8 @@ import type { Product, UserRole } from '@points-mall/shared';
 import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware';
 import { assignRoles } from './roles';
 import { batchGeneratePointsCodes, generateProductCodes, listCodes, disableCode, deleteCode } from './codes';
+import { distributeCodes, resendCodeEmail, type RecipientAllocation } from './codes-distribution';
+import { searchUsers } from './user-search';
 import { createPointsProduct, createCodeExclusiveProduct, updateProduct, setProductStatus } from './products';
 import { getUploadUrl, getTempUploadUrl, deleteImage } from './images';
 import { batchGenerateInvites, listInvites, revokeInvite } from './invites';
@@ -118,6 +120,7 @@ function parseBody(event: APIGatewayProxyEvent): Record<string, unknown> | null 
 // Path patterns for routes with path parameters
 const USERS_ROLES_REGEX = /^\/api\/admin\/users\/([^/]+)\/roles$/;
 const CODES_DISABLE_REGEX = /^\/api\/admin\/codes\/([^/]+)\/disable$/;
+const CODES_RESEND_REGEX = /^\/api\/admin\/codes\/([^/]+)\/resend$/;
 const CODES_DELETE_REGEX = /^\/api\/admin\/codes\/([^/]+)$/;
 const PRODUCTS_UPDATE_REGEX = /^\/api\/admin\/products\/([^/]+)$/;
 const PRODUCTS_STATUS_REGEX = /^\/api\/admin\/products\/([^/]+)\/status$/;
@@ -328,6 +331,16 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     if (path === '/api/admin/codes/product-code') {
       return await handleGenerateProductCodes(event);
     }
+    // POST /api/admin/codes/distribute — 按用户列表生成并邮件分发兑换码（Admin/SuperAdmin）
+    if (path === '/api/admin/codes/distribute') {
+      return await handleDistributeCodes(event);
+    }
+    // POST /api/admin/codes/{codeId}/resend — 单码邮件重发（Admin/SuperAdmin）
+    // 必须在通用 codes 路由之前匹配，且不与 disable(PATCH)/delete(DELETE) 冲突
+    const codesResendMatch = path.match(CODES_RESEND_REGEX);
+    if (codesResendMatch) {
+      return await handleResendCodeEmail(codesResendMatch[1]);
+    }
     if (path === '/api/admin/products') {
       if (!isSuperAdmin(event.user.roles as UserRole[])) {
         const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
@@ -503,6 +516,11 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
 
   if (method === 'GET' && path === '/api/admin/users') {
     return await handleListUsers(event);
+  }
+
+  // GET /api/admin/user-search — 按关键字/角色查询用户（Admin/SuperAdmin，Req 4.4、10.4）
+  if (method === 'GET' && path === '/api/admin/user-search') {
+    return await handleSearchUsers(event);
   }
 
   // GET /api/admin/users/{id}/login-history — SuperAdmin only
@@ -938,6 +956,56 @@ async function handleListCodes(event: AuthenticatedEvent): Promise<APIGatewayPro
 
   const result = await listCodes(dynamoClient, CODES_TABLE, { pageSize, lastKey });
 
+  // Enrich distribution-batch codes with the recipient's store nickname/email so the
+  // admin code list can show 收件人昵称 instead of the raw userId.
+  const recipientIds = Array.from(
+    new Set(
+      result.codes
+        .map((c) => (c as { allocatedUserId?: string }).allocatedUserId)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ),
+  );
+
+  if (recipientIds.length > 0) {
+    const userMap: Record<string, { nickname?: string; email?: string }> = {};
+    // BatchGet supports up to 100 keys per request.
+    for (let i = 0; i < recipientIds.length; i += 100) {
+      const chunk = recipientIds.slice(i, i + 100);
+      try {
+        const batch = await dynamoClient.send(
+          new BatchGetCommand({
+            RequestItems: {
+              [USERS_TABLE]: {
+                Keys: chunk.map((userId) => ({ userId })),
+                ProjectionExpression: 'userId, nickname, email',
+              },
+            },
+          }),
+        );
+        for (const item of batch.Responses?.[USERS_TABLE] ?? []) {
+          userMap[item.userId as string] = {
+            nickname: item.nickname as string | undefined,
+            email: item.email as string | undefined,
+          };
+        }
+      } catch (err) {
+        console.error('[Codes] Failed to resolve recipient nicknames:', err);
+      }
+    }
+
+    const enriched = result.codes.map((c) => {
+      const allocatedUserId = (c as { allocatedUserId?: string }).allocatedUserId;
+      if (!allocatedUserId) return c;
+      const u = userMap[allocatedUserId];
+      return {
+        ...c,
+        recipientNickname: u?.nickname ?? '',
+        recipientEmail: u?.email ?? '',
+      };
+    });
+    return jsonResponse(200, { codes: enriched, lastKey: result.lastKey });
+  }
+
   return jsonResponse(200, { codes: result.codes, lastKey: result.lastKey });
 }
 
@@ -959,6 +1027,96 @@ async function handleDeleteCode(codeId: string): Promise<APIGatewayProxyResult> 
   }
 
   return jsonResponse(200, { message: 'Code 已删除' });
+}
+
+/** 构建分发服务依赖（复用 admin handler 现有 client 与表名）。 */
+function buildDistributionDeps() {
+  return {
+    dynamoClient,
+    sesClient,
+    codesTable: CODES_TABLE,
+    productsTable: PRODUCTS_TABLE,
+    usersTable: USERS_TABLE,
+    emailTemplatesTable: EMAIL_TEMPLATES_TABLE,
+    senderEmail: SENDER_EMAIL,
+  };
+}
+
+/**
+ * GET /api/admin/user-search?keyword=&role=&pageSize=&lastKey=
+ * 按关键字（昵称/邮箱，不区分大小写）与角色查询用户，返回单页 + lastKey 游标。
+ * 鉴权由顶层 isAdmin 守卫覆盖（Admin/SuperAdmin，OrderAdmin 一律 403）。
+ */
+async function handleSearchUsers(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const params = event.queryStringParameters ?? {};
+
+  const keyword = params.keyword || undefined;
+  const role = (params.role as UserRole | undefined) || undefined;
+  const pageSize = params.pageSize ? parseInt(params.pageSize, 10) : undefined;
+
+  let lastKey: Record<string, unknown> | undefined;
+  if (params.lastKey) {
+    try {
+      lastKey = JSON.parse(params.lastKey);
+    } catch {
+      // ignore invalid lastKey — 从首页查询
+    }
+  }
+
+  const result = await searchUsers(
+    { keyword, role, pageSize: Number.isNaN(pageSize) ? undefined : pageSize, lastKey },
+    dynamoClient,
+    USERS_TABLE,
+  );
+
+  return jsonResponse(200, { users: result.users, lastKey: result.lastKey });
+}
+
+/**
+ * POST /api/admin/codes/distribute
+ * 按用户列表生成并邮件分发兑换码。成功返回 201 + 分发摘要。
+ * 鉴权由顶层 isAdmin 守卫覆盖（Admin/SuperAdmin，OrderAdmin 一律 403）。
+ */
+async function handleDistributeCodes(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || !Array.isArray(body.productIds) || !Array.isArray(body.recipients)) {
+    return errorResponse('INVALID_REQUEST', 'Missing required fields: productIds, recipients', 400);
+  }
+
+  const result = await distributeCodes(
+    {
+      productIds: body.productIds as string[],
+      recipients: body.recipients as RecipientAllocation[],
+    },
+    buildDistributionDeps(),
+  );
+
+  if (!result.success || !result.data) {
+    return errorResponse(
+      result.error?.code ?? 'GENERATION_FAILED',
+      result.error?.message ?? '兑换码分发失败',
+    );
+  }
+
+  return jsonResponse(201, result.data);
+}
+
+/**
+ * POST /api/admin/codes/{codeId}/resend
+ * 依据该码持久化的 allocatedUserId 向对应收件用户重发分发邮件。
+ * 鉴权由顶层 isAdmin 守卫覆盖（Admin/SuperAdmin，OrderAdmin 一律 403）。
+ */
+async function handleResendCodeEmail(codeId: string): Promise<APIGatewayProxyResult> {
+  const result = await resendCodeEmail(codeId, buildDistributionDeps());
+
+  if (!result.success || !result.data) {
+    return errorResponse(
+      result.error?.code ?? 'EMAIL_SEND_FAILED',
+      result.error?.message ?? '邮件重发失败',
+    );
+  }
+
+  return jsonResponse(200, result.data);
 }
 
 async function handleCreateProduct(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {

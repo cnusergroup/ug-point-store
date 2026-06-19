@@ -7,6 +7,7 @@ import {
 import type { NotificationType, EmailLocale, BulkSendResult } from './send';
 import { sendEmail, sendBulkEmail } from './send';
 import { getTemplate, replaceVariables } from './templates';
+import { getDefaultTemplates } from './seed';
 import { getFeatureToggles } from '../settings/feature-toggles';
 
 // ============================================================
@@ -32,7 +33,9 @@ export interface SubscribedUser {
 
 const DEFAULT_LOCALE: EmailLocale = 'zh';
 
-const TOGGLE_MAP: Record<NotificationType, string> = {
+// codeDistribution is intentionally omitted: distribution emails are
+// admin-initiated transactional mails that bypass subscription toggle gating.
+const TOGGLE_MAP: Partial<Record<NotificationType, string>> = {
   pointsEarned: 'emailPointsEarnedEnabled',
   newOrder: 'emailNewOrderEnabled',
   orderShipped: 'emailOrderShippedEnabled',
@@ -62,6 +65,7 @@ async function isEmailEnabled(
   try {
     const toggles = await getFeatureToggles(ctx.dynamoClient, ctx.usersTable);
     const field = TOGGLE_MAP[type];
+    if (!field) return false;
     return (toggles as unknown as Record<string, unknown>)[field] === true;
   } catch {
     return false;
@@ -681,5 +685,80 @@ export async function sendWishRejectedEmail(
     console.log(`[Notification] wishRejected email sent to ${user.email}`);
   } catch (err) {
     console.error('[Notification] Failed to send wishRejected email:', err);
+  }
+}
+
+// ============================================================
+// Code distribution notification (admin transactional)
+// ============================================================
+
+export interface CodeDistributionEmailResult {
+  status: 'sent' | 'failed' | 'no_email';
+  error?: string;
+}
+
+/**
+ * Load the codeDistribution template for a locale, falling back to the zh
+ * locale and then to the built-in system default template (Req 7.6).
+ * Unlike loadTemplateWithFallback, this never returns null: a configured
+ * template is always available so distribution mails can be delivered.
+ */
+function loadCodeDistributionDefault(locale: EmailLocale): { subject: string; body: string } {
+  const defaults = getDefaultTemplates().filter((t) => t.templateId === 'codeDistribution');
+  const match =
+    defaults.find((t) => t.locale === locale) ??
+    defaults.find((t) => t.locale === DEFAULT_LOCALE) ??
+    defaults[0];
+  return { subject: match.subject, body: match.body };
+}
+
+/**
+ * Send a code distribution email to a single allocated recipient.
+ *
+ * This is an admin-initiated transactional mail, so it intentionally does NOT
+ * pass through the isEmailEnabled subscription toggle gating — the codes must
+ * reach the recipient regardless of their newsletter preferences.
+ *
+ * Loads the user → returns { status: 'no_email' } when the user has no email.
+ * Loads the codeDistribution template (locale → zh fallback, then system
+ * default if missing) → renders nickname/codeList/productNames/codeCount/storeUrl
+ * → sends. codeList is joined as an HTML list (one code per line);
+ * codeCount = codeValues.length.
+ */
+export async function sendCodeDistributionEmail(
+  ctx: NotificationContext & { senderEmail: string },
+  userId: string,
+  codeValues: string[],
+  productNames: string[],
+  storeUrl: string,
+): Promise<CodeDistributionEmailResult> {
+  const user = await loadUser(ctx, userId);
+  if (!user) {
+    return { status: 'no_email' };
+  }
+
+  try {
+    // Locale → zh fallback from DynamoDB; fall back to system default when missing.
+    const template =
+      (await loadTemplateWithFallback(ctx, 'codeDistribution', user.locale)) ??
+      loadCodeDistributionDefault(user.locale);
+
+    const variables: Record<string, string> = {
+      nickname: user.nickname,
+      codeList: codeValues.join('<br>'),
+      productNames: productNames.join('、'),
+      codeCount: String(codeValues.length),
+      storeUrl,
+    };
+
+    const subject = replaceVariables(template.subject, variables);
+    const htmlBody = replaceVariables(template.body, variables);
+
+    await sendEmail(ctx.sesClient, { to: user.email, subject, htmlBody }, ctx.senderEmail);
+    console.log(`[Notification] codeDistribution email sent to ${user.email}`);
+    return { status: 'sent' };
+  } catch (err) {
+    console.error('[Notification] Failed to send codeDistribution email:', err);
+    return { status: 'failed', error: err instanceof Error ? err.message : String(err) };
   }
 }

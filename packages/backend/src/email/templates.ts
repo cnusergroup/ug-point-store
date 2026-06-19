@@ -40,6 +40,7 @@ const TEMPLATE_VARIABLE_MAP: Record<NotificationType, string[]> = {
   wishAdopted: ['nickname', 'wishTitle'],
   wishFulfilled: ['nickname', 'wishTitle', 'productUrl'],
   wishRejected: ['nickname', 'wishTitle', 'closeReason'],
+  codeDistribution: ['nickname', 'codeList', 'productNames', 'codeCount', 'storeUrl'],
 };
 
 const SUBJECT_MAX_LENGTH = 200;

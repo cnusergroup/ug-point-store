@@ -46,6 +46,20 @@ interface CodeRedemptionResponse {
   orderId?: string;
 }
 
+/** Candidate product bound to a redemption code (from /api/redemptions/code/lookup) */
+interface CodeCandidate {
+  productId: string;
+  name: string;
+  imageUrl?: string;
+  stock: number;
+  status: string;
+}
+
+/** Lookup candidates response */
+interface CodeLookupResponse {
+  candidates: CodeCandidate[];
+}
+
 /** Points code redeem response */
 interface PointsCodeResponse {
   pointsEarned: number;
@@ -58,6 +72,7 @@ const ERROR_CODE_KEYS: Record<string, string> = {
   CODE_ALREADY_USED: 'redeem.errorCodeAlreadyUsed',
   CODE_EXHAUSTED: 'redeem.errorCodeExhausted',
   INVALID_CODE: 'redeem.errorInvalidCode',
+  INVALID_PRODUCT_SELECTION: 'redeem.errorProductSelection',
   CODE_PRODUCT_MISMATCH: 'redeem.errorCodeProductMismatch',
   CODE_ONLY_PRODUCT: 'redeem.errorCodeOnlyProduct',
   OUT_OF_STOCK: 'redeem.errorOutOfStock',
@@ -81,6 +96,12 @@ export default function RedeemPage() {
   const [codeValue, setCodeValue] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Multi-candidate code redemption flow state
+  const [candidates, setCandidates] = useState<CodeCandidate[]>([]);
+  const [selectedCandidate, setSelectedCandidate] = useState<CodeCandidate | null>(null);
+  const [lookedUp, setLookedUp] = useState(false);
+  const [lookingUp, setLookingUp] = useState(false);
 
   // Feature toggle state (only used for points-code mode)
   const [featureDisabled, setFeatureDisabled] = useState(false);
@@ -209,22 +230,69 @@ export default function RedeemPage() {
     }
   };
 
-  /** Code redemption for product: POST /api/redemptions/code */
+  /** Reset the code redemption flow back to the code-entry step */
+  const resetCodeFlow = () => {
+    setError('');
+    setCandidates([]);
+    setSelectedCandidate(null);
+    setLookedUp(false);
+  };
+
+  /** Step 1: look up candidate products for a code: POST /api/redemptions/code/lookup */
+  const handleCodeLookup = async () => {
+    if (!codeValue.trim() || lookingUp) return;
+    setError('');
+    setLookingUp(true);
+    try {
+      const res = await request<CodeLookupResponse>({
+        url: '/api/redemptions/code/lookup',
+        method: 'POST',
+        data: { code: codeValue.trim() },
+      });
+      const list = res.candidates || [];
+      if (list.length === 0) {
+        setError(t('redeem.errorInvalidCode'));
+        return;
+      }
+      setCandidates(list);
+      setLookedUp(true);
+      // Single candidate: auto-select and go straight to address selection
+      if (list.length === 1) {
+        setSelectedCandidate(list[0]);
+      }
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLookingUp(false);
+    }
+  };
+
+  /**
+   * Redeem with a code: POST /api/redemptions/code.
+   * Target product is either the user-picked candidate (standalone code entry) or,
+   * when the page was opened from a specific product (productId in URL), that product
+   * directly — no candidate selection needed.
+   */
   const handleCodeRedeem = async () => {
-    if (!product || !codeValue.trim() || submitting) return;
+    const target = selectedCandidate
+      ? { productId: selectedCandidate.productId, name: selectedCandidate.name }
+      : productId && product
+        ? { productId: product.productId, name: product.name }
+        : null;
+    if (!target || !codeValue.trim() || submitting) return;
     setError('');
     setSubmitting(true);
     try {
       const res = await request<CodeRedemptionResponse>({
         url: '/api/redemptions/code',
         method: 'POST',
-        data: { productId: product.productId, code: codeValue.trim(), addressId: selectedAddressId },
+        data: { productId: target.productId, code: codeValue.trim(), addressId: selectedAddressId },
       });
       setSuccess(true);
       setSuccessOrderId(res.orderId || '');
       setSuccessData({
         type: 'product',
-        productName: product.name,
+        productName: target.name,
       });
     } catch (err) {
       setError(getErrorMessage(err));
@@ -345,6 +413,9 @@ export default function RedeemPage() {
   const canAfford = balanceAfter >= 0;
   const needsAddress = mode === 'points' || mode === 'code';
   const selectedAddress = addresses.find((a) => a.addressId === selectedAddressId);
+  // When the redeem page is opened from a specific product (productId in URL), code
+  // redemption targets that product directly — skip the candidate lookup/pick flow.
+  const hasFixedProduct = mode === 'code' && !!productId && !!product;
 
   const headerTitle = mode === 'points' ? t('redeem.pointsRedeemTitle') : mode === 'code' ? t('redeem.codeRedeemTitle') : t('redeem.pointsCodeRedeemTitle');
 
@@ -416,8 +487,8 @@ export default function RedeemPage() {
       <PageToolbar title={headerTitle} onBack={handleBack} />
 
       <View className='redeem-content'>
-        {/* Product summary (when product exists) */}
-        {product && (
+        {/* Product summary (points mode; code mode shows selected candidate inline) */}
+        {mode === 'points' && product && (
           <View className='redeem-product'>
             {product.imageUrl ? (
               <Image className='redeem-product__image' src={product.imageUrl} mode='aspectFill' />
@@ -482,10 +553,26 @@ export default function RedeemPage() {
           </>
         )}
 
-        {/* Mode: Code Redemption (product-specific code) */}
-        {mode === 'code' && product && (
+        {/* Mode: Code Redemption — fixed product (entered from a product page): redeem that product directly */}
+        {mode === 'code' && hasFixedProduct && product && (
           <>
-            {renderAddressSelector()}
+            <View className='redeem-product'>
+              {product.imageUrl ? (
+                <Image className='redeem-product__image' src={product.imageUrl} mode='aspectFill' />
+              ) : (
+                <View className='redeem-product__image-placeholder'>
+                  <Text className='redeem-product__image-placeholder-icon'>
+                    <TicketIcon size={32} color='var(--text-tertiary)' />
+                  </Text>
+                </View>
+              )}
+              <View className='redeem-product__info'>
+                <Text className='redeem-product__name'>{product.name}</Text>
+                <Text className='redeem-product__type redeem-product__type--code'>
+                  {t('redeem.productTypeCodeExclusive')}
+                </Text>
+              </View>
+            </View>
             <View className='redeem-code'>
               <Text className='redeem-code__title'>{t('redeem.enterCodeTitle')}</Text>
               <Text className='redeem-code__subtitle'>{t('redeem.enterCodeSubtitle')}</Text>
@@ -501,6 +588,7 @@ export default function RedeemPage() {
               </View>
               <Text className='redeem-code__hint'>{t('redeem.codeHint')}</Text>
             </View>
+            {renderAddressSelector()}
             <View
               className={`redeem-btn ${!codeValue.trim() || !selectedAddressId || submitting ? 'redeem-btn--disabled' : ''} ${submitting ? 'redeem-btn--loading' : ''}`}
               onClick={codeValue.trim() && selectedAddressId && !submitting ? handleCodeRedeem : undefined}
@@ -510,6 +598,117 @@ export default function RedeemPage() {
             <View className='redeem-cancel' onClick={handleBack}>
               <Text>{t('redeem.cancelButton')}</Text>
             </View>
+          </>
+        )}
+
+        {/* Mode: Code Redemption (multi-candidate pick-one) — standalone code entry without a fixed product */}
+        {mode === 'code' && !hasFixedProduct && (
+          <>
+            {/* Step 1: enter code */}
+            {!lookedUp && (
+              <>
+                <View className='redeem-code'>
+                  <Text className='redeem-code__title'>{t('redeem.enterCodeTitle')}</Text>
+                  <Text className='redeem-code__subtitle'>{t('redeem.enterCodeSubtitle')}</Text>
+                  <View className='redeem-code__input-wrap'>
+                    <Input
+                      className='redeem-code__input'
+                      type='text'
+                      placeholder={t('redeem.codePlaceholder')}
+                      value={codeValue}
+                      onInput={(e) => setCodeValue(e.detail.value)}
+                      maxlength={32}
+                    />
+                  </View>
+                  <Text className='redeem-code__hint'>{t('redeem.codeHint')}</Text>
+                </View>
+                <View
+                  className={`redeem-btn ${!codeValue.trim() || lookingUp ? 'redeem-btn--disabled' : ''} ${lookingUp ? 'redeem-btn--loading' : ''}`}
+                  onClick={codeValue.trim() && !lookingUp ? handleCodeLookup : undefined}
+                >
+                  <Text>{lookingUp ? t('redeem.lookingUp') : t('redeem.nextStep')}</Text>
+                </View>
+                <View className='redeem-cancel' onClick={handleBack}>
+                  <Text>{t('redeem.cancelButton')}</Text>
+                </View>
+              </>
+            )}
+
+            {/* Step 2: pick one of multiple candidates */}
+            {lookedUp && candidates.length > 1 && !selectedCandidate && (
+              <>
+                <View className='redeem-candidates'>
+                  <Text className='redeem-candidates__title'>{t('redeem.selectProductTitle')}</Text>
+                  <Text className='redeem-candidates__subtitle'>{t('redeem.selectProductSubtitle')}</Text>
+                  {candidates.map((candidate) => {
+                    const soldOut = candidate.stock <= 0 || candidate.status !== 'active';
+                    return (
+                      <View
+                        key={candidate.productId}
+                        className={`redeem-candidates__item ${soldOut ? 'redeem-candidates__item--disabled' : ''}`}
+                        onClick={soldOut ? undefined : () => { setError(''); setSelectedCandidate(candidate); }}
+                      >
+                        {candidate.imageUrl ? (
+                          <Image className='redeem-candidates__image' src={candidate.imageUrl} mode='aspectFill' />
+                        ) : (
+                          <View className='redeem-candidates__image-placeholder'>
+                            <TicketIcon size={28} color='var(--text-tertiary)' />
+                          </View>
+                        )}
+                        <View className='redeem-candidates__info'>
+                          <Text className='redeem-candidates__name'>{candidate.name}</Text>
+                          <Text className={`redeem-candidates__stock ${soldOut ? 'redeem-candidates__stock--out' : ''}`}>
+                            {soldOut ? t('redeem.candidateOutOfStock') : t('redeem.candidateStock', { count: candidate.stock })}
+                          </Text>
+                        </View>
+                        {!soldOut && <Text className='redeem-candidates__arrow'>›</Text>}
+                      </View>
+                    );
+                  })}
+                </View>
+                <View className='redeem-cancel' onClick={resetCodeFlow}>
+                  <Text>{t('redeem.reenterCode')}</Text>
+                </View>
+              </>
+            )}
+
+            {/* Step 3: confirm selected candidate + shipping address */}
+            {selectedCandidate && (
+              <>
+                <View className='redeem-product'>
+                  {selectedCandidate.imageUrl ? (
+                    <Image className='redeem-product__image' src={selectedCandidate.imageUrl} mode='aspectFill' />
+                  ) : (
+                    <View className='redeem-product__image-placeholder'>
+                      <Text className='redeem-product__image-placeholder-icon'>
+                        <TicketIcon size={32} color='var(--text-tertiary)' />
+                      </Text>
+                    </View>
+                  )}
+                  <View className='redeem-product__info'>
+                    <Text className='redeem-product__name'>{selectedCandidate.name}</Text>
+                    <Text className='redeem-product__type redeem-product__type--code'>
+                      {t('redeem.productTypeCodeExclusive')}
+                    </Text>
+                  </View>
+                </View>
+                {renderAddressSelector()}
+                <View
+                  className={`redeem-btn ${!selectedAddressId || submitting ? 'redeem-btn--disabled' : ''} ${submitting ? 'redeem-btn--loading' : ''}`}
+                  onClick={selectedAddressId && !submitting ? handleCodeRedeem : undefined}
+                >
+                  <Text>{submitting ? t('redeem.redeeming') : t('redeem.confirmRedeem')}</Text>
+                </View>
+                {candidates.length > 1 && (
+                  <View className='redeem-cancel' onClick={() => { setError(''); setSelectedCandidate(null); }}>
+                    <Text>{t('redeem.changeProduct')}</Text>
+                  </View>
+                )}
+                <View className='redeem-cancel' onClick={handleBack}>
+                  <Text>{t('redeem.cancelButton')}</Text>
+                </View>
+              </>
+            )}
           </>
         )}
 
