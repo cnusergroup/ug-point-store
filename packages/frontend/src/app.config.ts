@@ -33,6 +33,7 @@ export default defineAppConfig({
     'pages/admin/reports',
     'pages/admin/credentials',
     'pages/admin/wishes',
+    'pages/admin/ugl-exit-review',
     'pages/orders/index',
     'pages/order-detail/index',
     'pages/order-confirm/index',
@@ -52,6 +53,8 @@ export default defineAppConfig({
     'pages/wishes/mine',
     'pages/privacy/index',
     'pages/code-of-conduct/index',
+    'pages/query-login/index',
+    'pages/query-dashboard/index',
   ],
   window: {
     backgroundTextStyle: 'dark',

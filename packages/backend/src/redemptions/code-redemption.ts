@@ -2,6 +2,7 @@ import {
   DynamoDBDocumentClient,
   QueryCommand,
   GetCommand,
+  BatchGetCommand,
   TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { ulid } from 'ulid';
@@ -70,11 +71,19 @@ export async function redeemWithCode(
     };
   }
 
-  // 2c. Code's productId matches input.productId
-  if (codeItem.productId !== input.productId) {
+  // 2c. input.productId must be in the code's candidate set
+  //     (productIds ?? [productId]); single-candidate codes are covered by this
+  //     includes check since the only valid selection equals the sole candidate.
+  const candidateIds = resolveCandidateIds(
+    codeItem as { productId?: string; productIds?: string[] },
+  );
+  if (!candidateIds.includes(input.productId)) {
     return {
       success: false,
-      error: { code: ErrorCodes.CODE_PRODUCT_MISMATCH, message: ErrorMessages.CODE_PRODUCT_MISMATCH },
+      error: {
+        code: ErrorCodes.INVALID_PRODUCT_SELECTION,
+        message: ErrorMessages.INVALID_PRODUCT_SELECTION,
+      },
     };
   }
 
@@ -273,4 +282,141 @@ export async function redeemWithCode(
   );
 
   return { success: true, redemptionId, orderId };
+}
+
+/**
+ * A candidate product bound to a redemption code, presented to the user
+ * so they can pick exactly one to redeem.
+ */
+export interface CodeCandidate {
+  productId: string;
+  name: string;
+  imageUrl?: string;
+  stock: number;
+  status: string;
+}
+
+export interface LookupCodeCandidatesResult {
+  success: boolean;
+  candidates?: CodeCandidate[];
+  error?: { code: string; message: string };
+}
+
+/**
+ * Resolve the candidate product set of a redemption code in a backward
+ * compatible way.
+ *
+ * Legacy single-product codes only have `productId`; new multi-candidate codes
+ * have `productIds`. The candidate set is `productIds ?? (productId ? [productId] : [])`,
+ * so legacy codes resolve to `[productId]` and new codes resolve to `productIds`,
+ * keeping redemption and display logic identical for both.
+ *
+ * Requirements: 1.10
+ */
+export function resolveCandidateIds(code: {
+  productId?: string;
+  productIds?: string[];
+}): string[] {
+  return code.productIds ?? (code.productId ? [code.productId] : []);
+}
+
+/**
+ * Look up the candidate products bound to a redemption code.
+ *
+ * Resolves the candidate set as `productIds ?? (productId ? [productId] : [])`
+ * (backward compatible with legacy single-product codes), then batch-fetches the
+ * product details for the frontend "pick one" flow.
+ *
+ * Returns INVALID_CODE when the code does not exist, is not active, or is not a
+ * `product` code; returns CODE_EXHAUSTED when the code has already been used up.
+ *
+ * Requirements: 2.1
+ */
+export async function lookupCodeCandidates(
+  code: string,
+  dynamoClient: DynamoDBDocumentClient,
+  tables: { codesTable: string; productsTable: string },
+): Promise<LookupCodeCandidatesResult> {
+  // 1. Query Codes table by codeValue GSI to find the code
+  const queryResult = await dynamoClient.send(
+    new QueryCommand({
+      TableName: tables.codesTable,
+      IndexName: 'codeValue-index',
+      KeyConditionExpression: 'codeValue = :cv',
+      ExpressionAttributeValues: { ':cv': code },
+    }),
+  );
+
+  const codeItem = queryResult.Items?.[0];
+
+  // 2a. Code exists and status is 'active'
+  if (!codeItem || codeItem.status !== 'active') {
+    return {
+      success: false,
+      error: { code: ErrorCodes.INVALID_CODE, message: ErrorMessages.INVALID_CODE },
+    };
+  }
+
+  // 2b. Code type is 'product'
+  if (codeItem.type !== 'product') {
+    return {
+      success: false,
+      error: { code: ErrorCodes.INVALID_CODE, message: ErrorMessages.INVALID_CODE },
+    };
+  }
+
+  // 2c. Code not exhausted
+  if (codeItem.currentUses >= codeItem.maxUses) {
+    return {
+      success: false,
+      error: { code: ErrorCodes.CODE_EXHAUSTED, message: ErrorMessages.CODE_EXHAUSTED },
+    };
+  }
+
+  // 3. Resolve candidate set (backward compatible with legacy single-product codes)
+  const candidateIds: string[] = resolveCandidateIds(
+    codeItem as { productId?: string; productIds?: string[] },
+  );
+
+  if (candidateIds.length === 0) {
+    return {
+      success: false,
+      error: { code: ErrorCodes.INVALID_CODE, message: ErrorMessages.INVALID_CODE },
+    };
+  }
+
+  // 4. Batch-fetch product details for the candidate set
+  const batchResult = await dynamoClient.send(
+    new BatchGetCommand({
+      RequestItems: {
+        [tables.productsTable]: {
+          Keys: candidateIds.map((productId) => ({ productId })),
+        },
+      },
+    }),
+  );
+
+  const fetched = batchResult.Responses?.[tables.productsTable] ?? [];
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const product of fetched) {
+    byId.set(product.productId as string, product);
+  }
+
+  // 5. Preserve candidate ordering; include only products that still exist
+  const candidates: CodeCandidate[] = [];
+  for (const productId of candidateIds) {
+    const product = byId.get(productId);
+    if (!product) {
+      continue;
+    }
+    candidates.push({
+      productId,
+      name: (product.name as string) ?? '',
+      imageUrl: product.imageUrl as string | undefined,
+      stock: (product.stock as number) ?? 0,
+      status: (product.status as string) ?? '',
+    });
+  }
+
+  return { success: true, candidates };
 }

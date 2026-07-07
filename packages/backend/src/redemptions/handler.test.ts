@@ -15,6 +15,7 @@ vi.mock('./points-redemption', () => ({
 }));
 vi.mock('./code-redemption', () => ({
   redeemWithCode: vi.fn(),
+  lookupCodeCandidates: vi.fn(),
 }));
 vi.mock('./history', () => ({
   getRedemptionHistory: vi.fn(),
@@ -36,7 +37,7 @@ vi.mock('../middleware/auth-middleware', () => ({
 
 import { handler } from './handler';
 import { redeemWithPoints } from './points-redemption';
-import { redeemWithCode } from './code-redemption';
+import { redeemWithCode, lookupCodeCandidates } from './code-redemption';
 import { getRedemptionHistory } from './history';
 
 function makeEvent(overrides: Partial<APIGatewayProxyEvent> = {}): APIGatewayProxyEvent {
@@ -227,6 +228,53 @@ describe('Redemptions Lambda Handler - Routing', () => {
       const result = await handler(event);
       expect(result.statusCode).toBe(400);
       expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+    });
+  });
+
+  describe('POST /api/redemptions/code/lookup', () => {
+    it('forwards code to lookupCodeCandidates and returns candidates on success', async () => {
+      const candidates = [{ productId: 'prod-1', productName: 'Test', eventInfo: 'Event' }];
+      vi.mocked(lookupCodeCandidates).mockResolvedValue({ success: true, candidates: candidates as any });
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/redemptions/code/lookup',
+        body: JSON.stringify({ code: 'CODE123' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body)).toEqual({ candidates });
+      expect(lookupCodeCandidates).toHaveBeenCalledWith(
+        'CODE123',
+        expect.anything(),
+        expect.objectContaining({ codesTable: '', productsTable: '' }),
+      );
+    });
+
+    it('returns error when lookupCodeCandidates fails with INVALID_CODE', async () => {
+      vi.mocked(lookupCodeCandidates).mockResolvedValue({
+        success: false,
+        error: { code: 'INVALID_CODE', message: '兑换码无效' },
+      });
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/redemptions/code/lookup',
+        body: JSON.stringify({ code: 'BAD' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_CODE');
+    });
+
+    it('returns 400 when code is missing', async () => {
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/redemptions/code/lookup',
+        body: JSON.stringify({}),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_REQUEST');
+      expect(lookupCodeCandidates).not.toHaveBeenCalled();
     });
   });
 

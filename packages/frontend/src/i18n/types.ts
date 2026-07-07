@@ -263,6 +263,14 @@ export interface TranslationDict {
     enterCodeSubtitle: string;
     codePlaceholder: string;
     codeHint: string;
+    nextStep: string;
+    lookingUp: string;
+    selectProductTitle: string;
+    selectProductSubtitle: string;
+    candidateStock: string;
+    candidateOutOfStock: string;
+    reenterCode: string;
+    changeProduct: string;
     pointsCodeIcon: string;
     pointsCodeTitle: string;
     pointsCodeSubtitle: string;
@@ -287,6 +295,7 @@ export interface TranslationDict {
     errorNoAddress: string;
     errorAddressNotFound: string;
     errorPurchaseLimitExceeded: string;
+    errorProductSelection: string;
   };
   cart: {
     title: string;
@@ -444,6 +453,15 @@ export interface TranslationDict {
       newContentLabel: string;
       newContentDesc: string;
     };
+    queryCredential: {
+      sectionTitle: string;
+      newPasswordPlaceholder: string;
+      hint: string;
+      success: string;
+      forbiddenError: string;
+      invalidFormatError: string;
+      genericError: string;
+    };
   };
   address: {
     title: string;
@@ -573,6 +591,8 @@ export interface TranslationDict {
       credentialsDesc: string;
       wishesTitle: string;
       wishesDesc: string;
+      uglExitReviewTitle: string;
+      uglExitReviewDesc: string;
       categoryProducts: string;
       categoryOrders: string;
       categoryUsers: string;
@@ -693,6 +713,53 @@ export interface TranslationDict {
       errorSelectProduct: string;
       generateFailed: string;
       productLabel: string;
+      addDistributeCode: string;
+      distributeTitle: string;
+      selectCandidateProductsLabel: string;
+      candidateSelectedCount: string;
+      distributeRecipientsTodo: string;
+      distributeSubmit: string;
+      errorNoCandidateProducts: string;
+      errorTooManyProducts: string;
+      errorNoRecipients: string;
+      errorInvalidAllocatedCount: string;
+      selectRecipientsLabel: string;
+      userKeywordPlaceholder: string;
+      roleFilterAll: string;
+      role_UserGroupLeader: string;
+      role_Speaker: string;
+      role_Volunteer: string;
+      role_Admin: string;
+      role_SuperAdmin: string;
+      role_OrderAdmin: string;
+      userSearchButton: string;
+      userSearching: string;
+      userSearchNoResults: string;
+      userLoadMore: string;
+      userNoEmail: string;
+      distributeSearchPlaceholder: string;
+      distributeSelectAll: string;
+      distributeDeselectAll: string;
+      distributeNoUsers: string;
+      distributeNoUsersSearch: string;
+      distributeCodeCountLabel: string;
+      recipientsListLabel: string;
+      recipientRemove: string;
+      summaryUsers: string;
+      summaryTotalCodes: string;
+      distributeResultTitle: string;
+      distributeResultTotal: string;
+      distributeResultSent: string;
+      distributeResultFailed: string;
+      distributeResultSkipped: string;
+      recipientLabel: string;
+      resendButton: string;
+      resendSuccess: string;
+      resendFailed: string;
+      emailStatusSent: string;
+      emailStatusFailed: string;
+      emailStatusNoEmail: string;
+      emailStatusPending: string;
     };
     users: {
       title: string;
@@ -816,6 +883,19 @@ export interface TranslationDict {
       approveSuccess: string;
       rejectSuccess: string;
       statusUpdateSuccess: string;
+    };
+    uglExitReview: {
+      title: string;
+      backButton: string;
+      confirmExitButton: string;
+      confirmExitTitle: string;
+      confirmExitConfirmText: string;
+      confirmExitSuccess: string;
+      restoreTrackingButton: string;
+      restoreTrackingTitle: string;
+      restoreTrackingConfirmText: string;
+      restoreTrackingSuccess: string;
+      triggeredQuarterLabel: string;
     };
     invites: {
       title: string;
@@ -1030,6 +1110,12 @@ export interface TranslationDict {
         wishFulfilledDesc: string;
         wishRejectedLabel: string;
         wishRejectedDesc: string;
+        uglExitReminderLabel: string;
+        uglExitReminderDesc: string;
+        uglExitNotificationLabel: string;
+        uglExitNotificationDesc: string;
+        uglExitAdminNotificationLabel: string;
+        uglExitAdminNotificationDesc: string;
         editTemplateButton: string;
         templateEditorTitle: string;
         templateSubjectLabel: string;
@@ -1936,6 +2022,7 @@ export interface TranslationDict {
     updateFrequencyWeekly: string;
     updateFrequencyMonthly: string;
     batchTemplate: string;
+    skillClaimTemplate: string;
     reservationTemplate: string;
     quarterlyAwardTemplate: string;
     specialActivityTemplate: string;

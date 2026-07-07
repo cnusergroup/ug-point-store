@@ -14,7 +14,11 @@ export type NotificationType =
   | 'weeklyDigest'
   | 'wishAdopted'
   | 'wishFulfilled'
-  | 'wishRejected';
+  | 'wishRejected'
+  | 'codeDistribution'
+  | 'uglExitReminder'
+  | 'uglExitNotification'
+  | 'uglExitAdminNotification';
 
 export type EmailLocale = 'zh' | 'en' | 'ja' | 'ko' | 'zh-TW';
 

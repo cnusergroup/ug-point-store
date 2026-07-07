@@ -7,6 +7,7 @@ import {
 import type { NotificationType, EmailLocale, BulkSendResult } from './send';
 import { sendEmail, sendBulkEmail } from './send';
 import { getTemplate, replaceVariables } from './templates';
+import { getDefaultTemplates } from './seed';
 import { getFeatureToggles } from '../settings/feature-toggles';
 
 // ============================================================
@@ -32,7 +33,9 @@ export interface SubscribedUser {
 
 const DEFAULT_LOCALE: EmailLocale = 'zh';
 
-const TOGGLE_MAP: Record<NotificationType, string> = {
+// codeDistribution is intentionally omitted: distribution emails are
+// admin-initiated transactional mails that bypass subscription toggle gating.
+const TOGGLE_MAP: Partial<Record<NotificationType, string>> = {
   pointsEarned: 'emailPointsEarnedEnabled',
   newOrder: 'emailNewOrderEnabled',
   orderShipped: 'emailOrderShippedEnabled',
@@ -43,6 +46,9 @@ const TOGGLE_MAP: Record<NotificationType, string> = {
   wishAdopted: 'emailWishAdoptedEnabled',
   wishFulfilled: 'emailWishFulfilledEnabled',
   wishRejected: 'emailWishRejectedEnabled',
+  uglExitReminder: 'emailUglExitReminderEnabled',
+  uglExitNotification: 'emailUglExitNotificationEnabled',
+  uglExitAdminNotification: 'emailUglExitNotificationEnabled',
 };
 
 const ADMIN_ROLES = ['Admin', 'SuperAdmin', 'OrderAdmin'];
@@ -62,6 +68,7 @@ async function isEmailEnabled(
   try {
     const toggles = await getFeatureToggles(ctx.dynamoClient, ctx.usersTable);
     const field = TOGGLE_MAP[type];
+    if (!field) return false;
     return (toggles as unknown as Record<string, unknown>)[field] === true;
   } catch {
     return false;
@@ -681,5 +688,252 @@ export async function sendWishRejectedEmail(
     console.log(`[Notification] wishRejected email sent to ${user.email}`);
   } catch (err) {
     console.error('[Notification] Failed to send wishRejected email:', err);
+  }
+}
+
+// ============================================================
+// Code distribution notification (admin transactional)
+// ============================================================
+
+export interface CodeDistributionEmailResult {
+  status: 'sent' | 'failed' | 'no_email';
+  error?: string;
+}
+
+/**
+ * Load the codeDistribution template for a locale, falling back to the zh
+ * locale and then to the built-in system default template (Req 7.6).
+ * Unlike loadTemplateWithFallback, this never returns null: a configured
+ * template is always available so distribution mails can be delivered.
+ */
+function loadCodeDistributionDefault(locale: EmailLocale): { subject: string; body: string } {
+  const defaults = getDefaultTemplates().filter((t) => t.templateId === 'codeDistribution');
+  const match =
+    defaults.find((t) => t.locale === locale) ??
+    defaults.find((t) => t.locale === DEFAULT_LOCALE) ??
+    defaults[0];
+  return { subject: match.subject, body: match.body };
+}
+
+/**
+ * Send a code distribution email to a single allocated recipient.
+ *
+ * This is an admin-initiated transactional mail, so it intentionally does NOT
+ * pass through the isEmailEnabled subscription toggle gating — the codes must
+ * reach the recipient regardless of their newsletter preferences.
+ *
+ * Loads the user → returns { status: 'no_email' } when the user has no email.
+ * Loads the codeDistribution template (locale → zh fallback, then system
+ * default if missing) → renders nickname/codeList/productNames/codeCount/storeUrl
+ * → sends. codeList is joined as an HTML list (one code per line);
+ * codeCount = codeValues.length.
+ */
+export async function sendCodeDistributionEmail(
+  ctx: NotificationContext & { senderEmail: string },
+  userId: string,
+  codeValues: string[],
+  productNames: string[],
+  storeUrl: string,
+): Promise<CodeDistributionEmailResult> {
+  const user = await loadUser(ctx, userId);
+  if (!user) {
+    return { status: 'no_email' };
+  }
+
+  try {
+    // Locale → zh fallback from DynamoDB; fall back to system default when missing.
+    const template =
+      (await loadTemplateWithFallback(ctx, 'codeDistribution', user.locale)) ??
+      loadCodeDistributionDefault(user.locale);
+
+    const variables: Record<string, string> = {
+      nickname: user.nickname,
+      codeList: codeValues.join('<br>'),
+      productNames: productNames.join('、'),
+      codeCount: String(codeValues.length),
+      storeUrl,
+    };
+
+    const subject = replaceVariables(template.subject, variables);
+    const htmlBody = replaceVariables(template.body, variables);
+
+    await sendEmail(ctx.sesClient, { to: user.email, subject, htmlBody }, ctx.senderEmail);
+    console.log(`[Notification] codeDistribution email sent to ${user.email}`);
+    return { status: 'sent' };
+  } catch (err) {
+    console.error('[Notification] Failed to send codeDistribution email:', err);
+    return { status: 'failed', error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ============================================================
+// UGL Inactivity Exit Flow notification functions
+// ============================================================
+
+/**
+ * Send a "UGL exit reminder" email to a Fully_Inactive_UGL at the start of
+ * their 30-day grace period.
+ *
+ * Checks the emailUglExitReminderEnabled toggle, loads user locale, loads
+ * template (locale → zh fallback), replaces variables, sends via SES.
+ * Mirrors sendPointsEarnedEmail's error handling: catches and logs its own
+ * errors, never throws. Sends only to the target user's registered email.
+ */
+export async function sendUGLExitReminderEmail(
+  ctx: NotificationContext,
+  userId: string,
+  detectionQuarter: string,
+  gracePeriodDeadline: string,
+): Promise<{ sent: boolean }> {
+  try {
+    if (!(await isEmailEnabled(ctx, 'uglExitReminder'))) {
+      return { sent: false };
+    }
+
+    const user = await loadUser(ctx, userId);
+    if (!user) {
+      console.warn(`[Notification] Skipping uglExitReminder: user ${userId} not found or no email`);
+      return { sent: false };
+    }
+
+    const template = await loadTemplateWithFallback(ctx, 'uglExitReminder', user.locale);
+    if (!template) {
+      console.error('[Notification] uglExitReminder template not found');
+      return { sent: false };
+    }
+
+    const variables: Record<string, string> = {
+      nickname: user.nickname,
+      detectionQuarter,
+      gracePeriodDeadline,
+    };
+
+    const subject = replaceVariables(template.subject, variables);
+    const htmlBody = replaceVariables(template.body, variables);
+
+    await sendEmail(ctx.sesClient, { to: user.email, subject, htmlBody }, ctx.senderEmail);
+    console.log(`[Notification] uglExitReminder email sent to ${user.email}`);
+    return { sent: true };
+  } catch (err) {
+    console.error('[Notification] Failed to send uglExitReminder email:', err);
+    return { sent: false };
+  }
+}
+
+/**
+ * Send the Exit_Notification to the affected Pending_Exit_UGL and to every
+ * current SuperAdmin user.
+ *
+ * Both the user notification and the admin notifications are gated by the
+ * SAME emailUglExitNotificationEnabled toggle (checked once up front) — per
+ * design.md, uglExitNotification and uglExitAdminNotification share one
+ * toggle since they are the same logical Exit_Notification event.
+ *
+ * Best-effort throughout: a failure sending to the affected user does not
+ * prevent admin notifications from being attempted, and a failure sending to
+ * one SuperAdmin never blocks the others. Mirrors sendNewOrderEmail's
+ * admin-lookup Scan shape (ProjectionExpression + #roles filter) but filters
+ * to SuperAdmin only, and sends individually per-recipient so failures are
+ * isolated.
+ */
+export async function sendUGLExitNotifications(
+  ctx: NotificationContext,
+  affectedUserId: string,
+  detectionQuarter: string,
+): Promise<{ userSent: boolean; adminsSent: number; adminsFailed: number }> {
+  let userSent = false;
+  let adminsSent = 0;
+  let adminsFailed = 0;
+
+  try {
+    if (!(await isEmailEnabled(ctx, 'uglExitNotification'))) {
+      return { userSent: false, adminsSent: 0, adminsFailed: 0 };
+    }
+
+    // Load the affected user once — reused for both the user notification
+    // (step below) and the affectedNickname/affectedEmail variables in the
+    // admin notification (per TEMPLATE_VARIABLE_MAP's uglExitAdminNotification entry).
+    const affectedUser = await loadUser(ctx, affectedUserId);
+
+    // 1. Send uglExitNotification to the affected user (best-effort).
+    if (affectedUser) {
+      try {
+        const template = await loadTemplateWithFallback(ctx, 'uglExitNotification', affectedUser.locale);
+        if (!template) {
+          console.error('[Notification] uglExitNotification template not found');
+        } else {
+          const variables: Record<string, string> = {
+            nickname: affectedUser.nickname,
+            detectionQuarter,
+          };
+
+          const subject = replaceVariables(template.subject, variables);
+          const htmlBody = replaceVariables(template.body, variables);
+
+          await sendEmail(ctx.sesClient, { to: affectedUser.email, subject, htmlBody }, ctx.senderEmail);
+          console.log(`[Notification] uglExitNotification email sent to ${affectedUser.email}`);
+          userSent = true;
+        }
+      } catch (err) {
+        console.error('[Notification] Failed to send uglExitNotification email to affected user:', err);
+      }
+    } else {
+      console.warn(`[Notification] Skipping uglExitNotification: user ${affectedUserId} not found or no email`);
+    }
+
+    // 2. Find all SuperAdmin recipients (Scan, mirroring sendNewOrderEmail's admin-lookup shape).
+    const result = await ctx.dynamoClient.send(
+      new ScanCommand({
+        TableName: ctx.usersTable,
+        ProjectionExpression: 'email, nickname, locale, #roles',
+        ExpressionAttributeNames: { '#roles': 'roles' },
+      }),
+    );
+
+    const superAdmins: { email: string; locale: EmailLocale }[] = [];
+    for (const item of result.Items ?? []) {
+      const roles: string[] = Array.isArray(item.roles) ? item.roles : [];
+      if (roles.includes('SuperAdmin') && item.email) {
+        superAdmins.push({
+          email: item.email as string,
+          locale: (item.locale as EmailLocale) ?? DEFAULT_LOCALE,
+        });
+      }
+    }
+
+    // 3. Send uglExitAdminNotification to each SuperAdmin (best-effort per recipient).
+    for (const admin of superAdmins) {
+      try {
+        const template = await loadTemplateWithFallback(ctx, 'uglExitAdminNotification', admin.locale);
+        if (!template) {
+          console.error('[Notification] uglExitAdminNotification template not found');
+          adminsFailed += 1;
+          continue;
+        }
+
+        const variables: Record<string, string> = {
+          affectedNickname: affectedUser?.nickname ?? '',
+          affectedEmail: affectedUser?.email ?? '',
+          detectionQuarter,
+        };
+
+        const subject = replaceVariables(template.subject, variables);
+        const htmlBody = replaceVariables(template.body, variables);
+
+        await sendEmail(ctx.sesClient, { to: admin.email, subject, htmlBody }, ctx.senderEmail);
+        adminsSent += 1;
+      } catch (err) {
+        console.error(`[Notification] Failed to send uglExitAdminNotification email to ${admin.email}:`, err);
+        adminsFailed += 1;
+      }
+    }
+
+    console.log(
+      `[Notification] uglExitNotification complete: userSent=${userSent}, adminsSent=${adminsSent}, adminsFailed=${adminsFailed}`,
+    );
+    return { userSent, adminsSent, adminsFailed };
+  } catch (err) {
+    console.error('[Notification] Failed to send uglExitNotifications:', err);
+    return { userSent, adminsSent, adminsFailed };
   }
 }

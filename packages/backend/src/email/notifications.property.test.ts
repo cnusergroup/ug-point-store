@@ -13,6 +13,7 @@ import {
   sendPointsEarnedEmail,
   sendOrderShippedEmail,
   sendNewOrderEmail,
+  sendUGLExitNotifications,
 } from './notifications';
 import type { NotificationContext, SubscribedUser } from './notifications';
 import { getFeatureToggles } from '../settings/feature-toggles';
@@ -827,6 +828,186 @@ describe('Property 8: Email toggle disables sending', () => {
         expect(result.totalBatches).toBe(0);
         expect(result.successCount).toBe(0);
         expect(result.failureCount).toBe(0);
+      }),
+      { numRuns: 100 },
+    );
+  });
+});
+
+
+// ============================================================
+// Property 9: Exit notification recipient correctness
+// ============================================================
+
+describe('Property 9: Exit notification recipient correctness', () => {
+  /**
+   * **Validates: Requirements 6.1, 6.2, 6.4**
+   *
+   * For any affected user and any set of "other" users (each independently
+   * tagged as SuperAdmin or not, and possibly other roles), sendUGLExitNotifications
+   * SHALL send an email to exactly the affected user plus exactly the SuperAdmin
+   * subset of the other users — no other user (non-SuperAdmin, non-affected)
+   * SHALL ever receive an email.
+   */
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  const OTHER_ROLE_POOL = ['Admin', 'OrderAdmin', 'UserGroupLeader', 'Speaker', 'Volunteer'] as const;
+
+  /** Arbitrary for a user id, distinct within a generated set via selector. */
+  const userIdArb = fc.stringMatching(/^[a-zA-Z0-9]{4,10}$/);
+
+  /** Arbitrary for the affected user (email/nickname/locale). */
+  const affectedUserArb = fc.record({
+    userId: userIdArb,
+    email: emailArb,
+    nickname: fc.string({ minLength: 1, maxLength: 20 }),
+    locale: localeArb,
+  });
+
+  /**
+   * Arbitrary for an "other" user: tagged as SuperAdmin or not, and possibly
+   * carrying other roles, with an email/locale.
+   */
+  const otherUserArb = fc.record({
+    userId: userIdArb,
+    email: emailArb,
+    locale: localeArb,
+    isSuperAdmin: fc.boolean(),
+    otherRoles: fc.uniqueArray(fc.constantFrom(...OTHER_ROLE_POOL), { minLength: 0, maxLength: 3 }),
+  });
+
+  /** A set of other users with distinct userIds and distinct emails from each other. */
+  const otherUsersArb = fc.uniqueArray(otherUserArb, {
+    selector: (u) => u.userId,
+    minLength: 0,
+    maxLength: 15,
+  });
+
+  /**
+   * Build a combined arbitrary where the affected user's userId/email never
+   * collides with any "other" user's userId/email, so recipient-set assertions
+   * are unambiguous.
+   */
+  const scenarioArb = fc
+    .tuple(affectedUserArb, otherUsersArb)
+    .filter(
+      ([affected, others]) =>
+        !others.some(
+          (o) => o.userId === affected.userId || o.email === affected.email,
+        ),
+    );
+
+  it('sends to exactly the affected user plus exactly the SuperAdmin set', async () => {
+    await fc.assert(
+      fc.asyncProperty(scenarioArb, async ([affectedUser, otherUsers]) => {
+        mockedGetFeatureToggles.mockResolvedValue({
+          emailUglExitNotificationEnabled: true,
+        } as any);
+
+        const sentTo: string[] = [];
+
+        const mockSesClient = {
+          send: vi.fn().mockImplementation(async (command: any) => {
+            const to: string[] = command.input?.Destination?.ToAddresses ?? [];
+            sentTo.push(...to);
+            return {};
+          }),
+        };
+
+        const mockDynamoClient = {
+          send: vi.fn().mockImplementation(async (command: any) => {
+            const input = command.input;
+
+            // GetCommand for the affected user record (loadUser)
+            if (input.Key?.userId !== undefined) {
+              if (input.Key.userId === affectedUser.userId) {
+                return {
+                  Item: {
+                    userId: affectedUser.userId,
+                    email: affectedUser.email,
+                    nickname: affectedUser.nickname,
+                    locale: affectedUser.locale,
+                  },
+                };
+              }
+              return {};
+            }
+
+            // GetCommand for the template (templateId + locale key)
+            if (input.Key?.templateId !== undefined) {
+              return {
+                Item: {
+                  templateId: input.Key.templateId,
+                  locale: input.Key.locale,
+                  subject: 'Subject {{nickname}} {{affectedNickname}}',
+                  body: '<p>Body {{detectionQuarter}}</p>',
+                },
+              };
+            }
+
+            // ScanCommand for the SuperAdmin lookup (no Key on the input)
+            if (input.Key === undefined) {
+              const items = otherUsers.map((u) => ({
+                email: u.email,
+                nickname: '',
+                locale: u.locale,
+                roles: u.isSuperAdmin ? [...u.otherRoles, 'SuperAdmin'] : u.otherRoles,
+              }));
+              return { Items: items };
+            }
+
+            return { Items: [] };
+          }),
+        };
+
+        const ctx = createMockContext({
+          sesClient: mockSesClient,
+          dynamoClient: mockDynamoClient,
+        });
+
+        sentTo.length = 0;
+
+        const resultPromise = sendUGLExitNotifications(ctx, affectedUser.userId, '2025-Q1');
+        await vi.runAllTimersAsync();
+        const result = await resultPromise;
+
+        const expectedSuperAdminEmails = otherUsers
+          .filter((u) => u.isSuperAdmin)
+          .map((u) => u.email);
+        const expectedRecipients = new Set([affectedUser.email, ...expectedSuperAdminEmails]);
+
+        // Every email actually sent must be in the expected set (no unauthorized recipients).
+        for (const email of sentTo) {
+          expect(expectedRecipients.has(email)).toBe(true);
+        }
+
+        // Every expected recipient must have received exactly one email.
+        const sentSet = new Set(sentTo);
+        for (const email of expectedRecipients) {
+          expect(sentSet.has(email)).toBe(true);
+        }
+
+        // The set of emails actually sent equals exactly the expected set.
+        expect(sentSet).toEqual(expectedRecipients);
+
+        // Non-SuperAdmin, non-affected "other" users never receive an email.
+        const nonRecipientEmails = otherUsers
+          .filter((u) => !u.isSuperAdmin)
+          .map((u) => u.email);
+        for (const email of nonRecipientEmails) {
+          expect(sentSet.has(email)).toBe(false);
+        }
+
+        // adminsSent count should equal the number of SuperAdmins.
+        expect(result.adminsSent).toBe(expectedSuperAdminEmails.length);
       }),
       { numRuns: 100 },
     );

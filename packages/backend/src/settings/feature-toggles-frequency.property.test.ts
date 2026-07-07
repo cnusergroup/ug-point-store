@@ -99,6 +99,8 @@ function validBaseInput(frequencyOverride: any) {
     emailWishAdoptedEnabled: true,
     emailWishFulfilledEnabled: true,
     emailWishRejectedEnabled: true,
+    emailUglExitReminderEnabled: true,
+    emailUglExitNotificationEnabled: true,
     adminEmailProductsEnabled: false,
     adminEmailContentEnabled: false,
     reservationApprovalPoints: 10,

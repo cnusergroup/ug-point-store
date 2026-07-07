@@ -649,6 +649,177 @@ const wishRejectedTemplates: Record<EmailLocale, { subject: string; body: string
 };
 
 // ============================================================
+// codeDistribution templates
+// ============================================================
+
+// Store CTA button parameterized to {{storeUrl}} so the default template
+// always carries a mall link even when no template is configured (Req 7.6).
+const STORE_LINK_VAR_ZH = '<p style="margin-top:16px;text-align:center;"><a href="{{storeUrl}}" style="display:inline-block;padding:10px 24px;background:#6366f1;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">前往积分兑换广场</a></p>';
+const STORE_LINK_VAR_EN = '<p style="margin-top:16px;text-align:center;"><a href="{{storeUrl}}" style="display:inline-block;padding:10px 24px;background:#6366f1;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">Visit Builder Store</a></p>';
+const STORE_LINK_VAR_JA = '<p style="margin-top:16px;text-align:center;"><a href="{{storeUrl}}" style="display:inline-block;padding:10px 24px;background:#6366f1;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">ポイント交換広場へ</a></p>';
+const STORE_LINK_VAR_KO = '<p style="margin-top:16px;text-align:center;"><a href="{{storeUrl}}" style="display:inline-block;padding:10px 24px;background:#6366f1;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">포인트 교환 광장으로</a></p>';
+const STORE_LINK_VAR_ZHTW = '<p style="margin-top:16px;text-align:center;"><a href="{{storeUrl}}" style="display:inline-block;padding:10px 24px;background:#6366f1;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">前往積分兌換廣場</a></p>';
+
+const codeDistributionTemplates: Record<EmailLocale, { subject: string; body: string }> = {
+  zh: {
+    subject: '🎁 你的兑换码到啦，快来积分兑换广场兑换吧！',
+    body: wrap([
+      '<h2 style="color:#6366f1;">Hi {{nickname}}，你的兑换码到啦！</h2>',
+      '<p style="font-size:16px;color:#334155;">你收到了 <strong style="color:#6366f1;">{{codeCount}}</strong> 个专属兑换码，可用于兑换以下候选商品（择一兑换）：</p>',
+      '<p style="color:#64748b;white-space:pre-line;">候选商品：<strong>{{productNames}}</strong></p>',
+      HR,
+      '<h3 style="color:#334155;margin-bottom:8px;">🎟️ 你的兑换码</h3>',
+      '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;font-family:monospace;color:#0f172a;">{{codeList}}</div>',
+      '<p style="margin-top:24px;color:#64748b;">前往积分兑换广场，输入兑换码并选择想要的商品即可完成兑换～ 🛍️</p>',
+      HR,
+      STORE_LINK_VAR_ZH,
+      FOOTER_ZH,
+    ].join('\n  ')),
+  },
+  en: {
+    subject: '🎁 Your redemption codes have arrived!',
+    body: wrap([
+      '<h2 style="color:#6366f1;">Hi {{nickname}}, your redemption codes are here!</h2>',
+      '<p style="font-size:16px;color:#334155;">You have received <strong style="color:#6366f1;">{{codeCount}}</strong> exclusive redemption code(s), redeemable for one of the following products:</p>',
+      '<p style="color:#64748b;white-space:pre-line;">Candidate products: <strong>{{productNames}}</strong></p>',
+      HR,
+      '<h3 style="color:#334155;margin-bottom:8px;">🎟️ Your Codes</h3>',
+      '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;font-family:monospace;color:#0f172a;">{{codeList}}</div>',
+      '<p style="margin-top:24px;color:#64748b;">Head to the Builder Store, enter your code and pick the product you want! 🛍️</p>',
+      HR,
+      STORE_LINK_VAR_EN,
+      FOOTER_EN,
+    ].join('\n  ')),
+  },
+  ja: {
+    subject: '🎁 交換コードが届きました！',
+    body: wrap([
+      '<h2 style="color:#6366f1;">{{nickname}} さん、交換コードが届きました！</h2>',
+      '<p style="font-size:16px;color:#334155;">専用交換コードを <strong style="color:#6366f1;">{{codeCount}}</strong> 個受け取りました。以下の候補商品から1つ選んで交換できます：</p>',
+      '<p style="color:#64748b;white-space:pre-line;">候補商品：<strong>{{productNames}}</strong></p>',
+      HR,
+      '<h3 style="color:#334155;margin-bottom:8px;">🎟️ あなたの交換コード</h3>',
+      '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;font-family:monospace;color:#0f172a;">{{codeList}}</div>',
+      '<p style="margin-top:24px;color:#64748b;">ポイント交換広場でコードを入力し、お好きな商品を選んで交換しましょう！ 🛍️</p>',
+      HR,
+      STORE_LINK_VAR_JA,
+      FOOTER_JA,
+    ].join('\n  ')),
+  },
+  ko: {
+    subject: '🎁 교환 코드가 도착했습니다!',
+    body: wrap([
+      '<h2 style="color:#6366f1;">{{nickname}} 님, 교환 코드가 도착했습니다!</h2>',
+      '<p style="font-size:16px;color:#334155;">전용 교환 코드 <strong style="color:#6366f1;">{{codeCount}}</strong>개를 받았습니다. 다음 후보 상품 중 하나를 선택하여 교환할 수 있습니다:</p>',
+      '<p style="color:#64748b;white-space:pre-line;">후보 상품: <strong>{{productNames}}</strong></p>',
+      HR,
+      '<h3 style="color:#334155;margin-bottom:8px;">🎟️ 내 교환 코드</h3>',
+      '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;font-family:monospace;color:#0f172a;">{{codeList}}</div>',
+      '<p style="margin-top:24px;color:#64748b;">포인트 교환 광장에서 코드를 입력하고 원하는 상품을 선택해 교환하세요! 🛍️</p>',
+      HR,
+      STORE_LINK_VAR_KO,
+      FOOTER_KO,
+    ].join('\n  ')),
+  },
+  'zh-TW': {
+    subject: '🎁 你的兌換碼到啦，快來積分兌換廣場兌換吧！',
+    body: wrap([
+      '<h2 style="color:#6366f1;">Hi {{nickname}}，你的兌換碼到啦！</h2>',
+      '<p style="font-size:16px;color:#334155;">你收到了 <strong style="color:#6366f1;">{{codeCount}}</strong> 個專屬兌換碼，可用於兌換以下候選商品（擇一兌換）：</p>',
+      '<p style="color:#64748b;white-space:pre-line;">候選商品：<strong>{{productNames}}</strong></p>',
+      HR,
+      '<h3 style="color:#334155;margin-bottom:8px;">🎟️ 你的兌換碼</h3>',
+      '<div style="background:#f8fafc;border-radius:8px;padding:16px;margin:12px 0;font-family:monospace;color:#0f172a;">{{codeList}}</div>',
+      '<p style="margin-top:24px;color:#64748b;">前往積分兌換廣場，輸入兌換碼並選擇想要的商品即可完成兌換～ 🛍️</p>',
+      HR,
+      STORE_LINK_VAR_ZHTW,
+      FOOTER_ZHTW,
+    ].join('\n  ')),
+  },
+};
+
+// ============================================================
+// uglExitReminder templates
+// ============================================================
+
+const uglExitReminderTemplates: Record<EmailLocale, { subject: string; body: string }> = {
+  zh: {
+    subject: '⏰ 提醒：你在 {{detectionQuarter}} 无积分活动，请在30天内补齐',
+    body: wrap(['<h2 style="color:#6366f1;">Hi {{nickname}}，请注意你的 UGL 活跃度</h2>','<p style="font-size:16px;color:#334155;">我们检测到你在 <strong style="color:#6366f1;">{{detectionQuarter}}</strong> 没有作为 UGL 产生任何积分活动记录。</p>','<p style="color:#64748b;">请在 <strong>{{gracePeriodDeadline}}</strong> 之前举办一场活动来补齐该季度的活跃度要求。</p>','<p style="margin-top:24px;color:#64748b;">若超过该日期仍未补齐，你的账号将被标记为待退出复核，交由 SuperAdmin 人工审核处理。</p>',HR,STORE_LINK,FOOTER_ZH].join('\n  ')),
+  },
+  en: {
+    subject: '⏰ Reminder: No activity detected in {{detectionQuarter}}, please act within 30 days',
+    body: wrap(['<h2 style="color:#6366f1;">Hi {{nickname}}, please check your UGL activity</h2>','<p style="font-size:16px;color:#334155;">We detected that you had zero UGL points activity in <strong style="color:#6366f1;">{{detectionQuarter}}</strong>.</p>','<p style="color:#64748b;">Please host an activity before <strong>{{gracePeriodDeadline}}</strong> to satisfy this quarter\'s activity requirement.</p>','<p style="margin-top:24px;color:#64748b;">If unresolved by that date, your account will be marked for pending exit and referred to SuperAdmin for manual review.</p>',HR,STORE_LINK,FOOTER_EN].join('\n  ')),
+  },
+  ja: {
+    subject: '⏰ リマインダー：{{detectionQuarter}} の活動が検出されませんでした。30日以内にご対応ください',
+    body: wrap(['<h2 style="color:#6366f1;">{{nickname}} さん、UGL 活動状況をご確認ください</h2>','<p style="font-size:16px;color:#334155;"><strong style="color:#6366f1;">{{detectionQuarter}}</strong> において UGL としてのポイント活動が検出されませんでした。</p>','<p style="color:#64748b;"><strong>{{gracePeriodDeadline}}</strong> までに活動を開催し、今四半期の要件を満たしてください。</p>','<p style="margin-top:24px;color:#64748b;">期限までに対応がない場合、アカウントは退出保留としてマークされ、SuperAdmin による審査に移行します。</p>',HR,STORE_LINK,FOOTER_JA].join('\n  ')),
+  },
+  ko: {
+    subject: '⏰ 알림: {{detectionQuarter}} 활동이 감지되지 않았습니다. 30일 이내에 조치해 주세요',
+    body: wrap(['<h2 style="color:#6366f1;">{{nickname}} 님, UGL 활동 상태를 확인해 주세요</h2>','<p style="font-size:16px;color:#334155;"><strong style="color:#6366f1;">{{detectionQuarter}}</strong>에 UGL로서의 포인트 활동이 감지되지 않았습니다.</p>','<p style="color:#64748b;"><strong>{{gracePeriodDeadline}}</strong> 이전에 활동을 개최하여 이번 분기 요건을 충족해 주세요.</p>','<p style="margin-top:24px;color:#64748b;">해당 날짜까지 해결되지 않으면 계정이 대기 종료 상태로 표시되어 SuperAdmin의 수동 검토로 넘어갑니다.</p>',HR,STORE_LINK,FOOTER_KO].join('\n  ')),
+  },
+  'zh-TW': {
+    subject: '⏰ 提醒：你在 {{detectionQuarter}} 無積分活動，請在30天內補齊',
+    body: wrap(['<h2 style="color:#6366f1;">Hi {{nickname}}，請注意你的 UGL 活躍度</h2>','<p style="font-size:16px;color:#334155;">我們偵測到你在 <strong style="color:#6366f1;">{{detectionQuarter}}</strong> 沒有作為 UGL 產生任何積分活動記錄。</p>','<p style="color:#64748b;">請在 <strong>{{gracePeriodDeadline}}</strong> 之前舉辦一場活動來補齊該季度的活躍度要求。</p>','<p style="margin-top:24px;color:#64748b;">若超過該日期仍未補齊，你的帳號將被標記為待退出複核，交由 SuperAdmin 人工審核處理。</p>',HR,STORE_LINK,FOOTER_ZHTW].join('\n  ')),
+  },
+};
+
+// ============================================================
+// uglExitNotification templates
+// ============================================================
+
+const uglExitNotificationTemplates: Record<EmailLocale, { subject: string; body: string }> = {
+  zh: {
+    subject: '⚠️ 你的账号已被标记为待退出复核',
+    body: wrap(['<h2 style="color:#6366f1;">Hi {{nickname}}，重要通知</h2>','<p style="font-size:16px;color:#334155;">由于你在 <strong style="color:#6366f1;">{{detectionQuarter}}</strong> 未能补齐积分活动要求，你的账号已被标记为<strong>待退出复核</strong>。</p>','<p style="color:#64748b;">此状态需要 SuperAdmin 人工审核处理，账号不会被自动禁用。</p>','<p style="margin-top:24px;color:#64748b;">如有疑问，请联系管理员。</p>',HR,STORE_LINK,FOOTER_ZH].join('\n  ')),
+  },
+  en: {
+    subject: '⚠️ Your account has been marked for pending exit',
+    body: wrap(['<h2 style="color:#6366f1;">Hi {{nickname}}, important notice</h2>','<p style="font-size:16px;color:#334155;">Because you did not remedy the activity requirement for <strong style="color:#6366f1;">{{detectionQuarter}}</strong>, your account has been marked as <strong>pending exit</strong>.</p>','<p style="color:#64748b;">This requires manual review by a SuperAdmin; your account will not be automatically disabled.</p>','<p style="margin-top:24px;color:#64748b;">If you have questions, please contact an administrator.</p>',HR,STORE_LINK,FOOTER_EN].join('\n  ')),
+  },
+  ja: {
+    subject: '⚠️ アカウントが退出保留としてマークされました',
+    body: wrap(['<h2 style="color:#6366f1;">{{nickname}} さん、重要なお知らせ</h2>','<p style="font-size:16px;color:#334155;"><strong style="color:#6366f1;">{{detectionQuarter}}</strong> の活動要件を満たさなかったため、あなたのアカウントは<strong>退出保留</strong>としてマークされました。</p>','<p style="color:#64748b;">この状態は SuperAdmin による人手の審査が必要であり、アカウントが自動的に無効化されることはありません。</p>','<p style="margin-top:24px;color:#64748b;">ご不明な点があれば管理者にお問い合わせください。</p>',HR,STORE_LINK,FOOTER_JA].join('\n  ')),
+  },
+  ko: {
+    subject: '⚠️ 계정이 대기 종료 상태로 표시되었습니다',
+    body: wrap(['<h2 style="color:#6366f1;">{{nickname}} 님, 중요 안내</h2>','<p style="font-size:16px;color:#334155;"><strong style="color:#6366f1;">{{detectionQuarter}}</strong>의 활동 요건을 충족하지 못하여 계정이 <strong>대기 종료</strong> 상태로 표시되었습니다.</p>','<p style="color:#64748b;">이 상태는 SuperAdmin의 수동 검토가 필요하며, 계정이 자동으로 비활성화되지는 않습니다.</p>','<p style="margin-top:24px;color:#64748b;">문의사항이 있으시면 관리자에게 연락해 주세요.</p>',HR,STORE_LINK,FOOTER_KO].join('\n  ')),
+  },
+  'zh-TW': {
+    subject: '⚠️ 你的帳號已被標記為待退出複核',
+    body: wrap(['<h2 style="color:#6366f1;">Hi {{nickname}}，重要通知</h2>','<p style="font-size:16px;color:#334155;">由於你在 <strong style="color:#6366f1;">{{detectionQuarter}}</strong> 未能補齊積分活動要求，你的帳號已被標記為<strong>待退出複核</strong>。</p>','<p style="color:#64748b;">此狀態需要 SuperAdmin 人工審核處理，帳號不會被自動停用。</p>','<p style="margin-top:24px;color:#64748b;">如有疑問，請聯繫管理員。</p>',HR,STORE_LINK,FOOTER_ZHTW].join('\n  ')),
+  },
+};
+
+// ============================================================
+// uglExitAdminNotification templates
+// ============================================================
+
+const uglExitAdminNotificationTemplates: Record<EmailLocale, { subject: string; body: string }> = {
+  zh: {
+    subject: '🔔 有 UGL 用户被标记为待退出复核',
+    body: wrap(['<h2 style="color:#6366f1;">SuperAdmin 通知</h2>','<p style="font-size:16px;color:#334155;">用户 <strong style="color:#6366f1;">{{affectedNickname}}</strong>（{{affectedEmail}}）已被标记为<strong>待退出复核</strong>。</p>','<p style="color:#64748b;">触发季度：<strong>{{detectionQuarter}}</strong></p>','<p style="margin-top:24px;color:#64748b;">请前往管理后台的待退出列表进行人工审核处理。</p>',HR,STORE_LINK,FOOTER_ZH].join('\n  ')),
+  },
+  en: {
+    subject: '🔔 A UGL user has been marked for pending exit',
+    body: wrap(['<h2 style="color:#6366f1;">SuperAdmin Notice</h2>','<p style="font-size:16px;color:#334155;">User <strong style="color:#6366f1;">{{affectedNickname}}</strong> ({{affectedEmail}}) has been marked as <strong>pending exit</strong>.</p>','<p style="color:#64748b;">Triggering quarter: <strong>{{detectionQuarter}}</strong></p>','<p style="margin-top:24px;color:#64748b;">Please review this case in the Pending Exit List in the admin console.</p>',HR,STORE_LINK,FOOTER_EN].join('\n  ')),
+  },
+  ja: {
+    subject: '🔔 UGL ユーザーが退出保留としてマークされました',
+    body: wrap(['<h2 style="color:#6366f1;">SuperAdmin 通知</h2>','<p style="font-size:16px;color:#334155;">ユーザー <strong style="color:#6366f1;">{{affectedNickname}}</strong>（{{affectedEmail}}）が<strong>退出保留</strong>としてマークされました。</p>','<p style="color:#64748b;">対象の四半期：<strong>{{detectionQuarter}}</strong></p>','<p style="margin-top:24px;color:#64748b;">管理コンソールの退出保留リストで人手による審査を行ってください。</p>',HR,STORE_LINK,FOOTER_JA].join('\n  ')),
+  },
+  ko: {
+    subject: '🔔 UGL 사용자가 대기 종료 상태로 표시되었습니다',
+    body: wrap(['<h2 style="color:#6366f1;">SuperAdmin 알림</h2>','<p style="font-size:16px;color:#334155;">사용자 <strong style="color:#6366f1;">{{affectedNickname}}</strong>({{affectedEmail}})님이 <strong>대기 종료</strong> 상태로 표시되었습니다.</p>','<p style="color:#64748b;">해당 분기: <strong>{{detectionQuarter}}</strong></p>','<p style="margin-top:24px;color:#64748b;">관리자 콘솔의 대기 종료 목록에서 수동으로 검토해 주세요.</p>',HR,STORE_LINK,FOOTER_KO].join('\n  ')),
+  },
+  'zh-TW': {
+    subject: '🔔 有 UGL 用戶被標記為待退出複核',
+    body: wrap(['<h2 style="color:#6366f1;">SuperAdmin 通知</h2>','<p style="font-size:16px;color:#334155;">用戶 <strong style="color:#6366f1;">{{affectedNickname}}</strong>（{{affectedEmail}}）已被標記為<strong>待退出複核</strong>。</p>','<p style="color:#64748b;">觸發季度：<strong>{{detectionQuarter}}</strong></p>','<p style="margin-top:24px;color:#64748b;">請前往管理後台的待退出列表進行人工審核處理。</p>',HR,STORE_LINK,FOOTER_ZHTW].join('\n  ')),
+  },
+};
+
+// ============================================================
 // Template map by notification type
 // ============================================================
 
@@ -663,17 +834,21 @@ const TEMPLATE_MAP: Record<NotificationType, Record<EmailLocale, { subject: stri
   wishAdopted: wishAdoptedTemplates,
   wishFulfilled: wishFulfilledTemplates,
   wishRejected: wishRejectedTemplates,
+  codeDistribution: codeDistributionTemplates,
+  uglExitReminder: uglExitReminderTemplates,
+  uglExitNotification: uglExitNotificationTemplates,
+  uglExitAdminNotification: uglExitAdminNotificationTemplates,
 };
 
 const ALL_LOCALES: EmailLocale[] = ['zh', 'en', 'ja', 'ko', 'zh-TW'];
-const ALL_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest', 'wishAdopted', 'wishFulfilled', 'wishRejected'];
+const ALL_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest', 'wishAdopted', 'wishFulfilled', 'wishRejected', 'codeDistribution', 'uglExitReminder', 'uglExitNotification', 'uglExitAdminNotification'];
 
 // ============================================================
 // Public API
 // ============================================================
 
 /**
- * Return all 50 default email templates (10 notification types × 5 locales).
+ * Return all 70 default email templates (14 notification types × 5 locales).
  */
 export function getDefaultTemplates(): EmailTemplate[] {
   const now = new Date().toISOString();
@@ -700,7 +875,7 @@ export function getDefaultTemplates(): EmailTemplate[] {
 const DYNAMO_BATCH_WRITE_LIMIT = 25;
 
 /**
- * Seed all 50 default templates into DynamoDB using BatchWriteCommand.
+ * Seed all 70 default templates into DynamoDB using BatchWriteCommand.
  * DynamoDB BatchWriteCommand supports max 25 items per request,
  * so we split into batches of 25.
  */

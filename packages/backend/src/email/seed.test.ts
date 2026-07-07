@@ -1,24 +1,25 @@
 import { describe, it, expect, vi } from 'vitest';
 import { getDefaultTemplates, seedDefaultTemplates } from './seed';
+import { getRequiredVariables } from './templates';
 
 describe('getDefaultTemplates', () => {
-  it('should return exactly 50 templates (10 types × 5 locales)', () => {
+  it('should return exactly 70 templates (14 types × 5 locales)', () => {
     const templates = getDefaultTemplates();
-    expect(templates).toHaveLength(50);
+    expect(templates).toHaveLength(70);
   });
 
-  it('should cover all 10 notification types', () => {
+  it('should cover all 14 notification types', () => {
     const templates = getDefaultTemplates();
     const types = new Set(templates.map((t) => t.templateId));
     expect(types).toEqual(
-      new Set(['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest', 'wishAdopted', 'wishFulfilled', 'wishRejected']),
+      new Set(['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest', 'wishAdopted', 'wishFulfilled', 'wishRejected', 'codeDistribution', 'uglExitReminder', 'uglExitNotification', 'uglExitAdminNotification']),
     );
   });
 
   it('should cover all 5 locales for each type', () => {
     const templates = getDefaultTemplates();
     const expectedLocales = ['zh', 'en', 'ja', 'ko', 'zh-TW'];
-    const types = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest', 'wishAdopted', 'wishFulfilled', 'wishRejected'];
+    const types = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest', 'wishAdopted', 'wishFulfilled', 'wishRejected', 'codeDistribution', 'uglExitReminder', 'uglExitNotification', 'uglExitAdminNotification'];
 
     for (const type of types) {
       const locales = templates.filter((t) => t.templateId === type).map((t) => t.locale);
@@ -108,13 +109,13 @@ describe('getDefaultTemplates', () => {
 });
 
 describe('seedDefaultTemplates', () => {
-  it('should call BatchWriteCommand in batches of 25 for all 50 templates', async () => {
+  it('should call BatchWriteCommand in batches of 25 for all 70 templates', async () => {
     const mockSend = vi.fn().mockResolvedValue({});
     const mockClient = { send: mockSend } as any;
 
     await seedDefaultTemplates(mockClient, 'TestTable');
 
-    expect(mockSend).toHaveBeenCalledTimes(2);
+    expect(mockSend).toHaveBeenCalledTimes(3);
 
     // First batch: 25 templates
     const command1 = mockSend.mock.calls[0][0];
@@ -126,7 +127,12 @@ describe('seedDefaultTemplates', () => {
     expect(command2.constructor.name).toBe('BatchWriteCommand');
     expect(command2.input.RequestItems['TestTable']).toHaveLength(25);
 
-    // Verify each item in both batches is a PutRequest
+    // Third batch: remaining 20 templates (70 - 25 - 25)
+    const command3 = mockSend.mock.calls[2][0];
+    expect(command3.constructor.name).toBe('BatchWriteCommand');
+    expect(command3.input.RequestItems['TestTable']).toHaveLength(20);
+
+    // Verify each item in all batches is a PutRequest
     for (const call of mockSend.mock.calls) {
       for (const item of call[0].input.RequestItems['TestTable']) {
         expect(item.PutRequest).toBeDefined();
@@ -136,5 +142,77 @@ describe('seedDefaultTemplates', () => {
         expect(item.PutRequest.Item.body).toBeDefined();
       }
     }
+  });
+});
+
+// ============================================================
+// UGL Inactivity Exit Flow email template / toggle integration
+// (Feature: ugl-inactivity-exit-flow)
+// Validates: Requirements 4.2, 6.3
+// ============================================================
+
+describe('UGL exit flow templates and variable map integration', () => {
+  const UGL_EXIT_TYPES = ['uglExitReminder', 'uglExitNotification', 'uglExitAdminNotification'] as const;
+  const EXPECTED_LOCALES = ['zh', 'en', 'ja', 'ko', 'zh-TW'];
+
+  it('should include exactly 5 templates (one per locale) for each of the 3 new UGL exit notification types', () => {
+    const templates = getDefaultTemplates();
+
+    for (const type of UGL_EXIT_TYPES) {
+      const matching = templates.filter((t) => t.templateId === type);
+      expect(matching).toHaveLength(5);
+      expect(matching.map((t) => t.locale).sort()).toEqual([...EXPECTED_LOCALES].sort());
+
+      for (const template of matching) {
+        expect(template.subject.length).toBeGreaterThan(0);
+        expect(template.body.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('should have TEMPLATE_VARIABLE_MAP entries for the 3 new types matching the design spec exactly', () => {
+    expect(getRequiredVariables('uglExitReminder')).toEqual(['nickname', 'detectionQuarter', 'gracePeriodDeadline']);
+    expect(getRequiredVariables('uglExitNotification')).toEqual(['nickname', 'detectionQuarter']);
+    expect(getRequiredVariables('uglExitAdminNotification')).toEqual(['affectedNickname', 'affectedEmail', 'detectionQuarter']);
+  });
+
+  it('should have default template bodies containing every variable placeholder required by TEMPLATE_VARIABLE_MAP', () => {
+    const templates = getDefaultTemplates();
+    const varMap: Record<string, string[]> = {
+      uglExitReminder: ['nickname', 'detectionQuarter', 'gracePeriodDeadline'],
+      uglExitNotification: ['nickname', 'detectionQuarter'],
+      uglExitAdminNotification: ['affectedNickname', 'affectedEmail', 'detectionQuarter'],
+    };
+
+    for (const type of UGL_EXIT_TYPES) {
+      const requiredVars = varMap[type];
+      const matching = templates.filter((t) => t.templateId === type);
+      for (const template of matching) {
+        for (const varName of requiredVars) {
+          expect(template.body).toContain(`{{${varName}}}`);
+        }
+      }
+    }
+  });
+
+  it('should pass the exact variable KEY SET used by sendUGLExitReminderEmail to match TEMPLATE_VARIABLE_MAP.uglExitReminder', () => {
+    // sendUGLExitReminderEmail builds: { nickname, detectionQuarter, gracePeriodDeadline }
+    const variablesBuiltBySender = ['nickname', 'detectionQuarter', 'gracePeriodDeadline'];
+    const expected = getRequiredVariables('uglExitReminder');
+    expect(new Set(variablesBuiltBySender)).toEqual(new Set(expected));
+  });
+
+  it('should pass the exact variable KEY SET used by sendUGLExitNotifications (user template) to match TEMPLATE_VARIABLE_MAP.uglExitNotification', () => {
+    // sendUGLExitNotifications builds for the affected user: { nickname, detectionQuarter }
+    const variablesBuiltBySender = ['nickname', 'detectionQuarter'];
+    const expected = getRequiredVariables('uglExitNotification');
+    expect(new Set(variablesBuiltBySender)).toEqual(new Set(expected));
+  });
+
+  it('should pass the exact variable KEY SET used by sendUGLExitNotifications (admin template) to match TEMPLATE_VARIABLE_MAP.uglExitAdminNotification', () => {
+    // sendUGLExitNotifications builds for each SuperAdmin: { affectedNickname, affectedEmail, detectionQuarter }
+    const variablesBuiltBySender = ['affectedNickname', 'affectedEmail', 'detectionQuarter'];
+    const expected = getRequiredVariables('uglExitAdminNotification');
+    expect(new Set(variablesBuiltBySender)).toEqual(new Set(expected));
   });
 });

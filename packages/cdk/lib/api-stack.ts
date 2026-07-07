@@ -41,6 +41,9 @@ export interface ApiStackProps extends cdk.StackProps {
   wishesTable: dynamodb.Table;
   wishVotesTable: dynamodb.Table;
   activitySkillClaimsTable: dynamodb.Table;
+  queryCredentialsTable: dynamodb.Table;
+  queryLoginAttemptsTable: dynamodb.Table;
+  uglReminderTrackingTable: dynamodb.Table;
   jwtSecret: string;
   wechatAppId: string;
   wechatAppSecret: string;
@@ -49,6 +52,13 @@ export interface ApiStackProps extends cdk.StackProps {
   verifyBaseUrl?: string;
   resetBaseUrl?: string;
   registerBaseUrl?: string;
+  /** 员工活动参与度查询系统独立 JWT 签名密钥（通过 SSM 参数 /points-mall/query-jwt-secret 注入） */
+  queryJwtSecret: string;
+  /** 员工活动参与度查询系统的初始登录用户名（默认账号，密码通过 SSM 参数注入） */
+  queryDefaultUsername: string;
+  /** 员工活动参与度查询系统的初始登录明文密码（通过 SSM 参数 /points-mall/query-default-password 注入，
+   * Query Lambda 冷启动时读取并在运行时哈希，代码和 CDK 模板中不出现任何 bcrypt 哈希） */
+  queryDefaultPassword: string;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -57,17 +67,34 @@ export class ApiStack extends cdk.Stack {
   private readonly pointsFn: NodejsFunction;
   private readonly contentFn: NodejsFunction;
   private readonly conversionFn: DockerImageFunction;
+  private readonly queryFn: NodejsFunction;
 
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
-    const { usersTable, productsTable, codesTable, redemptionsTable, pointsRecordsTable, cartTable, addressesTable, ordersTable, invitesTable, claimsTable, contentItemsTable, contentCategoriesTable, contentCommentsTable, contentLikesTable, contentReservationsTable, batchDistributionsTable, travelApplicationsTable, contentTagsTable, awardTagsTable, rewardTagsTable, emailTemplatesTable, ugsTable, activitiesTable, credentialsTable, credentialSequencesTable, activityTemplateAssociationsTable, wishesTable, wishVotesTable, activitySkillClaimsTable } = props;
+    const { usersTable, productsTable, codesTable, redemptionsTable, pointsRecordsTable, cartTable, addressesTable, ordersTable, invitesTable, claimsTable, contentItemsTable, contentCategoriesTable, contentCommentsTable, contentLikesTable, contentReservationsTable, batchDistributionsTable, travelApplicationsTable, contentTagsTable, awardTagsTable, rewardTagsTable, emailTemplatesTable, ugsTable, activitiesTable, credentialsTable, credentialSequencesTable, activityTemplateAssociationsTable, wishesTable, wishVotesTable, activitySkillClaimsTable, queryCredentialsTable, queryLoginAttemptsTable, uglReminderTrackingTable } = props;
 
     // --- SSM Parameter for JWT Secret ---
     const jwtSecretParam = new ssm.StringParameter(this, 'JwtSecretParam', {
       parameterName: '/points-mall/jwt-secret',
       description: 'JWT signing secret for Points Mall',
       stringValue: props.jwtSecret,
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    // --- SSM Parameters for the independent Employee Participation Query system ---
+    // 员工活动参与度查询系统与商城用户账号体系完全隔离：独立 JWT 密钥、独立初始密码参数。
+    const queryJwtSecretParam = new ssm.StringParameter(this, 'QueryJwtSecretParam', {
+      parameterName: '/points-mall/query-jwt-secret',
+      description: 'JWT signing secret for the independent Employee Participation Query system',
+      stringValue: props.queryJwtSecret,
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    const queryDefaultPasswordParam = new ssm.StringParameter(this, 'QueryDefaultPasswordParam', {
+      parameterName: '/points-mall/query-default-password',
+      description: 'Initial plaintext default password for the Employee Participation Query login (hashed by the Query Lambda on first bootstrap; never stored in CloudFormation/CDK as a hash)',
+      stringValue: props.queryDefaultPassword,
       tier: ssm.ParameterTier.STANDARD,
     });
 
@@ -162,6 +189,10 @@ export class ApiStack extends cdk.Stack {
     adminFn.addEnvironment('UGS_TABLE', ugsTable.tableName);
     adminFn.addEnvironment('ACTIVITIES_TABLE', activitiesTable.tableName);
     adminFn.addEnvironment('ACTIVITY_SKILL_CLAIMS_TABLE', activitySkillClaimsTable.tableName);
+    // ugl-inactivity-exit-flow: manual detection-job trigger + SuperAdmin review routes
+    // (pending-exit list, confirm-exit, restore-tracking) mounted on Admin Lambda.
+    // Note: POINTS_RECORDS_TABLE is already present via tableEnv/commonFnProps.
+    adminFn.addEnvironment('UGL_REMINDER_TRACKING_TABLE', uglReminderTrackingTable.tableName);
 
     // Add travel table env var to Points Lambda
     pointsFn.addEnvironment('TRAVEL_APPLICATIONS_TABLE', travelApplicationsTable.tableName);
@@ -239,6 +270,63 @@ export class ApiStack extends cdk.Stack {
       description: 'Triggers Digest Lambda to send weekly digest emails every Sunday at UTC 00:00',
       schedule: events.Schedule.expression('cron(0 0 ? * SUN *)'),
       targets: [new targets.LambdaFunction(digestFn)],
+    });
+
+    // --- UGLExit Lambda (quarterly inactivity detection + daily grace-period evaluation, triggered by EventBridge) ---
+    const uglExitFn = new NodejsFunction(this, 'UGLExitFunction', {
+      ...commonFnProps,
+      functionName: 'PointsMall-UGLExit',
+      entry: path.join(backendSrcPath, 'ugl-exit/handler.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(120),
+      environment: {
+        USERS_TABLE: usersTable.tableName,
+        POINTS_RECORDS_TABLE: pointsRecordsTable.tableName,
+        UGL_REMINDER_TRACKING_TABLE: uglReminderTrackingTable.tableName,
+        UGS_TABLE: ugsTable.tableName,
+        EMAIL_TEMPLATES_TABLE: emailTemplatesTable.tableName,
+        SENDER_EMAIL: props.senderEmail,
+      },
+    } as NodejsFunctionProps);
+
+    // UGLExit Lambda: read/write Users (uglExit* fields) and PointsRecords (consumedForQuarter);
+    // table-level grants are used because IAM cannot scope to individual attributes.
+    usersTable.grantReadWriteData(uglExitFn);
+    pointsRecordsTable.grantReadWriteData(uglExitFn);
+    // UGLExit Lambda: full read/write on its own reminder-tracking idempotency table
+    uglReminderTrackingTable.grantReadWriteData(uglExitFn);
+    // UGLExit Lambda: read-only access to UGs (pending-exit list UG-name lookup) and EmailTemplates
+    ugsTable.grantReadData(uglExitFn);
+    emailTemplatesTable.grantReadData(uglExitFn);
+
+    // UGLExit Lambda: SES permissions scoped to sender identity
+    uglExitFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+      resources: [
+        `arn:aws:ses:${this.region}:${this.account}:identity/*`,
+        `arn:aws:ses:${this.region}:${this.account}:configuration-set/*`,
+      ],
+    }));
+
+    // EventBridge rule: trigger UGL_Detection_Job at the four fixed quarterly dates
+    // (Apr 1, Jul 1, Oct 1, Jan 1, UTC 00:00)
+    new events.Rule(this, 'UGLExitDetectionScheduleRule', {
+      ruleName: 'PointsMall-UGLExitDetectionSchedule',
+      description: 'Triggers UGLExit Lambda to run quarterly UGL inactivity detection on Apr 1, Jul 1, Oct 1, Jan 1 at UTC 00:00',
+      schedule: events.Schedule.expression('cron(0 0 1 1,4,7,10 ? *)'),
+      targets: [new targets.LambdaFunction(uglExitFn, {
+        event: events.RuleTargetInput.fromObject({ jobType: 'detection' }),
+      })],
+    });
+
+    // EventBridge rule: trigger the daily grace-period evaluation job
+    new events.Rule(this, 'UGLExitGracePeriodScheduleRule', {
+      ruleName: 'PointsMall-UGLExitGracePeriodSchedule',
+      description: 'Triggers UGLExit Lambda daily to evaluate expired grace periods for reminded UGLs',
+      schedule: events.Schedule.rate(cdk.Duration.days(1)),
+      targets: [new targets.LambdaFunction(uglExitFn, {
+        event: events.RuleTargetInput.fromObject({ jobType: 'graceEvaluation' }),
+      })],
     });
 
     // --- Leaderboard Lambda (read-only, decoupled from Admin/Points) ---
@@ -386,6 +474,9 @@ export class ApiStack extends cdk.Stack {
     // Admin Lambda needs access to all PointsMall tables.
     // Using a wildcard resource policy to avoid IAM managed policy size limits (20480 bytes)
     // that would be exceeded if granting each table individually.
+    // This wildcard already covers read/write access to PointsMall-UGLReminderTracking
+    // (ugl-inactivity-exit-flow manual detection-job trigger + review routes) — no separate
+    // grantReadWriteData() call is needed for that table.
     adminFn.addToRolePolicy(new iam.PolicyStatement({
       actions: [
         'dynamodb:BatchGetItem',
@@ -478,6 +569,51 @@ export class ApiStack extends cdk.Stack {
       ],
     }));
 
+    // --- Query Lambda (independent module for Employee Participation Query) ---
+    // 完全独立于商城用户账号体系：独立 DynamoDB 表（QueryCredentials/QueryLoginAttempts）、
+    // 独立 JWT 密钥（queryJwtSecretParam）。仅只读访问四张现有业务表。
+    const queryFn = new NodejsFunction(this, 'QueryFunction', {
+      ...commonFnProps,
+      functionName: 'PointsMall-Query',
+      entry: path.join(backendSrcPath, 'participation/handler.ts'),
+      handler: 'handler',
+      environment: {
+        QUERY_CREDENTIALS_TABLE: queryCredentialsTable.tableName,
+        QUERY_LOGIN_ATTEMPTS_TABLE: queryLoginAttemptsTable.tableName,
+        QUERY_JWT_SECRET_PARAM: queryJwtSecretParam.parameterName,
+        QUERY_DEFAULT_USERNAME: props.queryDefaultUsername,
+        QUERY_DEFAULT_PASSWORD_PARAM: queryDefaultPasswordParam.parameterName,
+        USERS_TABLE: usersTable.tableName,
+        POINTS_RECORDS_TABLE: pointsRecordsTable.tableName,
+        BATCH_DISTRIBUTIONS_TABLE: batchDistributionsTable.tableName,
+        ACTIVITIES_TABLE: activitiesTable.tableName,
+      },
+    } as NodejsFunctionProps);
+    this.queryFn = queryFn;
+
+    // Query Lambda: read/write its own independent tables
+    queryCredentialsTable.grantReadWriteData(queryFn);
+    queryLoginAttemptsTable.grantReadWriteData(queryFn);
+
+    // Query Lambda: read-only access to the four existing business tables it aggregates from
+    usersTable.grantReadData(queryFn);
+    pointsRecordsTable.grantReadData(queryFn);
+    batchDistributionsTable.grantReadData(queryFn);
+    activitiesTable.grantReadData(queryFn);
+
+    // Query Lambda: read its own independent SSM params only (JWT secret + default password).
+    // Deliberately NOT added to the shared ssmReadPolicy/jwtSecretParam grant below —
+    // the Query Lambda must never have access to the mall's own JWT secret (independence requirement).
+    queryFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ssm:GetParameter'],
+      resources: [queryJwtSecretParam.parameterArn, queryDefaultPasswordParam.parameterArn],
+    }));
+
+    // Admin Lambda: read/write access to QueryCredentials table only (NOT QueryLoginAttempts),
+    // to support the SuperAdmin password-change route mounted on the existing Admin Lambda.
+    adminFn.addEnvironment('QUERY_CREDENTIALS_TABLE', queryCredentialsTable.tableName);
+    queryCredentialsTable.grantReadWriteData(adminFn);
+
     // Grant all Lambdas permission to read the JWT secret from SSM
     const ssmReadPolicy = new iam.PolicyStatement({
       actions: ['ssm:GetParameter'],
@@ -563,7 +699,10 @@ export class ApiStack extends cdk.Stack {
     const redemptionInt = new apigateway.LambdaIntegration(redemptionFn);
     const redemptions = api.addResource('redemptions');
     redemptions.addResource('points').addMethod('POST', redemptionInt);
-    redemptions.addResource('code').addMethod('POST', redemptionInt);
+    const redemptionCode = redemptions.addResource('code');
+    redemptionCode.addMethod('POST', redemptionInt);
+    // Multi-candidate lookup: returns candidate products for a code so the user can pick one.
+    redemptionCode.addResource('lookup').addMethod('POST', redemptionInt);
     redemptions.addResource('history').addMethod('GET', redemptionInt);
 
     // Order Lambda integration — defined early because it's also used for admin order routes
@@ -698,6 +837,27 @@ export class ApiStack extends cdk.Stack {
     const c = this.api.root.addResource('c');
     c.addResource('{credentialId}').addMethod('GET', credentialInt);
 
+    // Query routes (Employee Participation Query system — fully independent of the mall's
+    // Auth/Admin Lambdas; own login/session, own DynamoDB tables). All routes handled by
+    // the independent Query Lambda (participation/handler.ts), which does its own internal
+    // routing including the withQuerySession auth wrapper for protected routes.
+    const queryInt = new apigateway.LambdaIntegration(queryFn);
+    const query = api.addResource('query');
+    query.addResource('login').addMethod('POST', queryInt);
+    query.addResource('logout').addMethod('POST', queryInt);
+    query.addResource('speaker-support').addMethod('GET', queryInt);
+    query.addResource('volunteer-support').addMethod('GET', queryInt);
+    query.addResource('total-count').addMethod('GET', queryInt);
+    query.addResource('employee-activity-detail').addMethod('GET', queryInt);
+    query.addResource('activity-detail').addMethod('GET', queryInt);
+    query.addResource('export').addMethod('POST', queryInt);
+
+    // Admin route for SuperAdmin query-credential password management — mounted on the
+    // existing Admin Lambda (adminFn), which already has a catch-all {proxy+} under /api/admin.
+    // No explicit resource is needed here: adminFn's internal routing in admin/handler.ts
+    // matches PUT /api/admin/settings/query-credential-password via the existing
+    // admin.addProxy({ defaultIntegration: adminInt, anyMethod: true }) catch-all above.
+
     new cdk.CfnOutput(this, 'ApiUrl', {
       value: this.api.url,
       exportName: 'PointsMall-ApiUrl',
@@ -751,6 +911,13 @@ export class ApiStack extends cdk.Stack {
     this.conversionFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
       resources: [`${imagesBucketArn}/content/*`],
+    }));
+
+    // Query Lambda: S3 permissions for participation query export uploads + presigned downloads
+    this.queryFn.addEnvironment('IMAGES_BUCKET', imagesBucketName);
+    this.queryFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['s3:PutObject', 's3:GetObject'],
+      resources: [`${imagesBucketArn}/exports/participation-query/*`],
     }));
   }
 }

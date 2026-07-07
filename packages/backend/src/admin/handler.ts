@@ -1,6 +1,6 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand, QueryCommand, BatchGetCommand } from '@aws-sdk/lib-dynamodb';
 import { SESClient } from '@aws-sdk/client-ses';
 import { S3Client } from '@aws-sdk/client-s3';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
@@ -9,6 +9,8 @@ import type { Product, UserRole } from '@points-mall/shared';
 import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware';
 import { assignRoles } from './roles';
 import { batchGeneratePointsCodes, generateProductCodes, listCodes, disableCode, deleteCode } from './codes';
+import { distributeCodes, resendCodeEmail, type RecipientAllocation } from './codes-distribution';
+import { searchUsers } from './user-search';
 import { createPointsProduct, createCodeExclusiveProduct, updateProduct, setProductStatus } from './products';
 import { getUploadUrl, getTempUploadUrl, deleteImage } from './images';
 import { batchGenerateInvites, listInvites, revokeInvite } from './invites';
@@ -53,6 +55,12 @@ import {
   queryEmployeeEngagement,
 } from '../reports/insight-query';
 import { queryInactiveUGLs } from '../reports/inactive-ugl-query';
+import { updateCredentialPassword } from '../participation/credential';
+import { queryPendingExitUGLs } from '../ugl-exit/pending-exit-list';
+import { resolveDetectionQuarter } from '../ugl-exit/quarter';
+import { runUGLDetectionJob } from '../ugl-exit/detection-job';
+import type { UGLExitServiceContext } from '../ugl-exit/detection-job';
+import { confirmExit, restoreTracking } from '../ugl-exit/review-actions';
 
 // Create client outside handler for Lambda container reuse
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -85,6 +93,8 @@ const SYNC_FUNCTION_NAME = process.env.SYNC_FUNCTION_NAME ?? '';
 const ACTIVITY_SKILL_CLAIMS_TABLE = process.env.ACTIVITY_SKILL_CLAIMS_TABLE ?? '';
 const AWARD_TAGS_TABLE = process.env.AWARD_TAGS_TABLE ?? '';
 const REWARD_TAGS_TABLE = process.env.REWARD_TAGS_TABLE ?? '';
+const QUERY_CREDENTIALS_TABLE = process.env.QUERY_CREDENTIALS_TABLE ?? '';
+const UGL_REMINDER_TRACKING_TABLE = process.env.UGL_REMINDER_TRACKING_TABLE ?? '';
 
 const CORS_HEADERS = {
   'Content-Type': 'application/json',
@@ -118,6 +128,7 @@ function parseBody(event: APIGatewayProxyEvent): Record<string, unknown> | null 
 // Path patterns for routes with path parameters
 const USERS_ROLES_REGEX = /^\/api\/admin\/users\/([^/]+)\/roles$/;
 const CODES_DISABLE_REGEX = /^\/api\/admin\/codes\/([^/]+)\/disable$/;
+const CODES_RESEND_REGEX = /^\/api\/admin\/codes\/([^/]+)\/resend$/;
 const CODES_DELETE_REGEX = /^\/api\/admin\/codes\/([^/]+)$/;
 const PRODUCTS_UPDATE_REGEX = /^\/api\/admin\/products\/([^/]+)$/;
 const PRODUCTS_STATUS_REGEX = /^\/api\/admin\/products\/([^/]+)\/status$/;
@@ -145,6 +156,8 @@ const UGS_RENAME_REGEX = /^\/api\/admin\/ugs\/([^/]+)$/;
 const UGS_LEADER_REGEX = /^\/api\/admin\/ugs\/([^/]+)\/leader$/;
 const UGS_DELETE_REGEX = /^\/api\/admin\/ugs\/([^/]+)$/;
 const RESERVATION_APPROVAL_REVIEW_REGEX = /^\/api\/admin\/reservation-approvals\/([^/]+)\/review$/;
+const UGL_EXIT_CONFIRM_REGEX = /^\/api\/admin\/ugl-exit\/([^/]+)\/confirm-exit$/;
+const UGL_EXIT_RESTORE_REGEX = /^\/api\/admin\/ugl-exit\/([^/]+)\/restore-tracking$/;
 
 // Meetup sync config key
 const MEETUP_SYNC_CONFIG_KEY = 'meetup-sync-config';
@@ -222,6 +235,14 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     // PUT /api/admin/settings/content-role-permissions — SuperAdmin only
     if (path === '/api/admin/settings/content-role-permissions') {
       return await handleUpdateContentRolePermissions(event);
+    }
+
+    // PUT /api/admin/settings/query-credential-password — SuperAdmin only
+    if (path === '/api/admin/settings/query-credential-password') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleUpdateQueryCredentialPassword(event);
     }
 
     // PUT /api/admin/ugs/{ugId}/status — SuperAdmin only
@@ -327,6 +348,16 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     }
     if (path === '/api/admin/codes/product-code') {
       return await handleGenerateProductCodes(event);
+    }
+    // POST /api/admin/codes/distribute — 按用户列表生成并邮件分发兑换码（Admin/SuperAdmin）
+    if (path === '/api/admin/codes/distribute') {
+      return await handleDistributeCodes(event);
+    }
+    // POST /api/admin/codes/{codeId}/resend — 单码邮件重发（Admin/SuperAdmin）
+    // 必须在通用 codes 路由之前匹配，且不与 disable(PATCH)/delete(DELETE) 冲突
+    const codesResendMatch = path.match(CODES_RESEND_REGEX);
+    if (codesResendMatch) {
+      return await handleResendCodeEmail(codesResendMatch[1]);
     }
     if (path === '/api/admin/products') {
       if (!isSuperAdmin(event.user.roles as UserRole[])) {
@@ -475,6 +506,35 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
       }
       return await handleReportExport(event);
     }
+
+    // POST /api/admin/ugl-exit/detection-job — SuperAdmin only, manual trigger
+    // (must be checked before the confirm-exit/restore-tracking regexes below, since
+    // "detection-job" would otherwise never match those {userId} patterns anyway, but
+    // keeping the exact-path check first mirrors the design doc's stated ordering)
+    if (path === '/api/admin/ugl-exit/detection-job') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleUGLExitDetectionJob(event);
+    }
+
+    // POST /api/admin/ugl-exit/{userId}/confirm-exit — SuperAdmin only
+    const uglExitConfirmMatch = path.match(UGL_EXIT_CONFIRM_REGEX);
+    if (uglExitConfirmMatch) {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleConfirmExit(uglExitConfirmMatch[1], event);
+    }
+
+    // POST /api/admin/ugl-exit/{userId}/restore-tracking — SuperAdmin only
+    const uglExitRestoreMatch = path.match(UGL_EXIT_RESTORE_REGEX);
+    if (uglExitRestoreMatch) {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleRestoreTracking(uglExitRestoreMatch[1]);
+    }
   }
 
   // GET routes
@@ -503,6 +563,11 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
 
   if (method === 'GET' && path === '/api/admin/users') {
     return await handleListUsers(event);
+  }
+
+  // GET /api/admin/user-search — 按关键字/角色查询用户（Admin/SuperAdmin，Req 4.4、10.4）
+  if (method === 'GET' && path === '/api/admin/user-search') {
+    return await handleSearchUsers(event);
   }
 
   // GET /api/admin/users/{id}/login-history — SuperAdmin only
@@ -712,6 +777,14 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
       return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
     }
     return await handleInactiveUGLReport(event);
+  }
+
+  // GET /api/admin/ugl-exit/pending — SuperAdmin only
+  if (method === 'GET' && path === '/api/admin/ugl-exit/pending') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handleGetPendingExitUGLs();
   }
 
   // PATCH routes
@@ -938,6 +1011,56 @@ async function handleListCodes(event: AuthenticatedEvent): Promise<APIGatewayPro
 
   const result = await listCodes(dynamoClient, CODES_TABLE, { pageSize, lastKey });
 
+  // Enrich distribution-batch codes with the recipient's store nickname/email so the
+  // admin code list can show 收件人昵称 instead of the raw userId.
+  const recipientIds = Array.from(
+    new Set(
+      result.codes
+        .map((c) => (c as { allocatedUserId?: string }).allocatedUserId)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ),
+  );
+
+  if (recipientIds.length > 0) {
+    const userMap: Record<string, { nickname?: string; email?: string }> = {};
+    // BatchGet supports up to 100 keys per request.
+    for (let i = 0; i < recipientIds.length; i += 100) {
+      const chunk = recipientIds.slice(i, i + 100);
+      try {
+        const batch = await dynamoClient.send(
+          new BatchGetCommand({
+            RequestItems: {
+              [USERS_TABLE]: {
+                Keys: chunk.map((userId) => ({ userId })),
+                ProjectionExpression: 'userId, nickname, email',
+              },
+            },
+          }),
+        );
+        for (const item of batch.Responses?.[USERS_TABLE] ?? []) {
+          userMap[item.userId as string] = {
+            nickname: item.nickname as string | undefined,
+            email: item.email as string | undefined,
+          };
+        }
+      } catch (err) {
+        console.error('[Codes] Failed to resolve recipient nicknames:', err);
+      }
+    }
+
+    const enriched = result.codes.map((c) => {
+      const allocatedUserId = (c as { allocatedUserId?: string }).allocatedUserId;
+      if (!allocatedUserId) return c;
+      const u = userMap[allocatedUserId];
+      return {
+        ...c,
+        recipientNickname: u?.nickname ?? '',
+        recipientEmail: u?.email ?? '',
+      };
+    });
+    return jsonResponse(200, { codes: enriched, lastKey: result.lastKey });
+  }
+
   return jsonResponse(200, { codes: result.codes, lastKey: result.lastKey });
 }
 
@@ -959,6 +1082,96 @@ async function handleDeleteCode(codeId: string): Promise<APIGatewayProxyResult> 
   }
 
   return jsonResponse(200, { message: 'Code 已删除' });
+}
+
+/** 构建分发服务依赖（复用 admin handler 现有 client 与表名）。 */
+function buildDistributionDeps() {
+  return {
+    dynamoClient,
+    sesClient,
+    codesTable: CODES_TABLE,
+    productsTable: PRODUCTS_TABLE,
+    usersTable: USERS_TABLE,
+    emailTemplatesTable: EMAIL_TEMPLATES_TABLE,
+    senderEmail: SENDER_EMAIL,
+  };
+}
+
+/**
+ * GET /api/admin/user-search?keyword=&role=&pageSize=&lastKey=
+ * 按关键字（昵称/邮箱，不区分大小写）与角色查询用户，返回单页 + lastKey 游标。
+ * 鉴权由顶层 isAdmin 守卫覆盖（Admin/SuperAdmin，OrderAdmin 一律 403）。
+ */
+async function handleSearchUsers(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const params = event.queryStringParameters ?? {};
+
+  const keyword = params.keyword || undefined;
+  const role = (params.role as UserRole | undefined) || undefined;
+  const pageSize = params.pageSize ? parseInt(params.pageSize, 10) : undefined;
+
+  let lastKey: Record<string, unknown> | undefined;
+  if (params.lastKey) {
+    try {
+      lastKey = JSON.parse(params.lastKey);
+    } catch {
+      // ignore invalid lastKey — 从首页查询
+    }
+  }
+
+  const result = await searchUsers(
+    { keyword, role, pageSize: Number.isNaN(pageSize) ? undefined : pageSize, lastKey },
+    dynamoClient,
+    USERS_TABLE,
+  );
+
+  return jsonResponse(200, { users: result.users, lastKey: result.lastKey });
+}
+
+/**
+ * POST /api/admin/codes/distribute
+ * 按用户列表生成并邮件分发兑换码。成功返回 201 + 分发摘要。
+ * 鉴权由顶层 isAdmin 守卫覆盖（Admin/SuperAdmin，OrderAdmin 一律 403）。
+ */
+async function handleDistributeCodes(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || !Array.isArray(body.productIds) || !Array.isArray(body.recipients)) {
+    return errorResponse('INVALID_REQUEST', 'Missing required fields: productIds, recipients', 400);
+  }
+
+  const result = await distributeCodes(
+    {
+      productIds: body.productIds as string[],
+      recipients: body.recipients as RecipientAllocation[],
+    },
+    buildDistributionDeps(),
+  );
+
+  if (!result.success || !result.data) {
+    return errorResponse(
+      result.error?.code ?? 'GENERATION_FAILED',
+      result.error?.message ?? '兑换码分发失败',
+    );
+  }
+
+  return jsonResponse(201, result.data);
+}
+
+/**
+ * POST /api/admin/codes/{codeId}/resend
+ * 依据该码持久化的 allocatedUserId 向对应收件用户重发分发邮件。
+ * 鉴权由顶层 isAdmin 守卫覆盖（Admin/SuperAdmin，OrderAdmin 一律 403）。
+ */
+async function handleResendCodeEmail(codeId: string): Promise<APIGatewayProxyResult> {
+  const result = await resendCodeEmail(codeId, buildDistributionDeps());
+
+  if (!result.success || !result.data) {
+    return errorResponse(
+      result.error?.code ?? 'EMAIL_SEND_FAILED',
+      result.error?.message ?? '邮件重发失败',
+    );
+  }
+
+  return jsonResponse(200, result.data);
 }
 
 async function handleCreateProduct(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
@@ -2066,6 +2279,8 @@ async function handleUpdateFeatureToggles(event: AuthenticatedEvent): Promise<AP
       emailWishAdoptedEnabled: body.emailWishAdoptedEnabled === true,       // default false
       emailWishFulfilledEnabled: body.emailWishFulfilledEnabled === true,   // default false
       emailWishRejectedEnabled: body.emailWishRejectedEnabled === true,     // default false
+      emailUglExitReminderEnabled: body.emailUglExitReminderEnabled === true,         // default false
+      emailUglExitNotificationEnabled: body.emailUglExitNotificationEnabled === true, // default false
       adminEmailProductsEnabled: body.adminEmailProductsEnabled === true,  // default false
       adminEmailContentEnabled: body.adminEmailContentEnabled === true,    // default false
       reservationApprovalPoints: typeof body.reservationApprovalPoints === 'number' && Number.isInteger(body.reservationApprovalPoints) && body.reservationApprovalPoints >= 1
@@ -2432,6 +2647,32 @@ async function handleUpdateInviteSettings(event: AuthenticatedEvent): Promise<AP
   return jsonResponse(200, { inviteExpiryDays: body.inviteExpiryDays });
 }
 
+// ---- Query Credential Password Route Handler ----
+
+async function handleUpdateQueryCredentialPassword(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || typeof body.newPassword !== 'string') {
+    return errorResponse('INVALID_REQUEST', 'Missing required field: newPassword', 400);
+  }
+
+  const result = await updateCredentialPassword(
+    {
+      newPassword: body.newPassword,
+      requesterRoles: event.user.roles,
+      requesterId: event.user.userId,
+    },
+    dynamoClient,
+    QUERY_CREDENTIALS_TABLE,
+  );
+
+  if (!result.success) {
+    const statusCode = (ErrorHttpStatus as Record<string, number>)[result.error!.code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { success: true, version: result.version });
+}
+
 // ---- Content Role Permissions Route Handler ----
 
 async function handleUpdateContentRolePermissions(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
@@ -2489,6 +2730,20 @@ function buildNotificationContext(): NotificationContext {
     emailTemplatesTable: EMAIL_TEMPLATES_TABLE,
     usersTable: USERS_TABLE,
     senderEmail: SENDER_EMAIL,
+  };
+}
+
+// ---- UGL Exit Manual Trigger / Review Route Handlers ----
+
+function buildUGLExitServiceContext(): UGLExitServiceContext {
+  return {
+    dynamoClient,
+    sesClient,
+    usersTable: USERS_TABLE,
+    pointsRecordsTable: POINTS_RECORDS_TABLE,
+    trackingTable: UGL_REMINDER_TRACKING_TABLE,
+    senderEmail: SENDER_EMAIL,
+    emailTemplatesTable: EMAIL_TEMPLATES_TABLE,
   };
 }
 
@@ -2606,7 +2861,7 @@ async function handleSendContentNotification(event: AuthenticatedEvent): Promise
 
 // ---- Email Template Route Handlers ----
 
-const VALID_NOTIFICATION_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest', 'wishAdopted', 'wishFulfilled', 'wishRejected'];
+const VALID_NOTIFICATION_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest', 'wishAdopted', 'wishFulfilled', 'wishRejected', 'uglExitReminder', 'uglExitNotification', 'uglExitAdminNotification'];
 const VALID_LOCALES: EmailLocale[] = ['zh', 'en', 'ja', 'ko', 'zh-TW'];
 
 async function handleListEmailTemplates(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
@@ -3555,6 +3810,53 @@ async function handleInactiveUGLReport(event: AuthenticatedEvent): Promise<APIGa
   }
 
   return jsonResponse(200, result);
+}
+
+async function handleGetPendingExitUGLs(): Promise<APIGatewayProxyResult> {
+  const records = await queryPendingExitUGLs(dynamoClient, {
+    usersTable: USERS_TABLE,
+    ugsTable: UGS_TABLE,
+  });
+  return jsonResponse(200, { records });
+}
+
+async function handleUGLExitDetectionJob(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event) as Record<string, unknown> | null;
+  const quarter = (body?.quarter as string | undefined) || undefined;
+
+  const resolution = resolveDetectionQuarter(quarter);
+  if (!resolution.valid) {
+    return errorResponse(resolution.error.code, resolution.error.message, 400);
+  }
+
+  const summary = await runUGLDetectionJob(resolution.quarter, buildUGLExitServiceContext());
+  return jsonResponse(200, summary);
+}
+
+async function handleConfirmExit(userId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const result = await confirmExit(
+    userId,
+    event.user.userId,
+    event.user.roles,
+    dynamoClient,
+    USERS_TABLE,
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message);
+  }
+
+  return jsonResponse(200, { success: true });
+}
+
+async function handleRestoreTracking(userId: string): Promise<APIGatewayProxyResult> {
+  const result = await restoreTracking(userId, dynamoClient, USERS_TABLE);
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message);
+  }
+
+  return jsonResponse(200, { success: true });
 }
 
 // ---- Website Sync Config Route Handlers ----

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
 import { View, Text, Switch, Input } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useAppStore } from '../../store';
@@ -54,6 +54,8 @@ interface FeatureToggles {
   emailWishAdoptedEnabled: boolean;
   emailWishFulfilledEnabled: boolean;
   emailWishRejectedEnabled: boolean;
+  emailUglExitReminderEnabled: boolean;
+  emailUglExitNotificationEnabled: boolean;
   reservationApprovalPoints: number;
   leaderboardRankingEnabled: boolean;
   leaderboardAnnouncementEnabled: boolean;
@@ -83,7 +85,7 @@ interface PointsRuleConfig {
   articleEditingPoints: number;
 }
 
-type NotificationType = 'pointsEarned' | 'newOrder' | 'orderShipped' | 'newProduct' | 'newContent' | 'contentUpdated' | 'weeklyDigest' | 'wishAdopted' | 'wishFulfilled' | 'wishRejected';
+type NotificationType = 'pointsEarned' | 'newOrder' | 'orderShipped' | 'newProduct' | 'newContent' | 'contentUpdated' | 'weeklyDigest' | 'wishAdopted' | 'wishFulfilled' | 'wishRejected' | 'uglExitReminder' | 'uglExitNotification' | 'uglExitAdminNotification';
 
 interface TravelSponsorshipSettings {
   travelSponsorshipEnabled: boolean;
@@ -121,6 +123,9 @@ const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   wishAdopted: 'admin.settings.email.wishAdoptedLabel',
   wishFulfilled: 'admin.settings.email.wishFulfilledLabel',
   wishRejected: 'admin.settings.email.wishRejectedLabel',
+  uglExitReminder: 'admin.settings.email.uglExitReminderLabel',
+  uglExitNotification: 'admin.settings.email.uglExitNotificationLabel',
+  uglExitAdminNotification: 'admin.settings.email.uglExitAdminNotificationLabel',
 };
 
 interface MeetupSyncConfigState {
@@ -478,6 +483,8 @@ export default function AdminSettingsPage() {
     emailWishAdoptedEnabled: true,
     emailWishFulfilledEnabled: true,
     emailWishRejectedEnabled: true,
+    emailUglExitReminderEnabled: true,
+    emailUglExitNotificationEnabled: true,
     reservationApprovalPoints: 10,
     leaderboardRankingEnabled: false,
     leaderboardAnnouncementEnabled: false,
@@ -1129,6 +1136,8 @@ export default function AdminSettingsPage() {
           emailWishAdoptedEnabled: updated.emailWishAdoptedEnabled,
           emailWishFulfilledEnabled: updated.emailWishFulfilledEnabled,
           emailWishRejectedEnabled: updated.emailWishRejectedEnabled,
+          emailUglExitReminderEnabled: updated.emailUglExitReminderEnabled,
+          emailUglExitNotificationEnabled: updated.emailUglExitNotificationEnabled,
           reservationApprovalPoints: updated.reservationApprovalPoints,
           leaderboardRankingEnabled: updated.leaderboardRankingEnabled,
           leaderboardAnnouncementEnabled: updated.leaderboardAnnouncementEnabled,
@@ -1182,6 +1191,8 @@ export default function AdminSettingsPage() {
           emailWishAdoptedEnabled: updated.emailWishAdoptedEnabled,
           emailWishFulfilledEnabled: updated.emailWishFulfilledEnabled,
           emailWishRejectedEnabled: updated.emailWishRejectedEnabled,
+          emailUglExitReminderEnabled: updated.emailUglExitReminderEnabled,
+          emailUglExitNotificationEnabled: updated.emailUglExitNotificationEnabled,
           reservationApprovalPoints: updated.reservationApprovalPoints,
           leaderboardRankingEnabled: updated.leaderboardRankingEnabled,
           leaderboardAnnouncementEnabled: updated.leaderboardAnnouncementEnabled,
@@ -1237,6 +1248,8 @@ export default function AdminSettingsPage() {
           emailWishAdoptedEnabled: updated.emailWishAdoptedEnabled,
           emailWishFulfilledEnabled: updated.emailWishFulfilledEnabled,
           emailWishRejectedEnabled: updated.emailWishRejectedEnabled,
+          emailUglExitReminderEnabled: updated.emailUglExitReminderEnabled,
+          emailUglExitNotificationEnabled: updated.emailUglExitNotificationEnabled,
           reservationApprovalPoints: updated.reservationApprovalPoints,
           leaderboardRankingEnabled: updated.leaderboardRankingEnabled,
           leaderboardAnnouncementEnabled: updated.leaderboardAnnouncementEnabled,
@@ -1289,6 +1302,8 @@ export default function AdminSettingsPage() {
           emailWishAdoptedEnabled: updated.emailWishAdoptedEnabled,
           emailWishFulfilledEnabled: updated.emailWishFulfilledEnabled,
           emailWishRejectedEnabled: updated.emailWishRejectedEnabled,
+          emailUglExitReminderEnabled: updated.emailUglExitReminderEnabled,
+          emailUglExitNotificationEnabled: updated.emailUglExitNotificationEnabled,
           reservationApprovalPoints: updated.reservationApprovalPoints,
           leaderboardRankingEnabled: updated.leaderboardRankingEnabled,
           leaderboardAnnouncementEnabled: updated.leaderboardAnnouncementEnabled,
@@ -1345,6 +1360,8 @@ export default function AdminSettingsPage() {
           emailWishAdoptedEnabled: updated.emailWishAdoptedEnabled,
           emailWishFulfilledEnabled: updated.emailWishFulfilledEnabled,
           emailWishRejectedEnabled: updated.emailWishRejectedEnabled,
+          emailUglExitReminderEnabled: updated.emailUglExitReminderEnabled,
+          emailUglExitNotificationEnabled: updated.emailUglExitNotificationEnabled,
           reservationApprovalPoints: updated.reservationApprovalPoints,
           leaderboardRankingEnabled: updated.leaderboardRankingEnabled,
           leaderboardAnnouncementEnabled: updated.leaderboardAnnouncementEnabled,
@@ -1397,6 +1414,8 @@ export default function AdminSettingsPage() {
           emailWishAdoptedEnabled: updated.emailWishAdoptedEnabled,
           emailWishFulfilledEnabled: updated.emailWishFulfilledEnabled,
           emailWishRejectedEnabled: updated.emailWishRejectedEnabled,
+          emailUglExitReminderEnabled: updated.emailUglExitReminderEnabled,
+          emailUglExitNotificationEnabled: updated.emailUglExitNotificationEnabled,
           reservationApprovalPoints: updated.reservationApprovalPoints,
           leaderboardRankingEnabled: updated.leaderboardRankingEnabled,
           leaderboardAnnouncementEnabled: updated.leaderboardAnnouncementEnabled,
@@ -1638,6 +1657,8 @@ export default function AdminSettingsPage() {
           emailWishAdoptedEnabled: settings.emailWishAdoptedEnabled,
           emailWishFulfilledEnabled: settings.emailWishFulfilledEnabled,
           emailWishRejectedEnabled: settings.emailWishRejectedEnabled,
+          emailUglExitReminderEnabled: settings.emailUglExitReminderEnabled,
+          emailUglExitNotificationEnabled: settings.emailUglExitNotificationEnabled,
           reservationApprovalPoints: settings.reservationApprovalPoints,
           leaderboardRankingEnabled: settings.leaderboardRankingEnabled,
           leaderboardAnnouncementEnabled: settings.leaderboardAnnouncementEnabled,
@@ -2164,67 +2185,101 @@ export default function AdminSettingsPage() {
                   <View className='toggle-list'>
                     {([
                       {
+                        rowId: 'pointsEarned',
                         key: 'emailPointsEarnedEnabled' as keyof FeatureToggles,
                         notificationType: 'pointsEarned' as NotificationType,
                         labelKey: 'admin.settings.email.pointsEarnedLabel',
                         descKey: 'admin.settings.email.pointsEarnedDesc',
                       },
                       {
+                        rowId: 'newOrder',
                         key: 'emailNewOrderEnabled' as keyof FeatureToggles,
                         notificationType: 'newOrder' as NotificationType,
                         labelKey: 'admin.settings.email.newOrderLabel',
                         descKey: 'admin.settings.email.newOrderDesc',
                       },
                       {
+                        rowId: 'orderShipped',
                         key: 'emailOrderShippedEnabled' as keyof FeatureToggles,
                         notificationType: 'orderShipped' as NotificationType,
                         labelKey: 'admin.settings.email.orderShippedLabel',
                         descKey: 'admin.settings.email.orderShippedDesc',
                       },
                       {
+                        rowId: 'newProduct',
                         key: 'emailNewProductEnabled' as keyof FeatureToggles,
                         notificationType: 'newProduct' as NotificationType,
                         labelKey: 'admin.settings.email.newProductLabel',
                         descKey: 'admin.settings.email.newProductDesc',
                       },
                       {
+                        rowId: 'newContent',
                         key: 'emailNewContentEnabled' as keyof FeatureToggles,
                         notificationType: 'newContent' as NotificationType,
                         labelKey: 'admin.settings.email.newContentLabel',
                         descKey: 'admin.settings.email.newContentDesc',
                       },
                       {
+                        rowId: 'contentUpdated',
                         key: 'emailContentUpdatedEnabled' as keyof FeatureToggles,
                         notificationType: 'contentUpdated' as NotificationType,
                         labelKey: 'admin.settings.email.contentUpdatedLabel',
                         descKey: 'admin.settings.email.contentUpdatedDesc',
                       },
                       {
+                        rowId: 'weeklyDigest',
                         key: 'emailWeeklyDigestEnabled' as keyof FeatureToggles,
                         notificationType: 'weeklyDigest' as NotificationType,
                         labelKey: 'admin.settings.email.weeklyDigestLabel',
                         descKey: 'admin.settings.email.weeklyDigestDesc',
                       },
                       {
+                        rowId: 'wishAdopted',
                         key: 'emailWishAdoptedEnabled' as keyof FeatureToggles,
                         notificationType: 'wishAdopted' as NotificationType,
                         labelKey: 'admin.settings.email.wishAdoptedLabel',
                         descKey: 'admin.settings.email.wishAdoptedDesc',
                       },
                       {
+                        rowId: 'wishFulfilled',
                         key: 'emailWishFulfilledEnabled' as keyof FeatureToggles,
                         notificationType: 'wishFulfilled' as NotificationType,
                         labelKey: 'admin.settings.email.wishFulfilledLabel',
                         descKey: 'admin.settings.email.wishFulfilledDesc',
                       },
                       {
+                        rowId: 'wishRejected',
                         key: 'emailWishRejectedEnabled' as keyof FeatureToggles,
                         notificationType: 'wishRejected' as NotificationType,
                         labelKey: 'admin.settings.email.wishRejectedLabel',
                         descKey: 'admin.settings.email.wishRejectedDesc',
                       },
-                    ] as { key: keyof FeatureToggles; notificationType: NotificationType; labelKey: string; descKey: string }[]).map((item) => (
-                      <View key={item.key} className='email-toggle-item'>
+                      {
+                        rowId: 'uglExitReminder',
+                        key: 'emailUglExitReminderEnabled' as keyof FeatureToggles,
+                        notificationType: 'uglExitReminder' as NotificationType,
+                        labelKey: 'admin.settings.email.uglExitReminderLabel',
+                        descKey: 'admin.settings.email.uglExitReminderDesc',
+                      },
+                      {
+                        rowId: 'uglExitNotification',
+                        key: 'emailUglExitNotificationEnabled' as keyof FeatureToggles,
+                        notificationType: 'uglExitNotification' as NotificationType,
+                        labelKey: 'admin.settings.email.uglExitNotificationLabel',
+                        descKey: 'admin.settings.email.uglExitNotificationDesc',
+                      },
+                      {
+                        // Shares the same toggle as uglExitNotification (design.md: both are
+                        // the same logical Exit_Notification event) — this row exists only to
+                        // expose a separate template editor for the SuperAdmin-facing copy.
+                        rowId: 'uglExitAdminNotification',
+                        key: 'emailUglExitNotificationEnabled' as keyof FeatureToggles,
+                        notificationType: 'uglExitAdminNotification' as NotificationType,
+                        labelKey: 'admin.settings.email.uglExitAdminNotificationLabel',
+                        descKey: 'admin.settings.email.uglExitAdminNotificationDesc',
+                      },
+                    ] as { rowId: string; key: keyof FeatureToggles; notificationType: NotificationType; labelKey: string; descKey: string }[]).map((item) => (
+                      <View key={item.rowId} className='email-toggle-item'>
                         <View className='email-toggle-item__main'>
                           <View className='toggle-item__info'>
                             <Text className='toggle-item__label'>{t(item.labelKey as any)}</Text>
