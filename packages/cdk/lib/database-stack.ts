@@ -32,11 +32,25 @@ export class DatabaseStack extends cdk.Stack {
   public readonly wishesTable: dynamodb.Table;
   public readonly wishVotesTable: dynamodb.Table;
   public readonly activitySkillClaimsTable: dynamodb.Table;
+  public readonly queryCredentialsTable: dynamodb.Table;
+  public readonly queryLoginAttemptsTable: dynamodb.Table;
+  public readonly uglReminderTrackingTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
     // Users table: PK=userId, GSIs: email-index, wechatOpenId-index
+    //
+    // ugl-inactivity-exit-flow feature note: this table gains three new
+    // non-key attributes on user items (no schema/GSI change required):
+    //   - uglExitStatus: 'pending_exit' | absent — set when a UGL is marked
+    //     fully inactive after the 30-day grace period with no makeup activity
+    //   - uglExitTriggeredQuarter: string (e.g. '2025-Q2') — the detection
+    //     quarter that triggered the pending-exit state
+    //   - uglExitMarkedAt: ISO string — when uglExitStatus was set
+    // The existing 'entityType-createdAt-index' GSI (below) is reused with a
+    // FilterExpression (uglExitStatus = 'pending_exit') to list pending-exit
+    // UGLs for SuperAdmin review — no new GSI needed.
     this.usersTable = new dynamodb.Table(this, 'UsersTable', {
       tableName: 'PointsMall-Users',
       partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
@@ -155,6 +169,17 @@ export class DatabaseStack extends cdk.Stack {
     });
 
     // PointsRecords table: PK=recordId, GSI: userId-createdAt-index (PK=userId, SK=createdAt)
+    //
+    // ugl-inactivity-exit-flow feature note: this table gains one new
+    // non-key attribute on records (no schema/GSI change required):
+    //   - consumedForQuarter: string (e.g. '2025-Q2') — set once a record has
+    //     been counted as satisfying UGL activity for a quarter (detection)
+    //     or as a grace-period makeup record, so it cannot be double-counted
+    //     for another quarter/grace-period evaluation
+    // The existing 'type-createdAt-index' and 'userId-createdAt-index' GSIs
+    // (below) are reused with a FilterExpression (targetRole = 'UserGroupLeader'
+    // AND consumedForQuarter not exists) for both the quarterly detection job
+    // and the grace-period makeup query — no new GSI needed.
     this.pointsRecordsTable = new dynamodb.Table(this, 'PointsRecordsTable', {
       tableName: 'PointsMall-PointsRecords',
       partitionKey: { name: 'recordId', type: dynamodb.AttributeType.STRING },
@@ -646,5 +671,52 @@ export class DatabaseStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'ActivityTemplateAssociationsTableName', { value: this.activityTemplateAssociationsTable.tableName, exportName: 'PointsMall-ActivityTemplateAssociationsTableName' });
     new cdk.CfnOutput(this, 'ActivityTemplateAssociationsTableArn', { value: this.activityTemplateAssociationsTable.tableArn, exportName: 'PointsMall-ActivityTemplateAssociationsTableArn' });
+
+    // QueryCredentials table: PK=username（全局唯一一条记录，员工活动参与度查询系统的登录凭证）
+    // 与商城用户账号体系（Users 表）完全隔离，无 GSI。
+    this.queryCredentialsTable = new dynamodb.Table(this, 'QueryCredentialsTable', {
+      tableName: 'PointsMall-QueryCredentials',
+      partitionKey: { name: 'username', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    new cdk.CfnOutput(this, 'QueryCredentialsTableName', { value: this.queryCredentialsTable.tableName, exportName: 'PointsMall-QueryCredentialsTableName' });
+    new cdk.CfnOutput(this, 'QueryCredentialsTableArn', { value: this.queryCredentialsTable.tableArn, exportName: 'PointsMall-QueryCredentialsTableArn' });
+
+    // QueryLoginAttempts table: PK=ip（员工活动参与度查询系统按来源 IP 的登录失败锁定状态）
+    // 启用 TTL 属性自动清理过期记录，无 GSI。
+    this.queryLoginAttemptsTable = new dynamodb.Table(this, 'QueryLoginAttemptsTable', {
+      tableName: 'PointsMall-QueryLoginAttempts',
+      partitionKey: { name: 'ip', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      timeToLiveAttribute: 'ttl',
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    new cdk.CfnOutput(this, 'QueryLoginAttemptsTableName', { value: this.queryLoginAttemptsTable.tableName, exportName: 'PointsMall-QueryLoginAttemptsTableName' });
+    new cdk.CfnOutput(this, 'QueryLoginAttemptsTableArn', { value: this.queryLoginAttemptsTable.tableArn, exportName: 'PointsMall-QueryLoginAttemptsTableArn' });
+
+    // UGLReminderTracking table: PK=userId, SK=quarter (per-user-per-quarter idempotency backbone
+    // for the ugl-inactivity-exit-flow feature's detection + grace-period jobs)
+    // GSI: outcome-gracePeriodDeadline-index (PK=outcome, SK=gracePeriodDeadline) — used by the
+    // daily grace-period evaluation job to find due tracking records.
+    this.uglReminderTrackingTable = new dynamodb.Table(this, 'UGLReminderTrackingTable', {
+      tableName: 'PointsMall-UGLReminderTracking',
+      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'quarter', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.uglReminderTrackingTable.addGlobalSecondaryIndex({
+      indexName: 'outcome-gracePeriodDeadline-index',
+      partitionKey: { name: 'outcome', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'gracePeriodDeadline', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    new cdk.CfnOutput(this, 'UGLReminderTrackingTableName', { value: this.uglReminderTrackingTable.tableName, exportName: 'PointsMall-UGLReminderTrackingTableName' });
+    new cdk.CfnOutput(this, 'UGLReminderTrackingTableArn', { value: this.uglReminderTrackingTable.tableArn, exportName: 'PointsMall-UGLReminderTrackingTableArn' });
   }
 }

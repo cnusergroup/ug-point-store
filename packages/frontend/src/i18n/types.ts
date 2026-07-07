@@ -453,6 +453,15 @@ export interface TranslationDict {
       newContentLabel: string;
       newContentDesc: string;
     };
+    queryCredential: {
+      sectionTitle: string;
+      newPasswordPlaceholder: string;
+      hint: string;
+      success: string;
+      forbiddenError: string;
+      invalidFormatError: string;
+      genericError: string;
+    };
   };
   address: {
     title: string;
@@ -582,6 +591,8 @@ export interface TranslationDict {
       credentialsDesc: string;
       wishesTitle: string;
       wishesDesc: string;
+      uglExitReviewTitle: string;
+      uglExitReviewDesc: string;
       categoryProducts: string;
       categoryOrders: string;
       categoryUsers: string;
@@ -873,6 +884,19 @@ export interface TranslationDict {
       rejectSuccess: string;
       statusUpdateSuccess: string;
     };
+    uglExitReview: {
+      title: string;
+      backButton: string;
+      confirmExitButton: string;
+      confirmExitTitle: string;
+      confirmExitConfirmText: string;
+      confirmExitSuccess: string;
+      restoreTrackingButton: string;
+      restoreTrackingTitle: string;
+      restoreTrackingConfirmText: string;
+      restoreTrackingSuccess: string;
+      triggeredQuarterLabel: string;
+    };
     invites: {
       title: string;
       backButton: string;
@@ -1086,6 +1110,12 @@ export interface TranslationDict {
         wishFulfilledDesc: string;
         wishRejectedLabel: string;
         wishRejectedDesc: string;
+        uglExitReminderLabel: string;
+        uglExitReminderDesc: string;
+        uglExitNotificationLabel: string;
+        uglExitNotificationDesc: string;
+        uglExitAdminNotificationLabel: string;
+        uglExitAdminNotificationDesc: string;
         editTemplateButton: string;
         templateEditorTitle: string;
         templateSubjectLabel: string;
@@ -1992,6 +2022,7 @@ export interface TranslationDict {
     updateFrequencyWeekly: string;
     updateFrequencyMonthly: string;
     batchTemplate: string;
+    skillClaimTemplate: string;
     reservationTemplate: string;
     quarterlyAwardTemplate: string;
     specialActivityTemplate: string;

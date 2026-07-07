@@ -2,13 +2,18 @@ import { useState, useEffect, useCallback } from 'react';
 import { View, Text, Input, Switch } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useAppStore } from '../../store';
-import { request } from '../../utils/request';
+import { request, RequestError } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
 import type { Locale } from '../../i18n/types';
-import { KeyIcon, LogoutIcon, AdminIcon, ChevronRightIcon, GlobeIcon, SettingsIcon, MailIcon } from '../../components/icons';
+import { KeyIcon, LogoutIcon, AdminIcon, ChevronRightIcon, GlobeIcon, SettingsIcon, MailIcon, LockIcon } from '../../components/icons';
 import PageToolbar from '../../components/PageToolbar';
 import './index.scss';
+
+/** 密码规则校验：≥8 位，包含字母和数字（与后端 validateQueryPasswordStrength 保持一致） */
+function isValidQueryPassword(password: string): boolean {
+  return password.length >= 8 && /[a-zA-Z]/.test(password) && /[0-9]/.test(password);
+}
 
 const LOCALE_OPTIONS: { key: Locale; label: string }[] = [
   { key: 'zh', label: '中文' },
@@ -46,6 +51,15 @@ export default function SettingsPage() {
 
   const userRoles = user?.roles ?? [];
   const isAdmin = userRoles.includes('Admin') || userRoles.includes('SuperAdmin');
+  const isSuperAdmin = userRoles.includes('SuperAdmin');
+
+  // Query credential password management state (SuperAdmin only)
+  const [showQueryPasswordForm, setShowQueryPasswordForm] = useState(false);
+  const [queryNewPassword, setQueryNewPassword] = useState('');
+  const [queryPasswordError, setQueryPasswordError] = useState('');
+  const [queryPasswordLoading, setQueryPasswordLoading] = useState(false);
+  const [queryPasswordSuccess, setQueryPasswordSuccess] = useState(false);
+  const [showQueryNewPassword, setShowQueryNewPassword] = useState(false);
 
   // Fetch feature toggles and email subscriptions on mount
   const fetchEmailData = useCallback(async () => {
@@ -142,6 +156,52 @@ export default function SettingsPage() {
       setPasswordError(err?.message || t('settings.passwordChangeFailed'));
     } finally {
       setPasswordLoading(false);
+    }
+  };
+
+  const handleQueryPasswordToggle = () => {
+    setShowQueryPasswordForm((prev) => !prev);
+    setQueryPasswordError('');
+    setQueryPasswordSuccess(false);
+    if (showQueryPasswordForm) {
+      setQueryNewPassword('');
+      setShowQueryNewPassword(false);
+    }
+  };
+
+  const handleQueryPasswordSubmit = async () => {
+    setQueryPasswordError('');
+    setQueryPasswordSuccess(false);
+
+    if (!queryNewPassword || !isValidQueryPassword(queryNewPassword)) {
+      setQueryPasswordError(t('settings.queryCredential.invalidFormatError'));
+      return;
+    }
+
+    setQueryPasswordLoading(true);
+    try {
+      await request({
+        url: '/api/admin/settings/query-credential-password',
+        method: 'PUT',
+        data: { newPassword: queryNewPassword },
+      });
+      setQueryPasswordSuccess(true);
+      setQueryNewPassword('');
+      setTimeout(() => setShowQueryPasswordForm(false), 1500);
+    } catch (err) {
+      if (err instanceof RequestError) {
+        if (err.code === 'FORBIDDEN') {
+          setQueryPasswordError(t('settings.queryCredential.forbiddenError'));
+        } else if (err.code === 'INVALID_PASSWORD_FORMAT') {
+          setQueryPasswordError(t('settings.queryCredential.invalidFormatError'));
+        } else {
+          setQueryPasswordError(t('settings.queryCredential.genericError'));
+        }
+      } else {
+        setQueryPasswordError(t('settings.queryCredential.genericError'));
+      }
+    } finally {
+      setQueryPasswordLoading(false);
     }
   };
 
@@ -388,6 +448,68 @@ export default function SettingsPage() {
                 <ChevronRightIcon size={16} color='var(--text-tertiary)' />
               </View>
             </View>
+            <View className='settings-divider' />
+          </>
+        )}
+
+        {/* Query System Password Management (SuperAdmin only) */}
+        {isSuperAdmin && (
+          <>
+            <View className='settings-item' onClick={handleQueryPasswordToggle}>
+              <View className='settings-item__left'>
+                <View className='settings-item__icon'>
+                  <LockIcon size={20} color='var(--accent-primary)' />
+                </View>
+                <Text className='settings-item__label'>{t('settings.queryCredential.sectionTitle')}</Text>
+              </View>
+              <View className={`settings-item__arrow ${showQueryPasswordForm ? 'settings-item__arrow--expanded' : ''}`}>
+                <ChevronRightIcon size={16} color='var(--text-tertiary)' />
+              </View>
+            </View>
+
+            {showQueryPasswordForm && (
+              <View className='settings-password-form'>
+                <View className='settings-password-form__field'>
+                  <View className='password-field'>
+                    <Input
+                      className='settings-password-form__input'
+                      type='text'
+                      password={!showQueryNewPassword}
+                      placeholder={t('settings.queryCredential.newPasswordPlaceholder')}
+                      value={queryNewPassword}
+                      onInput={(e) => setQueryNewPassword(e.detail.value)}
+                    />
+                    <Text className='password-field__toggle' onClick={() => setShowQueryNewPassword(!showQueryNewPassword)}>
+                      {showQueryNewPassword ? (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                          <line x1="1" y1="1" x2="23" y2="23" />
+                        </svg>
+                      ) : (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      )}
+                    </Text>
+                  </View>
+                </View>
+                <Text className='settings-password-form__hint'>{t('settings.queryCredential.hint')}</Text>
+                {queryPasswordError && (
+                  <Text className='settings-password-form__error'>{queryPasswordError}</Text>
+                )}
+                {queryPasswordSuccess && (
+                  <Text className='settings-password-form__success'>{t('settings.queryCredential.success')}</Text>
+                )}
+                <View
+                  className={`settings-password-form__submit ${queryPasswordLoading ? 'settings-password-form__submit--loading' : ''}`}
+                  onClick={!queryPasswordLoading ? handleQueryPasswordSubmit : undefined}
+                >
+                  <Text>{queryPasswordLoading ? t('settings.submitting') : t('settings.confirmChange')}</Text>
+                </View>
+              </View>
+            )}
+
             <View className='settings-divider' />
           </>
         )}

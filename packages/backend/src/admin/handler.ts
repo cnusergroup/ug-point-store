@@ -55,6 +55,12 @@ import {
   queryEmployeeEngagement,
 } from '../reports/insight-query';
 import { queryInactiveUGLs } from '../reports/inactive-ugl-query';
+import { updateCredentialPassword } from '../participation/credential';
+import { queryPendingExitUGLs } from '../ugl-exit/pending-exit-list';
+import { resolveDetectionQuarter } from '../ugl-exit/quarter';
+import { runUGLDetectionJob } from '../ugl-exit/detection-job';
+import type { UGLExitServiceContext } from '../ugl-exit/detection-job';
+import { confirmExit, restoreTracking } from '../ugl-exit/review-actions';
 
 // Create client outside handler for Lambda container reuse
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -87,6 +93,8 @@ const SYNC_FUNCTION_NAME = process.env.SYNC_FUNCTION_NAME ?? '';
 const ACTIVITY_SKILL_CLAIMS_TABLE = process.env.ACTIVITY_SKILL_CLAIMS_TABLE ?? '';
 const AWARD_TAGS_TABLE = process.env.AWARD_TAGS_TABLE ?? '';
 const REWARD_TAGS_TABLE = process.env.REWARD_TAGS_TABLE ?? '';
+const QUERY_CREDENTIALS_TABLE = process.env.QUERY_CREDENTIALS_TABLE ?? '';
+const UGL_REMINDER_TRACKING_TABLE = process.env.UGL_REMINDER_TRACKING_TABLE ?? '';
 
 const CORS_HEADERS = {
   'Content-Type': 'application/json',
@@ -148,6 +156,8 @@ const UGS_RENAME_REGEX = /^\/api\/admin\/ugs\/([^/]+)$/;
 const UGS_LEADER_REGEX = /^\/api\/admin\/ugs\/([^/]+)\/leader$/;
 const UGS_DELETE_REGEX = /^\/api\/admin\/ugs\/([^/]+)$/;
 const RESERVATION_APPROVAL_REVIEW_REGEX = /^\/api\/admin\/reservation-approvals\/([^/]+)\/review$/;
+const UGL_EXIT_CONFIRM_REGEX = /^\/api\/admin\/ugl-exit\/([^/]+)\/confirm-exit$/;
+const UGL_EXIT_RESTORE_REGEX = /^\/api\/admin\/ugl-exit\/([^/]+)\/restore-tracking$/;
 
 // Meetup sync config key
 const MEETUP_SYNC_CONFIG_KEY = 'meetup-sync-config';
@@ -225,6 +235,14 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
     // PUT /api/admin/settings/content-role-permissions — SuperAdmin only
     if (path === '/api/admin/settings/content-role-permissions') {
       return await handleUpdateContentRolePermissions(event);
+    }
+
+    // PUT /api/admin/settings/query-credential-password — SuperAdmin only
+    if (path === '/api/admin/settings/query-credential-password') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleUpdateQueryCredentialPassword(event);
     }
 
     // PUT /api/admin/ugs/{ugId}/status — SuperAdmin only
@@ -488,6 +506,35 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
       }
       return await handleReportExport(event);
     }
+
+    // POST /api/admin/ugl-exit/detection-job — SuperAdmin only, manual trigger
+    // (must be checked before the confirm-exit/restore-tracking regexes below, since
+    // "detection-job" would otherwise never match those {userId} patterns anyway, but
+    // keeping the exact-path check first mirrors the design doc's stated ordering)
+    if (path === '/api/admin/ugl-exit/detection-job') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleUGLExitDetectionJob(event);
+    }
+
+    // POST /api/admin/ugl-exit/{userId}/confirm-exit — SuperAdmin only
+    const uglExitConfirmMatch = path.match(UGL_EXIT_CONFIRM_REGEX);
+    if (uglExitConfirmMatch) {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleConfirmExit(uglExitConfirmMatch[1], event);
+    }
+
+    // POST /api/admin/ugl-exit/{userId}/restore-tracking — SuperAdmin only
+    const uglExitRestoreMatch = path.match(UGL_EXIT_RESTORE_REGEX);
+    if (uglExitRestoreMatch) {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleRestoreTracking(uglExitRestoreMatch[1]);
+    }
   }
 
   // GET routes
@@ -730,6 +777,14 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
       return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
     }
     return await handleInactiveUGLReport(event);
+  }
+
+  // GET /api/admin/ugl-exit/pending — SuperAdmin only
+  if (method === 'GET' && path === '/api/admin/ugl-exit/pending') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handleGetPendingExitUGLs();
   }
 
   // PATCH routes
@@ -2224,6 +2279,8 @@ async function handleUpdateFeatureToggles(event: AuthenticatedEvent): Promise<AP
       emailWishAdoptedEnabled: body.emailWishAdoptedEnabled === true,       // default false
       emailWishFulfilledEnabled: body.emailWishFulfilledEnabled === true,   // default false
       emailWishRejectedEnabled: body.emailWishRejectedEnabled === true,     // default false
+      emailUglExitReminderEnabled: body.emailUglExitReminderEnabled === true,         // default false
+      emailUglExitNotificationEnabled: body.emailUglExitNotificationEnabled === true, // default false
       adminEmailProductsEnabled: body.adminEmailProductsEnabled === true,  // default false
       adminEmailContentEnabled: body.adminEmailContentEnabled === true,    // default false
       reservationApprovalPoints: typeof body.reservationApprovalPoints === 'number' && Number.isInteger(body.reservationApprovalPoints) && body.reservationApprovalPoints >= 1
@@ -2590,6 +2647,32 @@ async function handleUpdateInviteSettings(event: AuthenticatedEvent): Promise<AP
   return jsonResponse(200, { inviteExpiryDays: body.inviteExpiryDays });
 }
 
+// ---- Query Credential Password Route Handler ----
+
+async function handleUpdateQueryCredentialPassword(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event);
+  if (!body || typeof body.newPassword !== 'string') {
+    return errorResponse('INVALID_REQUEST', 'Missing required field: newPassword', 400);
+  }
+
+  const result = await updateCredentialPassword(
+    {
+      newPassword: body.newPassword,
+      requesterRoles: event.user.roles,
+      requesterId: event.user.userId,
+    },
+    dynamoClient,
+    QUERY_CREDENTIALS_TABLE,
+  );
+
+  if (!result.success) {
+    const statusCode = (ErrorHttpStatus as Record<string, number>)[result.error!.code] ?? 400;
+    return jsonResponse(statusCode, result.error);
+  }
+
+  return jsonResponse(200, { success: true, version: result.version });
+}
+
 // ---- Content Role Permissions Route Handler ----
 
 async function handleUpdateContentRolePermissions(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
@@ -2647,6 +2730,20 @@ function buildNotificationContext(): NotificationContext {
     emailTemplatesTable: EMAIL_TEMPLATES_TABLE,
     usersTable: USERS_TABLE,
     senderEmail: SENDER_EMAIL,
+  };
+}
+
+// ---- UGL Exit Manual Trigger / Review Route Handlers ----
+
+function buildUGLExitServiceContext(): UGLExitServiceContext {
+  return {
+    dynamoClient,
+    sesClient,
+    usersTable: USERS_TABLE,
+    pointsRecordsTable: POINTS_RECORDS_TABLE,
+    trackingTable: UGL_REMINDER_TRACKING_TABLE,
+    senderEmail: SENDER_EMAIL,
+    emailTemplatesTable: EMAIL_TEMPLATES_TABLE,
   };
 }
 
@@ -2764,7 +2861,7 @@ async function handleSendContentNotification(event: AuthenticatedEvent): Promise
 
 // ---- Email Template Route Handlers ----
 
-const VALID_NOTIFICATION_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest', 'wishAdopted', 'wishFulfilled', 'wishRejected'];
+const VALID_NOTIFICATION_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest', 'wishAdopted', 'wishFulfilled', 'wishRejected', 'uglExitReminder', 'uglExitNotification', 'uglExitAdminNotification'];
 const VALID_LOCALES: EmailLocale[] = ['zh', 'en', 'ja', 'ko', 'zh-TW'];
 
 async function handleListEmailTemplates(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
@@ -3713,6 +3810,53 @@ async function handleInactiveUGLReport(event: AuthenticatedEvent): Promise<APIGa
   }
 
   return jsonResponse(200, result);
+}
+
+async function handleGetPendingExitUGLs(): Promise<APIGatewayProxyResult> {
+  const records = await queryPendingExitUGLs(dynamoClient, {
+    usersTable: USERS_TABLE,
+    ugsTable: UGS_TABLE,
+  });
+  return jsonResponse(200, { records });
+}
+
+async function handleUGLExitDetectionJob(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event) as Record<string, unknown> | null;
+  const quarter = (body?.quarter as string | undefined) || undefined;
+
+  const resolution = resolveDetectionQuarter(quarter);
+  if (!resolution.valid) {
+    return errorResponse(resolution.error.code, resolution.error.message, 400);
+  }
+
+  const summary = await runUGLDetectionJob(resolution.quarter, buildUGLExitServiceContext());
+  return jsonResponse(200, summary);
+}
+
+async function handleConfirmExit(userId: string, event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const result = await confirmExit(
+    userId,
+    event.user.userId,
+    event.user.roles,
+    dynamoClient,
+    USERS_TABLE,
+  );
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message);
+  }
+
+  return jsonResponse(200, { success: true });
+}
+
+async function handleRestoreTracking(userId: string): Promise<APIGatewayProxyResult> {
+  const result = await restoreTracking(userId, dynamoClient, USERS_TABLE);
+
+  if (!result.success) {
+    return errorResponse(result.error!.code, result.error!.message);
+  }
+
+  return jsonResponse(200, { success: true });
 }
 
 // ---- Website Sync Config Route Handlers ----

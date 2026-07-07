@@ -41,6 +41,9 @@ const TEMPLATE_VARIABLE_MAP: Record<NotificationType, string[]> = {
   wishFulfilled: ['nickname', 'wishTitle', 'productUrl'],
   wishRejected: ['nickname', 'wishTitle', 'closeReason'],
   codeDistribution: ['nickname', 'codeList', 'productNames', 'codeCount', 'storeUrl'],
+  uglExitReminder: ['nickname', 'detectionQuarter', 'gracePeriodDeadline'],
+  uglExitNotification: ['nickname', 'detectionQuarter'],
+  uglExitAdminNotification: ['affectedNickname', 'affectedEmail', 'detectionQuarter'],
 };
 
 const SUBJECT_MAX_LENGTH = 200;

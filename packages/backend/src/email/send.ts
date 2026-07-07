@@ -15,7 +15,10 @@ export type NotificationType =
   | 'wishAdopted'
   | 'wishFulfilled'
   | 'wishRejected'
-  | 'codeDistribution';
+  | 'codeDistribution'
+  | 'uglExitReminder'
+  | 'uglExitNotification'
+  | 'uglExitAdminNotification';
 
 export type EmailLocale = 'zh' | 'en' | 'ja' | 'ko' | 'zh-TW';
 

@@ -312,7 +312,14 @@ function AnnouncementTab() {
   const isBatchRecord = (source: string) => source.startsWith('批量发放:');
   const isSpecialActivityRecord = (source: string) => source.startsWith('特殊活动:');
   const isSpecialRewardRecord = (source: string) => source.startsWith('特殊奖励:');
+  const isSkillClaimRecord = (source: string) => source.startsWith('技能认领:');
   const isQuarterlyAward = (item: LeaderboardAnnouncementItem) => item.activityType === '季度贡献奖';
+
+  const SKILL_NAME_KEY: Record<string, string> = {
+    liveSupport: 'skillClaims.skillName.liveSupport',
+    posterDesign: 'skillClaims.skillName.posterDesign',
+    articleEditing: 'skillClaims.skillName.articleEditing',
+  };
 
   const formatRecord = (item: LeaderboardAnnouncementItem): string => {
     // Quarterly award — dedicated template (no activity/UG)
@@ -345,6 +352,23 @@ function AnnouncementTab() {
       return t('leaderboard.specialRewardTemplate' as any, {
         recipientNickname: item.recipientNickname,
         rewardTagName,
+        amount: item.amount,
+      });
+    }
+    // Skill claim record — parse source: '技能认领:Volunteer|{ug}|{topic}|{date}|技能:{skills joined by +}'
+    if (isSkillClaimRecord(item.source)) {
+      const parts = item.source.replace('技能认领:', '').split('|');
+      const skillPart = parts[4] || '';
+      const skillKeys = skillPart.replace('技能:', '').split('+').filter(Boolean);
+      const skillNames = skillKeys
+        .map(key => (SKILL_NAME_KEY[key] ? t(SKILL_NAME_KEY[key] as any) : key))
+        .join('、');
+      return t('leaderboard.skillClaimTemplate' as any, {
+        recipientNickname: item.recipientNickname,
+        activityUG: item.activityUG || parts[1] || '—',
+        activityTopic: item.activityTopic || parts[2] || '—',
+        activityDate: item.activityDate || parts[3] || '—',
+        skillNames: skillNames || '—',
         amount: item.amount,
       });
     }

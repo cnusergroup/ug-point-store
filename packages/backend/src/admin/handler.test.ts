@@ -140,6 +140,19 @@ vi.mock('../reports/insight-query', () => ({
   queryTravelStatistics: vi.fn(),
   queryInviteConversion: vi.fn(),
 }));
+vi.mock('../ugl-exit/pending-exit-list', () => ({
+  queryPendingExitUGLs: vi.fn(),
+}));
+vi.mock('../ugl-exit/quarter', () => ({
+  resolveDetectionQuarter: vi.fn(),
+}));
+vi.mock('../ugl-exit/detection-job', () => ({
+  runUGLDetectionJob: vi.fn(),
+}));
+vi.mock('../ugl-exit/review-actions', () => ({
+  confirmExit: vi.fn(),
+  restoreTracking: vi.fn(),
+}));
 
 const { mockLambdaSend } = vi.hoisted(() => ({
   mockLambdaSend: vi.fn(),
@@ -190,6 +203,10 @@ import { reviewReservation, listReservationApprovals, getVisibleUGNames } from '
 import { queryPointsDetail, queryUGActivitySummary, queryUserPointsRanking, queryActivityPointsSummary } from '../reports/query';
 import { executeExport, validateExportInput } from '../reports/export';
 import { queryPopularProducts, queryHotContent, queryContentContributors, queryInventoryAlert, queryTravelStatistics, queryInviteConversion } from '../reports/insight-query';
+import { queryPendingExitUGLs } from '../ugl-exit/pending-exit-list';
+import { resolveDetectionQuarter } from '../ugl-exit/quarter';
+import { runUGLDetectionJob } from '../ugl-exit/detection-job';
+import { confirmExit, restoreTracking } from '../ugl-exit/review-actions';
 
 function makeEvent(overrides: Partial<APIGatewayProxyEvent> = {}): APIGatewayProxyEvent {
   return {
@@ -1618,6 +1635,8 @@ describe('Admin Lambda Handler', () => {
           emailWishAdoptedEnabled: true,
           emailWishFulfilledEnabled: true,
           emailWishRejectedEnabled: true,
+          emailUglExitReminderEnabled: true,
+          emailUglExitNotificationEnabled: true,
           adminEmailProductsEnabled: false,
           adminEmailContentEnabled: false,
           reservationApprovalPoints: 10,
@@ -2436,6 +2455,8 @@ describe('Admin Lambda Handler', () => {
           emailWishAdoptedEnabled: false,
           emailWishFulfilledEnabled: false,
           emailWishRejectedEnabled: false,
+          emailUglExitReminderEnabled: false,
+          emailUglExitNotificationEnabled: false,
           adminEmailProductsEnabled: false,
           adminEmailContentEnabled: false,
           reservationApprovalPoints: 10,
@@ -2508,6 +2529,8 @@ describe('Admin Lambda Handler', () => {
           emailWishAdoptedEnabled: false,
           emailWishFulfilledEnabled: false,
           emailWishRejectedEnabled: false,
+          emailUglExitReminderEnabled: false,
+          emailUglExitNotificationEnabled: false,
           adminEmailProductsEnabled: false,
           adminEmailContentEnabled: false,
           reservationApprovalPoints: 10,
@@ -4326,6 +4349,192 @@ describe('Admin Lambda Handler', () => {
       const result = await handler(event);
       expect(result.statusCode).toBe(400);
       expect(JSON.parse(result.body).code).toBe('DISTRIBUTION_NOT_FOUND');
+    });
+  });
+
+  describe('GET /api/admin/ugl-exit/pending', () => {
+    it('returns 403 for non-SuperAdmin', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/ugl-exit/pending' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(queryPendingExitUGLs).not.toHaveBeenCalled();
+    });
+
+    it('returns 200 with records for a valid SuperAdmin request', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(queryPendingExitUGLs).mockResolvedValue([
+        {
+          userId: 'u1',
+          nickname: 'Nick1',
+          email: 'u1@test.com',
+          ugName: 'UG1',
+          triggeredQuarter: '2024-Q1',
+          markedAt: '2024-05-01T00:00:00.000Z',
+        },
+      ]);
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/ugl-exit/pending' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.records).toHaveLength(1);
+      expect(body.records[0].userId).toBe('u1');
+      expect(queryPendingExitUGLs).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ usersTable: expect.any(String), ugsTable: expect.any(String) }),
+      );
+    });
+  });
+
+  describe('POST /api/admin/ugl-exit/detection-job', () => {
+    it('returns 403 for non-SuperAdmin', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/ugl-exit/detection-job',
+        body: JSON.stringify({}),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(runUGLDetectionJob).not.toHaveBeenCalled();
+    });
+
+    it('returns 200 with the job summary for a valid SuperAdmin request with an explicit quarter that does not match the fixed-date mapping', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      // "2023-Q2" would never be auto-selected by the fixed April/July/October/January
+      // mapping, but a manual SuperAdmin trigger must still succeed (Req 1.6).
+      vi.mocked(resolveDetectionQuarter).mockReturnValue({ valid: true, quarter: '2023-Q2' });
+      vi.mocked(runUGLDetectionJob).mockResolvedValue({
+        quarter: '2023-Q2',
+        eligibleCount: 3,
+        fullyInactiveCount: 1,
+        remindersSent: 1,
+        remindersSkippedAlreadyClaimed: 0,
+        errors: 0,
+      });
+
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/ugl-exit/detection-job',
+        body: JSON.stringify({ quarter: '2023-Q2' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.quarter).toBe('2023-Q2');
+      expect(body.remindersSent).toBe(1);
+      expect(resolveDetectionQuarter).toHaveBeenCalledWith('2023-Q2');
+      expect(runUGLDetectionJob).toHaveBeenCalledWith('2023-Q2', expect.anything());
+    });
+
+    it('returns 400 with the underlying error code when the quarter is invalid', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(resolveDetectionQuarter).mockReturnValue({
+        valid: false,
+        error: { code: 'INVALID_QUARTER_FORMAT', message: '季度格式无效，请使用 YYYY-QN 格式' },
+      });
+
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/ugl-exit/detection-job',
+        body: JSON.stringify({ quarter: 'not-a-quarter' }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('INVALID_QUARTER_FORMAT');
+      expect(runUGLDetectionJob).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /api/admin/ugl-exit/{userId}/confirm-exit', () => {
+    it('returns 403 for non-SuperAdmin', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({ httpMethod: 'POST', path: '/api/admin/ugl-exit/u1/confirm-exit' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(confirmExit).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 USER_NOT_FOUND for a missing userId', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(confirmExit).mockResolvedValue({
+        success: false,
+        error: { code: 'USER_NOT_FOUND', message: '用户不存在' },
+      });
+      const event = makeEvent({ httpMethod: 'POST', path: '/api/admin/ugl-exit/missing-user/confirm-exit' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(404);
+      expect(JSON.parse(result.body).code).toBe('USER_NOT_FOUND');
+    });
+
+    it('returns 400 NOT_PENDING_EXIT when the target user is not currently pending exit', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(confirmExit).mockResolvedValue({
+        success: false,
+        error: { code: 'NOT_PENDING_EXIT', message: '目标用户当前并非待退出复核状态' },
+      });
+      const event = makeEvent({ httpMethod: 'POST', path: '/api/admin/ugl-exit/u1/confirm-exit' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('NOT_PENDING_EXIT');
+    });
+
+    it('returns 200 { success: true } for a valid SuperAdmin request', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(confirmExit).mockResolvedValue({ success: true });
+      const event = makeEvent({ httpMethod: 'POST', path: '/api/admin/ugl-exit/u1/confirm-exit' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body)).toEqual({ success: true });
+      expect(confirmExit).toHaveBeenCalledWith('u1', 'admin-user-id', ['SuperAdmin'], expect.anything(), expect.any(String));
+    });
+  });
+
+  describe('POST /api/admin/ugl-exit/{userId}/restore-tracking', () => {
+    it('returns 403 for non-SuperAdmin', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({ httpMethod: 'POST', path: '/api/admin/ugl-exit/u1/restore-tracking' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(restoreTracking).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 USER_NOT_FOUND for a missing userId', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(restoreTracking).mockResolvedValue({
+        success: false,
+        error: { code: 'USER_NOT_FOUND', message: '用户不存在' },
+      });
+      const event = makeEvent({ httpMethod: 'POST', path: '/api/admin/ugl-exit/missing-user/restore-tracking' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(404);
+      expect(JSON.parse(result.body).code).toBe('USER_NOT_FOUND');
+    });
+
+    it('returns 400 NOT_PENDING_EXIT when the target user is not currently pending exit', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(restoreTracking).mockResolvedValue({
+        success: false,
+        error: { code: 'NOT_PENDING_EXIT', message: '目标用户当前并非待退出复核状态' },
+      });
+      const event = makeEvent({ httpMethod: 'POST', path: '/api/admin/ugl-exit/u1/restore-tracking' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).code).toBe('NOT_PENDING_EXIT');
+    });
+
+    it('returns 200 { success: true } for a valid SuperAdmin request', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(restoreTracking).mockResolvedValue({ success: true });
+      const event = makeEvent({ httpMethod: 'POST', path: '/api/admin/ugl-exit/u1/restore-tracking' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body)).toEqual({ success: true });
+      expect(restoreTracking).toHaveBeenCalledWith('u1', expect.anything(), expect.any(String));
     });
   });
 });

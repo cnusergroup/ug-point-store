@@ -124,6 +124,14 @@
     }
   }
 
+  &__hint {
+    display: block;
+    margin-top: calc(-1 * var(--space-2));
+    margin-bottom: var(--space-3);
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+  }
+
   &__error {
     display: block;
     margin-bottom: var(--space-3);

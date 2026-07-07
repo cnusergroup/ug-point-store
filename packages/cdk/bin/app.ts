@@ -17,6 +17,10 @@ const uploadTokenSecret = app.node.tryGetContext('uploadTokenSecret') ?? 'change
 const uploadViaCloudfront = app.node.tryGetContext('uploadViaCloudfront') ?? 'false';
 // Pass the edge signer Lambda version ARN after deploying EdgeSignerStack
 const edgeSignerLambdaArn = app.node.tryGetContext('edgeSignerLambdaArn') ?? '';
+// Employee Participation Query system: independent JWT secret + initial default credentials
+const queryJwtSecret = app.node.tryGetContext('queryJwtSecret') ?? 'change-me-in-production';
+const queryDefaultUsername = app.node.tryGetContext('queryDefaultUsername') ?? 'query-user';
+const queryDefaultPassword = app.node.tryGetContext('queryDefaultPassword') ?? 'change-me-in-production123';
 
 const databaseStack = new DatabaseStack(app, 'PointsMall-DatabaseStack', {
   description: 'Points Mall - DynamoDB tables',
@@ -53,7 +57,13 @@ const apiStack = new ApiStack(app, 'PointsMall-ApiStack', {
   wishesTable: databaseStack.wishesTable,
   wishVotesTable: databaseStack.wishVotesTable,
   activitySkillClaimsTable: databaseStack.activitySkillClaimsTable,
+  queryCredentialsTable: databaseStack.queryCredentialsTable,
+  queryLoginAttemptsTable: databaseStack.queryLoginAttemptsTable,
+  uglReminderTrackingTable: databaseStack.uglReminderTrackingTable,
   jwtSecret,
+  queryJwtSecret,
+  queryDefaultUsername,
+  queryDefaultPassword,
   wechatAppId,
   wechatAppSecret,
   wechatRedirectUri,

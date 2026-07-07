@@ -60,6 +60,8 @@ const featureTogglesArb: fc.Arbitrary<FeatureToggles> = contentRolePermissionsAr
     emailWishAdoptedEnabled: true,
     emailWishFulfilledEnabled: true,
     emailWishRejectedEnabled: true,
+    emailUglExitReminderEnabled: true,
+    emailUglExitNotificationEnabled: true,
     adminEmailProductsEnabled: false,
     adminEmailContentEnabled: false,
     reservationApprovalPoints: 10,

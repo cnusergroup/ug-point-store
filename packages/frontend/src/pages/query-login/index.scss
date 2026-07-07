@@ -1,0 +1,130 @@
+/* 独立查询登录页 - 沿用暗色主题设计变量，class 名与 pages/login 完全区分 */
+.query-login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-void);
+  background-image:
+    linear-gradient(rgba(124, 109, 240, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(124, 109, 240, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+  padding: var(--space-10) var(--space-5);
+  box-sizing: border-box;
+}
+
+.query-login-card {
+  width: 100%;
+  max-width: 420px;
+  padding: var(--space-10) var(--space-8);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+
+  &__header {
+    text-align: center;
+    margin-bottom: var(--space-8);
+  }
+
+  &__title {
+    display: block;
+    font-family: var(--font-display);
+    font-size: var(--text-h2);
+    font-weight: 800;
+    color: var(--text-primary);
+  }
+
+  &__subtitle {
+    display: block;
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    margin-top: var(--space-1);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  &__error {
+    padding: var(--space-3) 14px;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: var(--space-2);
+    margin-bottom: var(--space-4);
+    font-size: var(--text-body-sm);
+    color: var(--error);
+  }
+
+  &__form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  &__field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  &__label {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  &__input {
+    width: 100%;
+    padding: var(--space-3) 14px;
+    background: var(--bg-void);
+    border: 2px solid var(--card-border);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 15px;
+    outline: none;
+    transition: border-color var(--transition-fast);
+    box-sizing: border-box;
+
+    &:focus {
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    &::placeholder {
+      color: var(--text-tertiary);
+    }
+  }
+
+  &__submit {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px;
+    background: var(--accent-primary);
+    color: #fff;
+    border-radius: var(--radius-md);
+    font-family: var(--font-body);
+    font-size: var(--text-body-lg);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    margin-top: var(--space-1);
+
+    &:hover {
+      background: var(--accent-hover);
+      box-shadow: var(--shadow-glow);
+      transform: translateY(-1px);
+    }
+
+    &:active {
+      background: var(--accent-active);
+      transform: translateY(0);
+    }
+
+    &--loading {
+      opacity: 0.6;
+      pointer-events: none;
+    }
+  }
+}

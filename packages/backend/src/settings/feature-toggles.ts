@@ -78,6 +78,10 @@ export interface FeatureToggles {
   emailWishFulfilledEnabled: boolean;
   /** Whether wishRejected email notifications are enabled */
   emailWishRejectedEnabled: boolean;
+  /** Whether uglExitReminder email notifications are enabled */
+  emailUglExitReminderEnabled: boolean;
+  /** Whether uglExitNotification (and uglExitAdminNotification) email notifications are enabled */
+  emailUglExitNotificationEnabled: boolean;
   /** Whether Admin (non-SuperAdmin) can trigger new product email notifications */
   adminEmailProductsEnabled: boolean;
   /** Whether Admin (non-SuperAdmin) can trigger new content email notifications */
@@ -131,6 +135,8 @@ export interface UpdateFeatureTogglesInput {
   emailWishAdoptedEnabled: boolean;
   emailWishFulfilledEnabled: boolean;
   emailWishRejectedEnabled: boolean;
+  emailUglExitReminderEnabled: boolean;
+  emailUglExitNotificationEnabled: boolean;
   adminEmailProductsEnabled: boolean;
   adminEmailContentEnabled: boolean;
   reservationApprovalPoints: number;
@@ -214,6 +220,8 @@ const DEFAULT_TOGGLES: FeatureToggles = {
   emailWishAdoptedEnabled: true,             // default: wishAdopted email notifications enabled
   emailWishFulfilledEnabled: true,           // default: wishFulfilled email notifications enabled
   emailWishRejectedEnabled: true,            // default: wishRejected email notifications enabled
+  emailUglExitReminderEnabled: true,         // default: uglExitReminder email notifications enabled (account-lifecycle-critical)
+  emailUglExitNotificationEnabled: true,     // default: uglExitNotification/uglExitAdminNotification email notifications enabled (account-lifecycle-critical)
   adminEmailProductsEnabled: false,          // default: Admin cannot trigger product email notifications
   adminEmailContentEnabled: false,           // default: Admin cannot trigger content email notifications
   reservationApprovalPoints: 10,             // default: 10 points for reservation approval
@@ -290,6 +298,8 @@ export async function getFeatureToggles(
       emailWishAdoptedEnabled:   result.Item.emailWishAdoptedEnabled !== false,   // default true
       emailWishFulfilledEnabled: result.Item.emailWishFulfilledEnabled !== false, // default true
       emailWishRejectedEnabled:  result.Item.emailWishRejectedEnabled !== false,  // default true
+      emailUglExitReminderEnabled: result.Item.emailUglExitReminderEnabled !== false,     // default true
+      emailUglExitNotificationEnabled: result.Item.emailUglExitNotificationEnabled !== false, // default true
       adminEmailProductsEnabled: result.Item.adminEmailProductsEnabled === true,  // default false
       adminEmailContentEnabled:  result.Item.adminEmailContentEnabled === true,   // default false
       reservationApprovalPoints: typeof result.Item.reservationApprovalPoints === 'number' && result.Item.reservationApprovalPoints > 0
@@ -384,6 +394,8 @@ export async function updateFeatureToggles(
     typeof input.emailWishAdoptedEnabled !== 'boolean' ||
     typeof input.emailWishFulfilledEnabled !== 'boolean' ||
     typeof input.emailWishRejectedEnabled !== 'boolean' ||
+    typeof input.emailUglExitReminderEnabled !== 'boolean' ||
+    typeof input.emailUglExitNotificationEnabled !== 'boolean' ||
     typeof input.adminEmailProductsEnabled !== 'boolean' ||
     typeof input.adminEmailContentEnabled !== 'boolean' ||
     typeof input.reservationApprovalPoints !== 'number' ||
@@ -492,6 +504,8 @@ export async function updateFeatureToggles(
         emailWishAdoptedEnabled = :ewade,
         emailWishFulfilledEnabled = :ewfue,
         emailWishRejectedEnabled = :ewrje,
+        emailUglExitReminderEnabled = :euere,
+        emailUglExitNotificationEnabled = :eune,
         adminEmailProductsEnabled = :aepe,
         adminEmailContentEnabled = :aece,
         reservationApprovalPoints = :rap,
@@ -528,6 +542,8 @@ export async function updateFeatureToggles(
         ':ewade': input.emailWishAdoptedEnabled,
         ':ewfue': input.emailWishFulfilledEnabled,
         ':ewrje': input.emailWishRejectedEnabled,
+        ':euere': input.emailUglExitReminderEnabled,
+        ':eune': input.emailUglExitNotificationEnabled,
         ':aepe': input.adminEmailProductsEnabled,
         ':aece': input.adminEmailContentEnabled,
         ':rap': input.reservationApprovalPoints,
@@ -606,6 +622,8 @@ export async function updateFeatureToggles(
       emailWishAdoptedEnabled: input.emailWishAdoptedEnabled,
       emailWishFulfilledEnabled: input.emailWishFulfilledEnabled,
       emailWishRejectedEnabled: input.emailWishRejectedEnabled,
+      emailUglExitReminderEnabled: input.emailUglExitReminderEnabled,
+      emailUglExitNotificationEnabled: input.emailUglExitNotificationEnabled,
       adminEmailProductsEnabled: input.adminEmailProductsEnabled,
       adminEmailContentEnabled: input.adminEmailContentEnabled,
       reservationApprovalPoints: input.reservationApprovalPoints,

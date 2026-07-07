@@ -165,6 +165,15 @@ const ADMIN_LINKS = [
     superAdminOnly: true,
   },
   {
+    key: 'ugl-exit-review',
+    category: 'operations',
+    icon: ClaimIcon,
+    titleKey: 'admin.dashboard.uglExitReviewTitle',
+    descKey: 'admin.dashboard.uglExitReviewDesc',
+    url: '/pages/admin/ugl-exit-review',
+    superAdminOnly: true,
+  },
+  {
     key: 'reservation-approvals',
     category: 'content-management',
     icon: ClaimIcon,
