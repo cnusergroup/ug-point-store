@@ -214,8 +214,10 @@ function formatDateTime(isoString: string): string {
 /**
  * Map points type to Chinese label.
  */
-function formatType(type: 'earn' | 'spend'): string {
-  return type === 'earn' ? '获取' : '消费';
+function formatType(type: 'earn' | 'spend' | 'adjust'): string {
+  if (type === 'earn') return '获取';
+  if (type === 'adjust') return '调整';
+  return '消费';
 }
 
 // ============================================================

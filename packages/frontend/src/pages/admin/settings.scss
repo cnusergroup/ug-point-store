@@ -3017,3 +3017,103 @@
     padding-top: var(--space-1);
   }
 }
+
+/* Additional notification recipients editor (Detection_Completion_Notification) */
+.recipient-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+
+  &__add {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  &__input {
+    flex: 1;
+    min-width: 160px;
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg-void);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    transition: border-color var(--transition-fast);
+    &:focus { border-color: var(--accent-primary); }
+  }
+
+  &__add-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-2) var(--space-4);
+    background: var(--bg-elevated);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+    &:hover { background: var(--bg-hover); border-color: var(--card-border-hover); }
+    &--disabled { opacity: 0.4; cursor: not-allowed; }
+  }
+
+  &__add-btn-text {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  &__error {
+    font-family: var(--font-body);
+    font-size: var(--text-caption);
+    color: var(--error);
+  }
+
+  &__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  &__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+    background: var(--bg-void);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-full);
+    transition: border-color var(--transition-fast);
+    &:hover { border-color: var(--card-border-hover); }
+  }
+
+  &__chip-text {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--text-primary);
+  }
+
+  &__chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--space-5);
+    height: var(--space-5);
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+    &:hover { background: color-mix(in srgb, var(--error) 20%, transparent); }
+  }
+
+  &__chip-remove-text {
+    font-family: var(--font-body);
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    line-height: 1;
+  }
+}

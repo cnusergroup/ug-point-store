@@ -49,6 +49,20 @@ const ROLE_DISPLAY_LABEL: Record<string, string> = {
   SpecialReward: '特殊奖励',
 };
 
+/* ---- Signed delta formatter ---- */
+
+/**
+ * Format a Net_Delta with an explicit sign indicator.
+ * - n > 0  → "+{n}"   (explicit plus for an increase)
+ * - n < 0  → "{n}"    (native '-' sign, e.g. "-20")
+ * - n === 0 → "0"     (no positive sign)
+ */
+export function formatDelta(n: number): string {
+  if (n > 0) return `+${n}`;
+  if (n < 0) return `${n}`;
+  return `${n}`;
+}
+
 /* ---- Relative time helper ---- */
 
 function getRelativeTime(isoDate: string, t: (key: string, params?: Record<string, string | number>) => string): string {
@@ -314,6 +328,12 @@ function AnnouncementTab() {
   const isSpecialRewardRecord = (source: string) => source.startsWith('特殊奖励:');
   const isSkillClaimRecord = (source: string) => source.startsWith('技能认领:');
   const isQuarterlyAward = (item: LeaderboardAnnouncementItem) => item.activityType === '季度贡献奖';
+  // batch-points-adjust correction records (see packages/backend/src/admin/batch-points-adjust.ts)
+  const isAdjustmentRecord = (source: string) => source.startsWith('积分调整:');
+  const isDeletionReversalRecord = (source: string) => source.startsWith('发放删除:');
+  const isSkillReleaseRecord = (source: string) => source.startsWith('技能释放:');
+  const isSkillReleaseDeletionRecord = (source: string) => source.startsWith('技能释放(删除):');
+  const isSkillAssignRecord = (source: string) => source.startsWith('技能指派:');
 
   const SKILL_NAME_KEY: Record<string, string> = {
     liveSupport: 'skillClaims.skillName.liveSupport',
@@ -369,6 +389,73 @@ function AnnouncementTab() {
         activityTopic: item.activityTopic || parts[2] || '—',
         activityDate: item.activityDate || parts[3] || '—',
         skillNames: skillNames || '—',
+        amount: item.amount,
+      });
+    }
+    // Skill assign (adjustment) — parse source: '技能指派:{skill}|{activityUG}|{activityTopic}|{activityDate}'
+    if (isSkillAssignRecord(item.source)) {
+      const parts = item.source.replace('技能指派:', '').split('|');
+      const skillKey = parts[0] || '';
+      const skillName = SKILL_NAME_KEY[skillKey] ? t(SKILL_NAME_KEY[skillKey] as any) : (skillKey || '—');
+      return t('leaderboard.skillAssignTemplate' as any, {
+        recipientNickname: item.recipientNickname,
+        activityUG: item.activityUG || parts[1] || '—',
+        activityTopic: item.activityTopic || parts[2] || '—',
+        activityDate: item.activityDate || parts[3] || '—',
+        skillName,
+        amount: item.amount,
+      });
+    }
+    // Role-change adjustment (Speaker/50 → Volunteer/30): a 积分调整 correction whose
+    // resolvable Original_Role differs from its New_Role. Checked BEFORE the sign-based
+    // 积分调整 branches so a positive/negative/zero delta cannot misroute the record.
+    if (isAdjustmentRecord(item.source) && !!item.originalRole && item.originalRole !== item.targetRole) {
+      return t('leaderboard.adjustmentRoleTransitionTemplate' as any, {
+        recipientNickname: item.recipientNickname,
+        activityUG: item.activityUG || '—',
+        activityDate: item.activityDate || '—',
+        originalRole: ROLE_DISPLAY_LABEL[item.originalRole] || item.originalRole,
+        targetRole: ROLE_DISPLAY_LABEL[item.targetRole] || item.targetRole,
+        originalPoints: item.originalPoints ?? '—',
+        newPoints: item.newPoints ?? '—',
+        delta: formatDelta(item.amount),
+      });
+    }
+    // Points adjustment with a positive delta (e.g. added recipient) — treated as a supplemental award
+    if (isAdjustmentRecord(item.source) && item.amount > 0) {
+      return t('leaderboard.adjustmentAddedTemplate' as any, {
+        distributorNickname: item.distributorNickname || '—',
+        activityUG: item.activityUG || '—',
+        activityDate: item.activityDate || '—',
+        targetRole: ROLE_DISPLAY_LABEL[item.targetRole] || item.targetRole,
+        recipientNickname: item.recipientNickname,
+        amount: item.amount,
+      });
+    }
+    // Reversal-style corrections: negative 积分调整, 发放删除, 技能释放, 技能释放(删除) all
+    // share one unified "调整" message. Deletion cases have no resolvable distributor,
+    // so a distributor-less template variant is used instead of a conditional clause.
+    if (
+      (isAdjustmentRecord(item.source) && item.amount < 0) ||
+      isDeletionReversalRecord(item.source) ||
+      isSkillReleaseRecord(item.source) ||
+      isSkillReleaseDeletionRecord(item.source)
+    ) {
+      if (item.distributorNickname) {
+        return t('leaderboard.adjustmentReversedTemplate' as any, {
+          distributorNickname: item.distributorNickname,
+          activityUG: item.activityUG || '—',
+          activityDate: item.activityDate || '—',
+          targetRole: ROLE_DISPLAY_LABEL[item.targetRole] || item.targetRole,
+          recipientNickname: item.recipientNickname,
+          amount: item.amount,
+        });
+      }
+      return t('leaderboard.adjustmentReversedNoDistributorTemplate' as any, {
+        activityUG: item.activityUG || '—',
+        activityDate: item.activityDate || '—',
+        targetRole: ROLE_DISPLAY_LABEL[item.targetRole] || item.targetRole,
+        recipientNickname: item.recipientNickname,
         amount: item.amount,
       });
     }

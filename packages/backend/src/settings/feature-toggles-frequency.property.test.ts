@@ -117,6 +117,7 @@ function validBaseInput(frequencyOverride: any) {
     wishFulfilledRewardPoints: 50,
     productManagementMode: 'all' as const,
     productManagerIds: [] as string[],
+    additionalNotificationRecipients: [] as string[],
     updatedBy: 'test-admin',
   };
 }

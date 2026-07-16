@@ -292,7 +292,7 @@ async function batchGetActivityMeta(
         RequestItems: {
           [activitiesTable]: {
             Keys: chunk.map(activityId => ({ activityId })),
-            ProjectionExpression: 'activityId, topic, ugName, activityDate',
+            ProjectionExpression: 'activityId, topic, ugName, activityDate, rsvp',
           },
         },
       }),
@@ -304,6 +304,7 @@ async function batchGetActivityMeta(
         topic: (item.topic as string) ?? '',
         ugName: (item.ugName as string) ?? '',
         activityDate: (item.activityDate as string) ?? '',
+        ...(typeof item.rsvp === 'number' ? { rsvp: item.rsvp as number } : {}),
       });
     }
   }
@@ -530,4 +531,142 @@ export async function queryActivityDetail(
     totalPages: paginated.totalPages,
     total: paginated.total,
   };
+}
+
+// ============================================================
+// Impact summary (公开榜单页顶部汇总)
+// ============================================================
+
+/** 顶部影响力汇总数据 */
+export interface ImpactSummary {
+  /** 范围内所有活动的 RSVP 报名总数 */
+  rsvpTotal: number;
+  /** 其中「有 AWS 员工参加」的活动的 RSVP 报名总数 */
+  rsvpSaImpacted: number;
+  /** 范围内活动（meetup）场次总数 */
+  meetupTotal: number;
+  /** 其中「有 AWS 员工参加」的场次数 */
+  meetupSaAttended: number;
+}
+
+/** Activities 表按日期范围查询到的活动最小投影 */
+interface ActivityRangeItem {
+  activityId: string;
+  activityDate: string;
+  rsvp: number;
+  dedupeKey: string;
+}
+
+/**
+ * 通过 activityDate-index GSI（pk 固定为 'ALL'）查询指定日期范围内的全部活动，
+ * 返回 activityId / activityDate / rsvp / dedupeKey。内部处理分页。
+ */
+async function queryAllActivitiesInDateRange(
+  dynamoClient: DynamoDBDocumentClient,
+  activitiesTable: string,
+  startDate?: string,
+  endDate?: string,
+): Promise<ActivityRangeItem[]> {
+  const items: ActivityRangeItem[] = [];
+  let lastEvaluatedKey: Record<string, unknown> | undefined;
+
+  // Build key condition based on provided date bounds.
+  let keyCondition = 'pk = :pk';
+  const values: Record<string, unknown> = { ':pk': 'ALL' };
+  if (startDate && endDate) {
+    keyCondition += ' AND activityDate BETWEEN :s AND :e';
+    values[':s'] = startDate;
+    values[':e'] = endDate;
+  } else if (startDate) {
+    keyCondition += ' AND activityDate >= :s';
+    values[':s'] = startDate;
+  } else if (endDate) {
+    keyCondition += ' AND activityDate <= :e';
+    values[':e'] = endDate;
+  }
+
+  do {
+    const result = await dynamoClient.send(
+      new QueryCommand({
+        TableName: activitiesTable,
+        IndexName: 'activityDate-index',
+        KeyConditionExpression: keyCondition,
+        ExpressionAttributeValues: values,
+        ProjectionExpression: 'activityId, activityDate, rsvp, dedupeKey',
+        ...(lastEvaluatedKey && { ExclusiveStartKey: lastEvaluatedKey }),
+      }),
+    );
+
+    for (const item of result.Items ?? []) {
+      items.push({
+        activityId: (item.activityId as string) ?? '',
+        activityDate: (item.activityDate as string) ?? '',
+        rsvp: typeof item.rsvp === 'number' ? (item.rsvp as number) : 0,
+        dedupeKey: (item.dedupeKey as string) ?? '',
+      });
+    }
+    lastEvaluatedKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastEvaluatedKey);
+
+  return items;
+}
+
+/**
+ * 计算顶部影响力汇总（仅统计飞书同步且审批通过的活动，即 dedupeKey 以 'feishu#' 开头）：
+ * - RSVP Total = 范围内飞书活动 RSVP 之和
+ * - SA Impacted RSVP = 有 AWS 员工参加的飞书活动 RSVP 之和
+ * - Meetup Total = 范围内飞书活动场次数
+ * - Meetup SA attended = 有 AWS 员工参加的飞书活动场次数
+ *
+ * 「有 AWS 员工参加」的判定：该活动出现在 `queryActivityDetailAll` 的结果中
+ * （即贡献记录里 employees 非空）。
+ */
+export async function queryImpactSummary(
+  filter: ActivityViewFilter,
+  ctx: QueryContext,
+): Promise<{ success: boolean; summary?: ImpactSummary; error?: { code: string; message: string } }> {
+  const dateValidation = validateDateRange(filter.startDate, filter.endDate);
+  if (!dateValidation.valid) {
+    return { success: false, error: dateValidation.error };
+  }
+
+  try {
+    const [activities, detailResult] = await Promise.all([
+      queryAllActivitiesInDateRange(ctx.dynamoClient, ctx.activitiesTable, filter.startDate, filter.endDate),
+      queryActivityDetailAll(
+        { startDate: filter.startDate, endDate: filter.endDate },
+        ctx,
+      ),
+    ]);
+
+    // Only count feishu-synced (approved) activities in the summary
+    const feishuActivities = activities.filter((a) => a.dedupeKey.startsWith('feishu#'));
+
+    const saActivityIds = new Set<string>(
+      (detailResult.rows ?? []).map((row) => row.activityId),
+    );
+
+    let rsvpTotal = 0;
+    let rsvpSaImpacted = 0;
+    let meetupTotal = 0;
+    let meetupSaAttended = 0;
+
+    for (const activity of feishuActivities) {
+      const rsvp = activity.rsvp ?? 0;
+      rsvpTotal += rsvp;
+      meetupTotal += 1;
+      if (saActivityIds.has(activity.activityId)) {
+        rsvpSaImpacted += rsvp;
+        meetupSaAttended += 1;
+      }
+    }
+
+    return {
+      success: true,
+      summary: { rsvpTotal, rsvpSaImpacted, meetupTotal, meetupSaAttended },
+    };
+  } catch (err) {
+    console.error('queryImpactSummary error:', err);
+    return { success: false, error: INTERNAL_ERROR };
+  }
 }

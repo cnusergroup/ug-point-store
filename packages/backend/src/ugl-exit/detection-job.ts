@@ -1,7 +1,8 @@
 // UGL quarterly detection job — orchestrates the full Detection_Quarter flow:
 // query all UGL users -> filter to Eligible_UGL -> query qualifying records for the
 // quarter -> extract active userIds -> compute Fully_Inactive_UGL set -> for each,
-// claim a reminder slot (idempotent) and send the Reminder_Email exactly once.
+// record an Awaiting_Reminder_UGL entry (idempotent) — never sends the Reminder_Email.
+// Always ends the run by sending a single Detection_Completion_Notification.
 //
 // See design.md Components and Interfaces section 5 ("Job Orchestration") and the
 // "Detection Job Flow" sequence diagram for the exact orchestration order.
@@ -19,9 +20,9 @@ import {
   extractActiveUserIdsForQuarter,
   computeFullyInactiveUGLs,
 } from './eligibility';
-import { claimReminderSlot } from './reminder-tracking';
+import { recordAwaitingReminder } from './reminder-tracking';
 import { quarterToDateRange, parseQuarter } from './quarter';
-import { sendUGLExitReminderEmail } from '../email/notifications';
+import { sendDetectionCompletionNotification } from '../email/notifications';
 import type { NotificationContext } from '../email/notifications';
 
 // ============================================================
@@ -48,8 +49,8 @@ export interface DetectionJobSummary {
   quarter: string;
   eligibleCount: number;
   fullyInactiveCount: number;
-  remindersSent: number;
-  remindersSkippedAlreadyClaimed: number;
+  awaitingReminderRecorded: number;
+  awaitingReminderSkippedAlreadyRecorded: number;
   errors: number;
 }
 
@@ -57,7 +58,7 @@ export interface DetectionJobSummary {
 // Helpers
 // ============================================================
 
-/** Narrows a UGLExitServiceContext down to the shape sendUGLExitReminderEmail expects. */
+/** Narrows a UGLExitServiceContext down to the shape the email/notifications.ts functions expect. */
 function toNotificationContext(ctx: UGLExitServiceContext): NotificationContext {
   return {
     sesClient: ctx.sesClient,
@@ -80,15 +81,20 @@ function toNotificationContext(ctx: UGLExitServiceContext): NotificationContext 
  * 2. Query Qualifying_Points_Records for the quarter window, extract the set of
  *    userIds with at least one such record (the "active" set).
  * 3. Compute Fully_Inactive_UGL = Eligible_UGL - active set.
- * 4. For each Fully_Inactive_UGL, attempt to claim the reminder slot for
- *    (userId, quarter). Claiming is what atomically dedups across repeated/
- *    overlapping job runs (Req 4.5, 12.1) and timestamps the start of the
- *    Grace_Period (Req 4.4). Only a successful claim triggers the Reminder_Email
- *    (Req 4.1, 4.3); an already-claimed slot is skipped without sending.
+ * 4. For each Fully_Inactive_UGL, attempt to record an Awaiting_Reminder_UGL entry for
+ *    (userId, quarter). Recording is what atomically dedups across repeated/
+ *    overlapping job runs (Req 4.3, 15.1). This job NEVER sends the Reminder_Email —
+ *    that is sent exclusively by sendReminderAction (send-reminder-action.ts), invoked
+ *    only via a SuperAdmin's explicit Send_Reminder_Action (Req 4.1, 4.2).
  *
  * Per-user processing is wrapped in try/catch: an error for one user is logged
  * and counted, and the loop continues to the next user without aborting the
- * run (Req 4.6, 12.2).
+ * run (Req 4.4, 15.2).
+ *
+ * After the per-user loop completes (whether fully successful or with partial
+ * per-user failures), always sends exactly one Detection_Completion_Notification
+ * summarizing this run's quarter and the count of newly recorded Awaiting_Reminder_UGL
+ * entries — including when that count is zero (Req 6.1, 6.2).
  */
 export async function runUGLDetectionJob(
   quarter: string,
@@ -98,8 +104,8 @@ export async function runUGLDetectionJob(
     quarter,
     eligibleCount: 0,
     fullyInactiveCount: 0,
-    remindersSent: 0,
-    remindersSkippedAlreadyClaimed: 0,
+    awaitingReminderRecorded: 0,
+    awaitingReminderSkippedAlreadyRecorded: 0,
     errors: 0,
   };
 
@@ -129,32 +135,20 @@ export async function runUGLDetectionJob(
 
   for (const user of fullyInactiveUsers) {
     try {
-      const claimResult = await claimReminderSlot(user.userId, quarter, now, ctx.dynamoClient, ctx.trackingTable);
+      const result = await recordAwaitingReminder(user.userId, quarter, now, ctx.dynamoClient, ctx.trackingTable);
 
-      if (!claimResult.claimed) {
-        summary.remindersSkippedAlreadyClaimed += 1;
-        continue;
-      }
-
-      const gracePeriodDeadline = claimResult.record!.gracePeriodDeadline;
-      // sendUGLExitReminderEmail is itself best-effort (catches and logs its own send
-      // errors, never throws — see email/notifications.ts) — Req 4.6's "log and continue
-      // on delivery failure" is already satisfied there. Only a genuinely successful send
-      // is counted toward remindersSent; the slot remains claimed either way (Req 4.5).
-      const { sent } = await sendUGLExitReminderEmail(
-        toNotificationContext(ctx),
-        user.userId,
-        quarter,
-        gracePeriodDeadline,
-      );
-      if (sent) {
-        summary.remindersSent += 1;
+      if (result.recorded) {
+        summary.awaitingReminderRecorded += 1;
+      } else {
+        summary.awaitingReminderSkippedAlreadyRecorded += 1;
       }
     } catch (err) {
       console.error(`[UGLDetectionJob] Error processing user ${user.userId} for quarter ${quarter}:`, err);
       summary.errors += 1;
     }
   }
+
+  await sendDetectionCompletionNotification(toNotificationContext(ctx), quarter, summary.awaitingReminderRecorded);
 
   return summary;
 }

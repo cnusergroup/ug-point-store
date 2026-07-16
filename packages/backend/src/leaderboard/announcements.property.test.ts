@@ -1,6 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import fc from 'fast-check';
-import { isBatchRecord, isReservationRecord, getAnnouncements } from './announcements';
+import {
+  isBatchRecord,
+  isReservationRecord,
+  isAdjustmentRecord,
+  isDeletionAdjustmentRecord,
+  getAnnouncements,
+} from './announcements';
 
 // ============================================================
 // Constants
@@ -8,6 +14,11 @@ import { isBatchRecord, isReservationRecord, getAnnouncements } from './announce
 
 const BATCH_PREFIX = '批量发放:';
 const RESERVATION_PREFIX = '预约审批:';
+const ADJUST_PREFIX = '积分调整:';
+const DELETION_ADJUST_PREFIX = '发放删除:';
+const SKILL_RELEASE_PREFIX = '技能释放:';
+const SKILL_RELEASE_DELETION_PREFIX = '技能释放(删除):';
+const SKILL_ASSIGN_PREFIX = '技能指派:';
 
 const TARGET_ROLES = ['Speaker', 'UserGroupLeader', 'Volunteer'] as const;
 
@@ -26,13 +37,37 @@ const batchSourceArb = fc.string({ minLength: 1, maxLength: 20 }).map(s => `${BA
 /** Arbitrary for a reservation source string */
 const reservationSourceArb = fc.string({ minLength: 1, maxLength: 20 }).map(s => `${RESERVATION_PREFIX}${s}`);
 
-/** Arbitrary for a generic (non-batch, non-reservation) source string */
+/** Arbitrary for a generic (non-batch, non-reservation, non-adjust) source string */
 const genericSourceArb = fc
   .string({ minLength: 1, maxLength: 30 })
-  .filter(s => !s.startsWith(BATCH_PREFIX) && !s.startsWith(RESERVATION_PREFIX));
+  .filter(s =>
+    !s.startsWith(BATCH_PREFIX) &&
+    !s.startsWith(RESERVATION_PREFIX) &&
+    !s.startsWith(ADJUST_PREFIX) &&
+    !s.startsWith(DELETION_ADJUST_PREFIX) &&
+    !s.startsWith(SKILL_RELEASE_PREFIX) &&
+    !s.startsWith(SKILL_RELEASE_DELETION_PREFIX) &&
+    !s.startsWith(SKILL_ASSIGN_PREFIX),
+  );
 
-/** Arbitrary for any source string */
-const anySourceArb = fc.oneof(batchSourceArb, reservationSourceArb, genericSourceArb);
+/** Arbitrary for a non-deletion adjust source string (distributor lookup should succeed) */
+const nonDeletionAdjustSourceArb = fc.oneof(
+  fc.string({ minLength: 1, maxLength: 20 }).map(s => `${ADJUST_PREFIX}${s}`),
+  fc.string({ minLength: 1, maxLength: 20 }).map(s => `${SKILL_RELEASE_PREFIX}${s}`),
+  fc.string({ minLength: 1, maxLength: 20 }).map(s => `${SKILL_ASSIGN_PREFIX}${s}`),
+);
+
+/** Arbitrary for a deletion adjust source string (no distributor can be resolved) */
+const deletionAdjustSourceArb = fc.oneof(
+  fc.string({ minLength: 1, maxLength: 20 }).map(s => `${DELETION_ADJUST_PREFIX}${s}`),
+  fc.string({ minLength: 1, maxLength: 20 }).map(s => `${SKILL_RELEASE_DELETION_PREFIX}${s}`),
+);
+
+/** Arbitrary for any adjust source string */
+const anyAdjustSourceArb = fc.oneof(nonDeletionAdjustSourceArb, deletionAdjustSourceArb);
+
+/** Arbitrary for any earn-eligible source string */
+const anyEarnSourceArb = fc.oneof(batchSourceArb, reservationSourceArb, genericSourceArb);
 
 /** Arbitrary for a target role */
 const targetRoleArb = fc.constantFrom(...TARGET_ROLES);
@@ -43,7 +78,7 @@ const earnRecordArb = fc.record({
   userId: fc.uuid(),
   type: fc.constant('earn' as const),
   amount: fc.integer({ min: 1, max: 10000 }),
-  source: anySourceArb,
+  source: anyEarnSourceArb,
   createdAt: isoDateArb,
   targetRole: targetRoleArb.map(r => r as string),
   activityId: fc.uuid(),
@@ -51,6 +86,23 @@ const earnRecordArb = fc.record({
   activityDate: fc.option(fc.string({ minLength: 1, maxLength: 10 }), { nil: undefined }),
   activityTopic: fc.option(fc.string({ minLength: 1, maxLength: 30 }), { nil: undefined }),
   activityType: fc.option(fc.string({ minLength: 1, maxLength: 20 }), { nil: undefined }),
+});
+
+/** Arbitrary for a single PointsRecord with type="adjust" (mix of deletion / non-deletion) */
+const adjustRecordArb = fc.record({
+  recordId: fc.uuid(),
+  userId: fc.uuid(),
+  type: fc.constant('adjust' as const),
+  // amount can be positive (added recipient / skill assign) or negative (removed/reversal)
+  amount: fc.integer({ min: -10000, max: 10000 }).filter(a => a !== 0),
+  source: anyAdjustSourceArb,
+  createdAt: isoDateArb,
+  targetRole: targetRoleArb.map(r => r as string),
+  activityId: fc.uuid(),
+  activityUG: fc.option(fc.string({ minLength: 1, maxLength: 20 }), { nil: undefined }),
+  activityDate: fc.option(fc.string({ minLength: 1, maxLength: 10 }), { nil: undefined }),
+  activityTopic: fc.option(fc.string({ minLength: 1, maxLength: 30 }), { nil: undefined }),
+  distributionId: fc.uuid(),
 });
 
 /** Arbitrary for a single PointsRecord with type="spend" */
@@ -68,6 +120,12 @@ const spendRecordArb = fc.record({
 /** Arbitrary for a mixed list of earn and spend records */
 const mixedRecordsArb = fc.array(
   fc.oneof(earnRecordArb, spendRecordArb),
+  { minLength: 1, maxLength: 40 },
+);
+
+/** Arbitrary for a mixed list of earn, adjust, AND spend records */
+const mixedEarnAdjustSpendRecordsArb = fc.array(
+  fc.oneof(earnRecordArb, adjustRecordArb, spendRecordArb),
   { minLength: 1, maxLength: 40 },
 );
 
@@ -131,6 +189,55 @@ describe('Feature: points-leaderboard, Property 5: Announcement query returns on
   });
 
   // ----------------------------------------------------------
+  // Pure function tests: isAdjustmentRecord / isDeletionAdjustmentRecord
+  // ----------------------------------------------------------
+  describe('isAdjustmentRecord', () => {
+    it('returns true for any of the 5 adjust prefixes', () => {
+      fc.assert(
+        fc.property(anyAdjustSourceArb, (source) => {
+          expect(isAdjustmentRecord(source)).toBe(true);
+        }),
+        { numRuns: 100 },
+      );
+    });
+
+    it('returns false for sources not starting with an adjust prefix', () => {
+      fc.assert(
+        fc.property(
+          fc.oneof(batchSourceArb, reservationSourceArb, genericSourceArb),
+          (source) => {
+            expect(isAdjustmentRecord(source)).toBe(false);
+          },
+        ),
+        { numRuns: 100 },
+      );
+    });
+  });
+
+  describe('isDeletionAdjustmentRecord', () => {
+    it('returns true only for deletion-related adjust prefixes', () => {
+      fc.assert(
+        fc.property(deletionAdjustSourceArb, (source) => {
+          expect(isDeletionAdjustmentRecord(source)).toBe(true);
+        }),
+        { numRuns: 100 },
+      );
+    });
+
+    it('returns false for non-deletion adjust prefixes and other sources', () => {
+      fc.assert(
+        fc.property(
+          fc.oneof(nonDeletionAdjustSourceArb, batchSourceArb, reservationSourceArb, genericSourceArb),
+          (source) => {
+            expect(isDeletionAdjustmentRecord(source)).toBe(false);
+          },
+        ),
+        { numRuns: 100 },
+      );
+    });
+  });
+
+  // ----------------------------------------------------------
   // getAnnouncements with mock DynamoDB client
   // ----------------------------------------------------------
   describe('getAnnouncements filters, sorts, and returns correct fields', () => {
@@ -167,6 +274,11 @@ describe('Feature: points-leaderboard, Property 5: Announcement query returns on
               if (commandName === 'QueryCommand') {
                 const tableName = command.input?.TableName;
                 if (tableName === 'PointsRecords') {
+                  const queriedType = command.input?.ExpressionAttributeValues?.[':type'];
+                  if (queriedType === 'adjust') {
+                    // No adjust records in this scenario
+                    return Promise.resolve({ Items: [], LastEvaluatedKey: undefined });
+                  }
                   // GSI query returns only earn records sorted by createdAt desc
                   return Promise.resolve({
                     Items: earnRecords,
@@ -258,6 +370,128 @@ describe('Feature: points-leaderboard, Property 5: Announcement query returns on
           for (const item of items) {
             if (!isBatchRecord(item.source)) {
               expect(item.distributorNickname).toBeUndefined();
+            }
+          }
+        }),
+        { numRuns: 100 },
+      );
+    });
+  });
+
+  // ----------------------------------------------------------
+  // getAnnouncements: merged earn + adjust feed (never spend), sorted, paginated correctly
+  // ----------------------------------------------------------
+  describe('getAnnouncements merges earn and adjust records, excludes spend, sorted correctly', () => {
+    it('the merged, sorted result only ever contains earn and adjust types, correctly sorted, with correct distributorNickname handling', async () => {
+      await fc.assert(
+        fc.asyncProperty(mixedEarnAdjustSpendRecordsArb, async (records) => {
+          const earnRecords = records.filter(r => r.type === 'earn');
+          const adjustRecords = records.filter(r => r.type === 'adjust');
+          // spendRecords exist in `records` but must never surface in the feed
+
+          const sortedEarn = [...earnRecords].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+          const sortedAdjust = [...adjustRecords].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+          // Build user nickname map from unique userIds across earn + adjust
+          const userNicknameMap = new Map<string, string>();
+          for (const r of [...sortedEarn, ...sortedAdjust]) {
+            if (!userNicknameMap.has(r.userId)) {
+              userNicknameMap.set(r.userId, `User_${r.userId.slice(0, 6)}`);
+            }
+          }
+
+          // Distributor nickname resolves for batch earn records AND non-deletion adjust records
+          const distributorMap = new Map<string, string>();
+          for (const r of sortedEarn) {
+            if (isBatchRecord(r.source) && r.activityId && !distributorMap.has(r.activityId)) {
+              distributorMap.set(r.activityId, `Distributor_${r.activityId.slice(0, 6)}`);
+            }
+          }
+          for (const r of sortedAdjust) {
+            if (!isDeletionAdjustmentRecord(r.source) && r.activityId && !distributorMap.has(r.activityId)) {
+              distributorMap.set(r.activityId, `Distributor_${r.activityId.slice(0, 6)}`);
+            }
+          }
+
+          const mockClient = {
+            send: vi.fn().mockImplementation((command: any) => {
+              const commandName = command.constructor.name;
+
+              if (commandName === 'QueryCommand') {
+                const tableName = command.input?.TableName;
+                if (tableName === 'PointsRecords') {
+                  const queriedType = command.input?.ExpressionAttributeValues?.[':type'];
+                  if (queriedType === 'earn') {
+                    return Promise.resolve({ Items: sortedEarn, LastEvaluatedKey: undefined });
+                  }
+                  if (queriedType === 'adjust') {
+                    return Promise.resolve({ Items: sortedAdjust, LastEvaluatedKey: undefined });
+                  }
+                  return Promise.resolve({ Items: [], LastEvaluatedKey: undefined });
+                }
+                if (tableName === 'BatchDistributions') {
+                  const distItems = Array.from(distributorMap.entries()).map(
+                    ([activityId, distributorNickname]) => ({ activityId, distributorNickname }),
+                  );
+                  return Promise.resolve({ Items: distItems, LastEvaluatedKey: undefined });
+                }
+              }
+
+              if (commandName === 'BatchGetCommand') {
+                const keys = command.input?.RequestItems?.['Users']?.Keys ?? [];
+                const items = keys.map((key: any) => ({
+                  userId: key.userId,
+                  nickname: userNicknameMap.get(key.userId) ?? '',
+                }));
+                return Promise.resolve({ Responses: { Users: items } });
+              }
+
+              return Promise.resolve({ Items: [], Responses: {} });
+            }),
+          } as any;
+
+          const result = await getAnnouncements(
+            { limit: 80 },
+            mockClient,
+            {
+              pointsRecordsTable: 'PointsRecords',
+              usersTable: 'Users',
+              batchDistributionsTable: 'BatchDistributions',
+            },
+          );
+
+          expect(result.success).toBe(true);
+          const items = result.items!;
+
+          // 1. Count matches earn + adjust only (spend excluded)
+          expect(items.length).toBe(sortedEarn.length + sortedAdjust.length);
+
+          // 2. Every returned source corresponds to an earn or adjust record — never a bare spend source
+          //    (we verify by checking the recordId set matches earn+adjust recordIds exactly)
+          const expectedRecordIds = new Set([...sortedEarn, ...sortedAdjust].map(r => r.recordId));
+          for (const item of items) {
+            expect(expectedRecordIds.has(item.recordId)).toBe(true);
+          }
+          expect(items.length).toBe(expectedRecordIds.size);
+
+          // 3. Sorted by createdAt descending across the merged set
+          for (let i = 1; i < items.length; i++) {
+            expect(items[i - 1].createdAt.localeCompare(items[i].createdAt)).toBeGreaterThanOrEqual(0);
+          }
+
+          // 4. distributorNickname present (non-empty string, defined) for batch earn + non-deletion adjust records
+          for (const item of items) {
+            const isNonDeletionAdjust = isAdjustmentRecord(item.source) && !isDeletionAdjustmentRecord(item.source);
+            if (isBatchRecord(item.source) || isNonDeletionAdjust) {
+              expect(item.distributorNickname).toBeDefined();
+              expect(typeof item.distributorNickname).toBe('string');
+            }
+          }
+
+          // 5. distributorNickname absent/empty for deletion adjust records
+          for (const item of items) {
+            if (isDeletionAdjustmentRecord(item.source)) {
+              expect(item.distributorNickname ?? '').toBe('');
             }
           }
         }),

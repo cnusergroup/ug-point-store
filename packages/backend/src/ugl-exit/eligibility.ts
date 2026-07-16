@@ -32,6 +32,15 @@ export interface ExitQualifyingRecord {
   activityDate?: string;
   createdAt: string;
   consumedForQuarter?: string;
+  /**
+   * Signed points amount. For type='earn' records this is the awarded points (positive);
+   * for type='adjust' correction records (written by admin/batch-points-adjust.ts when a
+   * SuperAdmin adjusts or deletes a distribution) it is the signed delta (negative on a
+   * downward correction / full reversal). Summed per user in
+   * extractActiveUserIdsForQuarter so that a UGL whose quarter activity was fully reversed
+   * (net <= 0) is correctly treated as inactive.
+   */
+  amount?: number;
 }
 
 // ============================================================
@@ -53,36 +62,43 @@ function effectiveActivityDate(record: { createdAt?: string; activityDate?: stri
  */
 export function filterEligibleUGLsForExit(
   users: ExitEligibleUser[],
-  quarterStart: string,
+  _quarterStart: string,
 ): ExitEligibleUser[] {
   return users.filter(
     (user) =>
       user.roles.includes('UserGroupLeader') &&
       user.status === 'active' &&
-      user.createdAt < quarterStart &&
       user.uglExitStatus !== 'pending_exit',
   );
 }
 
 /**
- * Extracts the set of userIds with >=1 qualifying record in the quarter window.
+ * Extracts the set of userIds whose NET qualifying points for the quarter window are > 0.
  *
- * A record counts only when:
+ * A record contributes to a user's net total only when:
  * - targetRole === 'UserGroupLeader' (Assumption 1 — narrower than the existing report's
  *   UGL+SpecialActivity criterion), AND
  * - consumedForQuarter is unset (Req 3.3), AND
  * - its effective date (activityDate, falling back to createdAt's date part — Assumption 2)
  *   falls within [quarterStart, quarterEnd] (compared as date-only YYYY-MM-DD strings, since
  *   quarterStart/quarterEnd are full ISO 8601 timestamps and activityDate is date-only).
+ *
+ * Both type='earn' awards and type='adjust' correction records (see queryQuarterQualifyingRecords)
+ * are summed per user using their signed `amount`. A user is considered active for the quarter
+ * only when this net sum is strictly positive — so a UGL whose sole quarter activity was later
+ * fully reversed via a batch-points-adjust deletion (earn +N followed by adjust -N, net 0) is
+ * correctly detected as inactive, while a partial downward correction that leaves a positive net
+ * (e.g. +50 then -20 = 30) keeps the UGL active because they did host a qualifying activity.
  */
 export function extractActiveUserIdsForQuarter(
   records: ExitQualifyingRecord[],
   quarterStart: string,
   quarterEnd: string,
 ): Set<string> {
-  const activeIds = new Set<string>();
   const windowStart = quarterStart.substring(0, 10);
   const windowEnd = quarterEnd.substring(0, 10);
+
+  const netByUser = new Map<string, number>();
 
   for (const record of records) {
     if (record.targetRole !== 'UserGroupLeader') continue;
@@ -91,8 +107,13 @@ export function extractActiveUserIdsForQuarter(
     const eff = effectiveActivityDate(record);
     if (eff === null) continue;
     if (eff >= windowStart && eff <= windowEnd) {
-      activeIds.add(record.userId);
+      netByUser.set(record.userId, (netByUser.get(record.userId) ?? 0) + (record.amount ?? 0));
     }
+  }
+
+  const activeIds = new Set<string>();
+  for (const [userId, net] of netByUser) {
+    if (net > 0) activeIds.add(userId);
   }
 
   return activeIds;
@@ -137,6 +158,7 @@ export async function queryAllUGLUsersForExit(
         FilterExpression: 'contains(#roles, :ugl)',
         ExpressionAttributeNames: {
           '#roles': 'roles',
+          '#status': 'status',
         },
         ExpressionAttributeValues: {
           ':entityType': 'user',
@@ -166,33 +188,20 @@ export async function queryAllUGLUsersForExit(
 }
 
 /**
- * Queries PointsRecords in a createdAt window widened around [quarterStart, quarterEnd]
- * (60 days before / 30 days after) via the type-createdAt-index GSI (PK='earn'), filtered
- * to `targetRole = 'UserGroupLeader'` (narrower than the existing report's UGL-or-SpecialActivity
- * filter, per Assumption 1). Paginated — aggregates all pages.
- *
- * The DB-side range only needs to be wide enough to not miss any record whose effective date
- * (activityDate, falling back to createdAt) could fall within [quarterStart, quarterEnd] —
- * the precise date-window filtering happens client-side in `extractActiveUserIdsForQuarter`.
- * Unlike the existing report's query, this does NOT need an activityDate FilterExpression
- * component, since that client-side filtering already handles it.
- *
- * Mirrors the pagination/widened-range shape of the existing report's `queryQuarterEarnRecords`
- * internal helper, but is an independent implementation (not imported).
+ * Queries a single PointsRecords type ('earn' | 'adjust') in a createdAt window widened around
+ * [quarterStart, quarterEnd] (60 days before / 30 days after) via the type-createdAt-index GSI,
+ * filtered to `targetRole = 'UserGroupLeader'`. Paginated — aggregates all pages. Projects the
+ * signed `amount` so callers can net earn awards against adjust corrections.
  */
-export async function queryQuarterQualifyingRecords(
+async function queryQuarterRecordsByType(
   dynamoClient: DynamoDBDocumentClient,
   pointsRecordsTable: string,
-  quarterStart: string,
-  quarterEnd: string,
+  type: 'earn' | 'adjust',
+  createdAtStart: string,
+  createdAtEnd: string,
 ): Promise<ExitQualifyingRecord[]> {
   const records: ExitQualifyingRecord[] = [];
   let lastEvaluatedKey: Record<string, unknown> | undefined;
-
-  // Widen the createdAt range to capture records created before/after the activity date
-  // (e.g., activity in March but points distributed in April) — mirrors the existing report's pattern.
-  const createdAtStart = new Date(new Date(quarterStart).getTime() - 60 * 24 * 60 * 60 * 1000).toISOString();
-  const createdAtEnd = new Date(new Date(quarterEnd).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
   do {
     const result = await dynamoClient.send(
@@ -205,12 +214,12 @@ export async function queryQuarterQualifyingRecords(
           '#type': 'type',
         },
         ExpressionAttributeValues: {
-          ':type': 'earn',
+          ':type': type,
           ':start': createdAtStart,
           ':end': createdAtEnd,
           ':ugl': 'UserGroupLeader',
         },
-        ProjectionExpression: 'recordId, userId, targetRole, activityDate, createdAt, consumedForQuarter',
+        ProjectionExpression: 'recordId, userId, targetRole, activityDate, createdAt, consumedForQuarter, amount',
         ...(lastEvaluatedKey && { ExclusiveStartKey: lastEvaluatedKey }),
       }),
     );
@@ -223,6 +232,7 @@ export async function queryQuarterQualifyingRecords(
         activityDate: item.activityDate as string | undefined,
         createdAt: (item.createdAt as string) ?? '',
         consumedForQuarter: item.consumedForQuarter as string | undefined,
+        amount: item.amount as number | undefined,
       });
     }
 
@@ -230,4 +240,38 @@ export async function queryQuarterQualifyingRecords(
   } while (lastEvaluatedKey);
 
   return records;
+}
+
+/**
+ * Queries PointsRecords in a createdAt window widened around [quarterStart, quarterEnd]
+ * (60 days before / 30 days after) via the type-createdAt-index GSI, filtered to
+ * `targetRole = 'UserGroupLeader'` (narrower than the existing report's UGL-or-SpecialActivity
+ * filter, per Assumption 1). Queries BOTH type='earn' (original awards) AND type='adjust'
+ * (correction records written by admin/batch-points-adjust.ts) and merges them, so that
+ * extractActiveUserIdsForQuarter can net an award against any later downward correction /
+ * full reversal — otherwise a UGL whose sole quarter activity was deleted would still be
+ * (incorrectly) detected as active because the original earn record is preserved. Paginated —
+ * aggregates all pages of both types.
+ *
+ * The DB-side range only needs to be wide enough to not miss any record whose effective date
+ * (activityDate, falling back to createdAt) could fall within [quarterStart, quarterEnd] —
+ * the precise date-window filtering happens client-side in `extractActiveUserIdsForQuarter`.
+ */
+export async function queryQuarterQualifyingRecords(
+  dynamoClient: DynamoDBDocumentClient,
+  pointsRecordsTable: string,
+  quarterStart: string,
+  quarterEnd: string,
+): Promise<ExitQualifyingRecord[]> {
+  // Widen the createdAt range to capture records created before/after the activity date
+  // (e.g., activity in March but points distributed in April) — mirrors the existing report's pattern.
+  const createdAtStart = new Date(new Date(quarterStart).getTime() - 60 * 24 * 60 * 60 * 1000).toISOString();
+  const createdAtEnd = new Date(new Date(quarterEnd).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  const [earnRecords, adjustRecords] = await Promise.all([
+    queryQuarterRecordsByType(dynamoClient, pointsRecordsTable, 'earn', createdAtStart, createdAtEnd),
+    queryQuarterRecordsByType(dynamoClient, pointsRecordsTable, 'adjust', createdAtStart, createdAtEnd),
+  ]);
+
+  return [...earnRecords, ...adjustRecords];
 }

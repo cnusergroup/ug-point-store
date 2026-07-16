@@ -744,24 +744,24 @@ const codeDistributionTemplates: Record<EmailLocale, { subject: string; body: st
 
 const uglExitReminderTemplates: Record<EmailLocale, { subject: string; body: string }> = {
   zh: {
-    subject: '⏰ 提醒：你在 {{detectionQuarter}} 无积分活动，请在30天内补齐',
-    body: wrap(['<h2 style="color:#6366f1;">Hi {{nickname}}，请注意你的 UGL 活跃度</h2>','<p style="font-size:16px;color:#334155;">我们检测到你在 <strong style="color:#6366f1;">{{detectionQuarter}}</strong> 没有作为 UGL 产生任何积分活动记录。</p>','<p style="color:#64748b;">请在 <strong>{{gracePeriodDeadline}}</strong> 之前举办一场活动来补齐该季度的活跃度要求。</p>','<p style="margin-top:24px;color:#64748b;">若超过该日期仍未补齐，你的账号将被标记为待退出复核，交由 SuperAdmin 人工审核处理。</p>',HR,STORE_LINK,FOOTER_ZH].join('\n  ')),
+    subject: '💛 {{nickname}}，好久不见～你的 UG 在想你哦',
+    body: wrap(['<h2 style="color:#6366f1;">Hi {{nickname}} 👋</h2>','<p style="font-size:16px;color:#334155;">我们发现你已经在 <strong style="color:#6366f1;">{{detectionQuarter}}</strong> 整个季度都没有举办活动啦～</p>','<p style="font-size:16px;color:#334155;">碰到什么困难了吗？欢迎随时联系 UGO 寻求帮助哦，我们一直都在 🤝</p>','<p style="font-size:16px;color:#334155;">我们强烈建议在 <strong style="color:#6366f1;">{{gracePeriodDeadline}}</strong> 之前举办一场活动～不然可能要暂时先离开 UG 大家庭啦 😢</p>','<p style="margin-top:24px;color:#64748b;font-size:14px;">这不是惩罚，只是为了确保每个 UG 都有活跃的负责人来服务社区。如果你准备好了随时可以回来！</p>',HR,STORE_LINK,FOOTER_ZH].join('\n  ')),
   },
   en: {
-    subject: '⏰ Reminder: No activity detected in {{detectionQuarter}}, please act within 30 days',
-    body: wrap(['<h2 style="color:#6366f1;">Hi {{nickname}}, please check your UGL activity</h2>','<p style="font-size:16px;color:#334155;">We detected that you had zero UGL points activity in <strong style="color:#6366f1;">{{detectionQuarter}}</strong>.</p>','<p style="color:#64748b;">Please host an activity before <strong>{{gracePeriodDeadline}}</strong> to satisfy this quarter\'s activity requirement.</p>','<p style="margin-top:24px;color:#64748b;">If unresolved by that date, your account will be marked for pending exit and referred to SuperAdmin for manual review.</p>',HR,STORE_LINK,FOOTER_EN].join('\n  ')),
+    subject: '💛 {{nickname}}, we miss you! Your UG needs you',
+    body: wrap(['<h2 style="color:#6366f1;">Hi {{nickname}} 👋</h2>','<p style="font-size:16px;color:#334155;">We noticed you had no activity during <strong style="color:#6366f1;">{{detectionQuarter}}</strong> — is everything okay?</p>','<p style="font-size:16px;color:#334155;">If you\'re facing any challenges, please reach out to UGO anytime. We\'re here to help! 🤝</p>','<p style="font-size:16px;color:#334155;">We strongly suggest hosting an activity before <strong style="color:#6366f1;">{{gracePeriodDeadline}}</strong> — otherwise you may need to temporarily step away from the UG family 😢</p>','<p style="margin-top:24px;color:#64748b;font-size:14px;">This isn\'t a punishment — it\'s just to ensure every UG has active leadership serving the community. You\'re always welcome back when ready!</p>',HR,STORE_LINK,FOOTER_EN].join('\n  ')),
   },
   ja: {
-    subject: '⏰ リマインダー：{{detectionQuarter}} の活動が検出されませんでした。30日以内にご対応ください',
-    body: wrap(['<h2 style="color:#6366f1;">{{nickname}} さん、UGL 活動状況をご確認ください</h2>','<p style="font-size:16px;color:#334155;"><strong style="color:#6366f1;">{{detectionQuarter}}</strong> において UGL としてのポイント活動が検出されませんでした。</p>','<p style="color:#64748b;"><strong>{{gracePeriodDeadline}}</strong> までに活動を開催し、今四半期の要件を満たしてください。</p>','<p style="margin-top:24px;color:#64748b;">期限までに対応がない場合、アカウントは退出保留としてマークされ、SuperAdmin による審査に移行します。</p>',HR,STORE_LINK,FOOTER_JA].join('\n  ')),
+    subject: '💛 {{nickname}} さん、お久しぶりです～UG があなたを待っています',
+    body: wrap(['<h2 style="color:#6366f1;">{{nickname}} さん 👋</h2>','<p style="font-size:16px;color:#334155;"><strong style="color:#6366f1;">{{detectionQuarter}}</strong> 中に活動がなかったようです～何か困っていることはありますか？</p>','<p style="font-size:16px;color:#334155;">いつでも UGO にご連絡ください。サポートします！🤝</p>','<p style="font-size:16px;color:#334155;"><strong style="color:#6366f1;">{{gracePeriodDeadline}}</strong> までに活動を開催することをお勧めします。でないと、一時的に UG ファミリーを離れることになるかもしれません 😢</p>','<p style="margin-top:24px;color:#64748b;font-size:14px;">これは罰ではなく、各 UG にアクティブなリーダーがいることを確認するためです。準備ができたらいつでも戻ってきてください！</p>',HR,STORE_LINK,FOOTER_JA].join('\n  ')),
   },
   ko: {
-    subject: '⏰ 알림: {{detectionQuarter}} 활동이 감지되지 않았습니다. 30일 이내에 조치해 주세요',
-    body: wrap(['<h2 style="color:#6366f1;">{{nickname}} 님, UGL 활동 상태를 확인해 주세요</h2>','<p style="font-size:16px;color:#334155;"><strong style="color:#6366f1;">{{detectionQuarter}}</strong>에 UGL로서의 포인트 활동이 감지되지 않았습니다.</p>','<p style="color:#64748b;"><strong>{{gracePeriodDeadline}}</strong> 이전에 활동을 개최하여 이번 분기 요건을 충족해 주세요.</p>','<p style="margin-top:24px;color:#64748b;">해당 날짜까지 해결되지 않으면 계정이 대기 종료 상태로 표시되어 SuperAdmin의 수동 검토로 넘어갑니다.</p>',HR,STORE_LINK,FOOTER_KO].join('\n  ')),
+    subject: '💛 {{nickname}} 님, 오랜만이에요～UG가 그리워하고 있어요',
+    body: wrap(['<h2 style="color:#6366f1;">{{nickname}} 님 👋</h2>','<p style="font-size:16px;color:#334155;"><strong style="color:#6366f1;">{{detectionQuarter}}</strong> 동안 활동이 없었어요～ 무슨 어려움이 있으신가요?</p>','<p style="font-size:16px;color:#334155;">언제든지 UGO에 연락해 주세요. 도움을 드릴게요! 🤝</p>','<p style="font-size:16px;color:#334155;"><strong style="color:#6366f1;">{{gracePeriodDeadline}}</strong> 전에 활동을 개최하시는 것을 강력히 권합니다. 그렇지 않으면 잠시 UG 가족을 떠나셔야 할 수도 있어요 😢</p>','<p style="margin-top:24px;color:#64748b;font-size:14px;">이것은 벌이 아니라, 모든 UG에 활발한 리더가 있도록 하기 위한 것입니다. 준비가 되면 언제든지 돌아오세요!</p>',HR,STORE_LINK,FOOTER_KO].join('\n  ')),
   },
   'zh-TW': {
-    subject: '⏰ 提醒：你在 {{detectionQuarter}} 無積分活動，請在30天內補齊',
-    body: wrap(['<h2 style="color:#6366f1;">Hi {{nickname}}，請注意你的 UGL 活躍度</h2>','<p style="font-size:16px;color:#334155;">我們偵測到你在 <strong style="color:#6366f1;">{{detectionQuarter}}</strong> 沒有作為 UGL 產生任何積分活動記錄。</p>','<p style="color:#64748b;">請在 <strong>{{gracePeriodDeadline}}</strong> 之前舉辦一場活動來補齊該季度的活躍度要求。</p>','<p style="margin-top:24px;color:#64748b;">若超過該日期仍未補齊，你的帳號將被標記為待退出複核，交由 SuperAdmin 人工審核處理。</p>',HR,STORE_LINK,FOOTER_ZHTW].join('\n  ')),
+    subject: '💛 {{nickname}}，好久不見～你的 UG 在想你哦',
+    body: wrap(['<h2 style="color:#6366f1;">Hi {{nickname}} 👋</h2>','<p style="font-size:16px;color:#334155;">我們發現你已經在 <strong style="color:#6366f1;">{{detectionQuarter}}</strong> 整個季度都沒有舉辦活動啦～</p>','<p style="font-size:16px;color:#334155;">碰到什麼困難了嗎？歡迎隨時聯繫 UGO 尋求幫助哦，我們一直都在 🤝</p>','<p style="font-size:16px;color:#334155;">我們強烈建議在 <strong style="color:#6366f1;">{{gracePeriodDeadline}}</strong> 之前舉辦一場活動～不然可能要暫時先離開 UG 大家庭啦 😢</p>','<p style="margin-top:24px;color:#64748b;font-size:14px;">這不是懲罰，只是為了確保每個 UG 都有活躍的負責人來服務社區。如果你準備好了隨時可以回來！</p>',HR,STORE_LINK,FOOTER_ZHTW].join('\n  ')),
   },
 };
 
@@ -820,6 +820,33 @@ const uglExitAdminNotificationTemplates: Record<EmailLocale, { subject: string; 
 };
 
 // ============================================================
+// uglExitDetectionCompletion templates
+// ============================================================
+
+const uglExitDetectionCompletionTemplates: Record<EmailLocale, { subject: string; body: string }> = {
+  zh: {
+    subject: '📋 {{detectionQuarter}} UGL 检测已完成，新增 {{newlyRecordedCount}} 条待发提醒',
+    body: wrap(['<h2 style="color:#6366f1;">SuperAdmin 通知</h2>','<p style="font-size:16px;color:#334155;">本次针对 <strong style="color:#6366f1;">{{detectionQuarter}}</strong> 的 UGL 活跃度检测已完成。</p>','<p style="color:#64748b;">新增待发提醒用户数：<strong>{{newlyRecordedCount}}</strong></p>','<p style="margin-top:24px;color:#64748b;">请前往管理后台的待发提醒列表查看并选择需要发送提醒的用户。</p>',HR,STORE_LINK,FOOTER_ZH].join('\n  ')),
+  },
+  en: {
+    subject: '📋 {{detectionQuarter}} UGL detection complete, {{newlyRecordedCount}} new entries awaiting reminder',
+    body: wrap(['<h2 style="color:#6366f1;">SuperAdmin Notice</h2>','<p style="font-size:16px;color:#334155;">UGL activity detection for <strong style="color:#6366f1;">{{detectionQuarter}}</strong> has completed.</p>','<p style="color:#64748b;">Newly recorded entries awaiting reminder: <strong>{{newlyRecordedCount}}</strong></p>','<p style="margin-top:24px;color:#64748b;">Please review the Awaiting Reminder List in the admin console and select users to send reminders to.</p>',HR,STORE_LINK,FOOTER_EN].join('\n  ')),
+  },
+  ja: {
+    subject: '📋 {{detectionQuarter}} の UGL 検出が完了、新規 {{newlyRecordedCount}} 件がリマインダー待ち',
+    body: wrap(['<h2 style="color:#6366f1;">SuperAdmin 通知</h2>','<p style="font-size:16px;color:#334155;"><strong style="color:#6366f1;">{{detectionQuarter}}</strong> の UGL 活動検出が完了しました。</p>','<p style="color:#64748b;">新たにリマインダー待ちとして記録された件数：<strong>{{newlyRecordedCount}}</strong></p>','<p style="margin-top:24px;color:#64748b;">管理コンソールのリマインダー待ちリストを確認し、送信するユーザーを選択してください。</p>',HR,STORE_LINK,FOOTER_JA].join('\n  ')),
+  },
+  ko: {
+    subject: '📋 {{detectionQuarter}} UGL 감지 완료, 신규 {{newlyRecordedCount}}건이 알림 대기 중',
+    body: wrap(['<h2 style="color:#6366f1;">SuperAdmin 알림</h2>','<p style="font-size:16px;color:#334155;"><strong style="color:#6366f1;">{{detectionQuarter}}</strong>에 대한 UGL 활동 감지가 완료되었습니다.</p>','<p style="color:#64748b;">새로 기록된 알림 대기 항목 수: <strong>{{newlyRecordedCount}}</strong></p>','<p style="margin-top:24px;color:#64748b;">관리자 콘솔의 알림 대기 목록에서 알림을 보낼 사용자를 확인하고 선택해 주세요.</p>',HR,STORE_LINK,FOOTER_KO].join('\n  ')),
+  },
+  'zh-TW': {
+    subject: '📋 {{detectionQuarter}} UGL 偵測已完成，新增 {{newlyRecordedCount}} 條待發提醒',
+    body: wrap(['<h2 style="color:#6366f1;">SuperAdmin 通知</h2>','<p style="font-size:16px;color:#334155;">本次針對 <strong style="color:#6366f1;">{{detectionQuarter}}</strong> 的 UGL 活躍度偵測已完成。</p>','<p style="color:#64748b;">新增待發提醒用戶數：<strong>{{newlyRecordedCount}}</strong></p>','<p style="margin-top:24px;color:#64748b;">請前往管理後台的待發提醒列表查看並選擇需要發送提醒的用戶。</p>',HR,STORE_LINK,FOOTER_ZHTW].join('\n  ')),
+  },
+};
+
+// ============================================================
 // Template map by notification type
 // ============================================================
 
@@ -838,17 +865,18 @@ const TEMPLATE_MAP: Record<NotificationType, Record<EmailLocale, { subject: stri
   uglExitReminder: uglExitReminderTemplates,
   uglExitNotification: uglExitNotificationTemplates,
   uglExitAdminNotification: uglExitAdminNotificationTemplates,
+  uglExitDetectionCompletion: uglExitDetectionCompletionTemplates,
 };
 
 const ALL_LOCALES: EmailLocale[] = ['zh', 'en', 'ja', 'ko', 'zh-TW'];
-const ALL_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest', 'wishAdopted', 'wishFulfilled', 'wishRejected', 'codeDistribution', 'uglExitReminder', 'uglExitNotification', 'uglExitAdminNotification'];
+const ALL_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest', 'wishAdopted', 'wishFulfilled', 'wishRejected', 'codeDistribution', 'uglExitReminder', 'uglExitNotification', 'uglExitAdminNotification', 'uglExitDetectionCompletion'];
 
 // ============================================================
 // Public API
 // ============================================================
 
 /**
- * Return all 70 default email templates (14 notification types × 5 locales).
+ * Return all 75 default email templates (15 notification types × 5 locales).
  */
 export function getDefaultTemplates(): EmailTemplate[] {
   const now = new Date().toISOString();
@@ -875,7 +903,7 @@ export function getDefaultTemplates(): EmailTemplate[] {
 const DYNAMO_BATCH_WRITE_LIMIT = 25;
 
 /**
- * Seed all 70 default templates into DynamoDB using BatchWriteCommand.
+ * Seed all 75 default templates into DynamoDB using BatchWriteCommand.
  * DynamoDB BatchWriteCommand supports max 25 items per request,
  * so we split into batches of 25.
  */

@@ -17,6 +17,7 @@ export interface ScrapedActivity {
   ugName: string;
   topic: string;
   activityDate: string;
+  rsvp?: number; // 报名人数（来自飞书 RSVP 列）
 }
 
 /** 抓取结果 */
@@ -265,18 +266,37 @@ function extractSingleActivity(record: unknown): ScrapedActivity | null {
   const activityDate = extractFieldValue(fields, [
     '活动日期', 'activityDate', 'activity_date', 'date', '日期',
   ]);
+  const rsvpRaw = extractFieldValue(fields, [
+    'RSVP', 'rsvp', '活动报名人数', '报名人数',
+  ]);
 
   // All 4 fields are required
   if (!activityType || !ugName || !topic || !activityDate) {
     return null;
   }
 
+  const rsvp = parseRsvp(rsvpRaw);
+
   return {
     activityType: normalizeActivityType(activityType),
     ugName,
     topic,
     activityDate: normalizeDate(activityDate),
+    ...(rsvp !== undefined ? { rsvp } : {}),
   };
+}
+
+/**
+ * Parse an RSVP field value (text) into a non-negative integer.
+ * Returns undefined when the value is empty or not parseable.
+ */
+function parseRsvp(raw: string): number | undefined {
+  if (!raw) return undefined;
+  const match = raw.match(/\d+/);
+  if (!match) return undefined;
+  const n = parseInt(match[0], 10);
+  if (isNaN(n) || n < 0) return undefined;
+  return n;
 }
 
 /**

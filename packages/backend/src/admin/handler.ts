@@ -57,6 +57,8 @@ import {
 import { queryInactiveUGLs } from '../reports/inactive-ugl-query';
 import { updateCredentialPassword } from '../participation/credential';
 import { queryPendingExitUGLs } from '../ugl-exit/pending-exit-list';
+import { queryAwaitingReminderUGLs } from '../ugl-exit/awaiting-reminder-list';
+import { sendReminderAction } from '../ugl-exit/send-reminder-action';
 import { resolveDetectionQuarter } from '../ugl-exit/quarter';
 import { runUGLDetectionJob } from '../ugl-exit/detection-job';
 import type { UGLExitServiceContext } from '../ugl-exit/detection-job';
@@ -518,6 +520,14 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
       return await handleUGLExitDetectionJob(event);
     }
 
+    // POST /api/admin/ugl-exit/send-reminder — SuperAdmin only
+    if (path === '/api/admin/ugl-exit/send-reminder') {
+      if (!isSuperAdmin(event.user.roles as UserRole[])) {
+        return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+      }
+      return await handleSendReminder(event);
+    }
+
     // POST /api/admin/ugl-exit/{userId}/confirm-exit — SuperAdmin only
     const uglExitConfirmMatch = path.match(UGL_EXIT_CONFIRM_REGEX);
     if (uglExitConfirmMatch) {
@@ -785,6 +795,14 @@ const authenticatedHandler = withAuth(async (event: AuthenticatedEvent): Promise
       return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
     }
     return await handleGetPendingExitUGLs();
+  }
+
+  // GET /api/admin/ugl-exit/awaiting-reminder — SuperAdmin only
+  if (method === 'GET' && path === '/api/admin/ugl-exit/awaiting-reminder') {
+    if (!isSuperAdmin(event.user.roles as UserRole[])) {
+      return errorResponse(ErrorCodes.FORBIDDEN, '需要超级管理员权限', 403);
+    }
+    return await handleGetAwaitingReminderUGLs();
   }
 
   // PATCH routes
@@ -2310,6 +2328,9 @@ async function handleUpdateFeatureToggles(event: AuthenticatedEvent): Promise<AP
       wishFulfilledRewardPoints: typeof body.wishFulfilledRewardPoints === 'number' && Number.isInteger(body.wishFulfilledRewardPoints) && body.wishFulfilledRewardPoints >= 1
         ? body.wishFulfilledRewardPoints
         : 50,  // default 50
+      additionalNotificationRecipients: Array.isArray(body.additionalNotificationRecipients) && body.additionalNotificationRecipients.every((email: unknown) => typeof email === 'string')
+        ? body.additionalNotificationRecipients as string[]
+        : [],  // default []
       updatedBy: event.user.userId,
     },
     dynamoClient,
@@ -2861,7 +2882,7 @@ async function handleSendContentNotification(event: AuthenticatedEvent): Promise
 
 // ---- Email Template Route Handlers ----
 
-const VALID_NOTIFICATION_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest', 'wishAdopted', 'wishFulfilled', 'wishRejected', 'uglExitReminder', 'uglExitNotification', 'uglExitAdminNotification'];
+const VALID_NOTIFICATION_TYPES: NotificationType[] = ['pointsEarned', 'newOrder', 'orderShipped', 'newProduct', 'newContent', 'contentUpdated', 'weeklyDigest', 'wishAdopted', 'wishFulfilled', 'wishRejected', 'uglExitReminder', 'uglExitNotification', 'uglExitAdminNotification', 'uglExitDetectionCompletion'];
 const VALID_LOCALES: EmailLocale[] = ['zh', 'en', 'ja', 'ko', 'zh-TW'];
 
 async function handleListEmailTemplates(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
@@ -3818,6 +3839,26 @@ async function handleGetPendingExitUGLs(): Promise<APIGatewayProxyResult> {
     ugsTable: UGS_TABLE,
   });
   return jsonResponse(200, { records });
+}
+
+async function handleGetAwaitingReminderUGLs(): Promise<APIGatewayProxyResult> {
+  const items = await queryAwaitingReminderUGLs(dynamoClient, {
+    trackingTable: UGL_REMINDER_TRACKING_TABLE,
+    usersTable: USERS_TABLE,
+    ugsTable: UGS_TABLE,
+  });
+  return jsonResponse(200, { items });
+}
+
+async function handleSendReminder(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
+  const body = parseBody(event) as Record<string, unknown> | null;
+  // Empty/missing userIds is a valid no-op returning an all-zero summary, not a 400 (Req 5.9).
+  const userIds = Array.isArray(body?.userIds)
+    ? (body!.userIds as unknown[]).filter((id): id is string => typeof id === 'string')
+    : [];
+
+  const summary = await sendReminderAction(userIds, buildUGLExitServiceContext());
+  return jsonResponse(200, summary);
 }
 
 async function handleUGLExitDetectionJob(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {

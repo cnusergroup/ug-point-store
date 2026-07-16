@@ -29,10 +29,12 @@ describe('Feature: employee-badge, Property 1: 邀请创建 isEmployee 标记往
         fc.integer({ min: 1, max: 10 }),
         // isEmployee boolean
         fc.boolean(),
-        async (count, isEmployee) => {
-          // When isEmployee is true, roles must be ['Speaker'] only
+        // employee roles: non-empty subset of Speaker/Volunteer (may include both)
+        fc.subarray(['Speaker', 'Volunteer'] as UserRole[], { minLength: 1 }),
+        async (count, isEmployee, employeeRoles) => {
+          // When isEmployee is true, roles must be a subset of Speaker/Volunteer
           const roles: UserRole[] = isEmployee
-            ? ['Speaker' as UserRole]
+            ? employeeRoles
             : (fc.sample(fc.subarray(REGULAR_ROLES as unknown as UserRole[], { minLength: 1 }), 1)[0]);
           const client = createMockClient();
 
@@ -110,18 +112,35 @@ describe('Feature: employee-badge, Property 1: 邀请创建 isEmployee 标记往
     );
   });
 
-  it('batchCreateInvites with isEmployee=true and non-Speaker roles should fail with EMPLOYEE_SPEAKER_ONLY', async () => {
-    const nonSpeakerRoles: UserRole[][] = [
+  it('batchCreateInvites with isEmployee=true and roles containing non-Speaker/Volunteer should fail with EMPLOYEE_ROLE_ONLY', async () => {
+    const invalidEmployeeRoles: UserRole[][] = [
       ['UserGroupLeader' as UserRole],
-      ['Volunteer' as UserRole],
       ['UserGroupLeader' as UserRole, 'Speaker' as UserRole],
+      ['UserGroupLeader' as UserRole, 'Volunteer' as UserRole],
     ];
-    for (const roles of nonSpeakerRoles) {
+    for (const roles of invalidEmployeeRoles) {
       const client = createMockClient();
       const result = await batchCreateInvites(1, roles, client, invitesTable, registerBaseUrl, undefined, true);
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.code).toBe('EMPLOYEE_SPEAKER_ONLY');
+        expect(result.error.code).toBe('EMPLOYEE_ROLE_ONLY');
+      }
+    }
+  });
+
+  it('batchCreateInvites with isEmployee=true and Speaker/Volunteer roles (including both together) should succeed', async () => {
+    const validEmployeeRoles: UserRole[][] = [
+      ['Speaker' as UserRole],
+      ['Volunteer' as UserRole],
+      ['Speaker' as UserRole, 'Volunteer' as UserRole],
+    ];
+    for (const roles of validEmployeeRoles) {
+      const client = createMockClient();
+      const result = await batchCreateInvites(1, roles, client, invitesTable, registerBaseUrl, undefined, true);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.invites[0].isEmployee).toBe(true);
+        expect(result.invites[0].roles).toEqual(roles);
       }
     }
   });

@@ -789,6 +789,10 @@ describe('sendNewContentNotification', () => {
 describe('sendWishAdoptedEmail', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    // getFeatureToggles is module-mocked; enable the wishAdopted toggle so isEmailEnabled
+    // returns true (production default is also true). Without this the mock returns undefined
+    // and isEmailEnabled treats the notification as disabled.
+    mockedGetFeatureToggles.mockResolvedValue(enableToggle('emailWishAdoptedEnabled'));
   });
 
   afterEach(() => {
@@ -888,6 +892,7 @@ describe('sendWishAdoptedEmail', () => {
 describe('sendWishFulfilledEmail', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    mockedGetFeatureToggles.mockResolvedValue(enableToggle('emailWishFulfilledEnabled'));
   });
 
   afterEach(() => {
@@ -963,6 +968,7 @@ describe('sendWishFulfilledEmail', () => {
 describe('sendWishRejectedEmail', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    mockedGetFeatureToggles.mockResolvedValue(enableToggle('emailWishRejectedEnabled'));
   });
 
   afterEach(() => {

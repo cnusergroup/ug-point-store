@@ -44,6 +44,7 @@ const TEMPLATE_VARIABLE_MAP: Record<NotificationType, string[]> = {
   uglExitReminder: ['nickname', 'detectionQuarter', 'gracePeriodDeadline'],
   uglExitNotification: ['nickname', 'detectionQuarter'],
   uglExitAdminNotification: ['affectedNickname', 'affectedEmail', 'detectionQuarter'],
+  uglExitDetectionCompletion: ['detectionQuarter', 'newlyRecordedCount'],
 };
 
 const SUBJECT_MAX_LENGTH = 200;

@@ -715,3 +715,144 @@
     opacity: 0.9;
   }
 }
+
+/* Free Amount Mode — Points Input Area */
+.ba-free-amount {
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--card-border);
+  padding: var(--space-4) var(--space-5);
+
+  &__label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-2) 0;
+    margin-bottom: var(--space-2);
+  }
+
+  &__label-title {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--text-tertiary);
+    font-weight: 500;
+  }
+
+  &__label-value {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  &__input-section {
+    margin-top: var(--space-3);
+  }
+
+  &__input-label {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--text-secondary);
+    font-weight: 500;
+    margin-bottom: var(--space-2);
+    display: block;
+  }
+
+  &__input {
+    width: 100%;
+    padding: var(--space-3) var(--space-4);
+    font-family: var(--font-display);
+    font-size: var(--text-body-lg);
+    font-weight: 600;
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    outline: none;
+    transition: border-color var(--transition-fast);
+
+    &:focus {
+      border-color: var(--accent-primary);
+    }
+
+    &--invalid {
+      border-color: var(--error);
+      color: var(--error);
+
+      &:focus {
+        border-color: var(--error);
+      }
+    }
+  }
+
+  &__error {
+    font-family: var(--font-body);
+    font-size: var(--text-caption);
+    color: var(--error);
+    margin-top: var(--space-2);
+    display: block;
+  }
+}
+
+/* Diff Summary for Free Amount Mode (Special Activity / Special Reward) */
+.ba-diff-special {
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--card-border);
+  padding: var(--space-4) var(--space-5);
+
+  &__title {
+    font-family: var(--font-display);
+    font-size: var(--text-body-sm);
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-3);
+    display: block;
+  }
+
+  &__grid {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--card-border);
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &--highlight {
+      padding: var(--space-3);
+      margin-top: var(--space-2);
+      background: var(--bg-elevated);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--card-border);
+      border-bottom: 1px solid var(--card-border);
+    }
+  }
+
+  &__label {
+    font-family: var(--font-body);
+    font-size: var(--text-body-sm);
+    color: var(--text-tertiary);
+  }
+
+  &__value {
+    font-family: var(--font-display);
+    font-size: var(--text-body);
+    font-weight: 600;
+    color: var(--text-primary);
+
+    &--added {
+      color: var(--success);
+    }
+
+    &--removed {
+      color: var(--error);
+    }
+  }
+}

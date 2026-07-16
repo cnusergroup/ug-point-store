@@ -164,6 +164,13 @@ async function processDueRecord(
 ): Promise<void> {
   const { userId, quarter, reminderSentAt, gracePeriodDeadline } = trackingRecord;
 
+  // A due record is always outcome='pending' (queryDueReminderRecords filters on that plus
+  // gracePeriodDeadline <= now), so both timestamps are guaranteed set. Guard defensively so
+  // the optional fields on ReminderTrackingRecord narrow to string for queryMakeupCandidates.
+  if (!reminderSentAt || !gracePeriodDeadline) {
+    return;
+  }
+
   const candidates = await queryMakeupCandidates(
     userId,
     reminderSentAt,

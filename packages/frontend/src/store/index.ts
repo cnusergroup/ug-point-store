@@ -108,6 +108,8 @@ interface AppState {
   updatePoints: (points: number) => void;
   /** 修改密码 */
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  /** 修改昵称 */
+  changeNickname: (newNickname: string) => Promise<{ success: boolean; error?: { code: string; message: string } }>;
   /** 忘记密码（请求重置） */
   forgotPassword: (email: string) => Promise<void>;
   /** 重置密码（执行重置） */
@@ -336,6 +338,22 @@ export const useAppStore = create<AppState>((set) => ({
       method: 'POST',
       data: { currentPassword, newPassword },
     });
+  },
+
+  changeNickname: async (newNickname) => {
+    try {
+      await request<{ message: string }>({
+        url: '/api/user/change-nickname',
+        method: 'POST',
+        data: { newNickname },
+      });
+      await useAppStore.getState().fetchProfile();
+      return { success: true };
+    } catch (err: any) {
+      const code = err?.data?.code || err?.code || 'UNKNOWN_ERROR';
+      const message = err?.data?.message || err?.message || '修改昵称失败';
+      return { success: false, error: { code, message } };
+    }
   },
 
   forgotPassword: async (email) => {

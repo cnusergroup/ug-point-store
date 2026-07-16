@@ -626,6 +626,42 @@ describe('validateAdjustmentInput', () => {
       }
     });
 
+    it('should NOT return NO_CHANGES when only a skill is released (skill-only adjustment)', () => {
+      const original = makeDistribution({
+        recipientIds: ['u1', 'u2'],
+        targetRole: 'UserGroupLeader',
+        speakerType: undefined,
+      });
+      const input = makeInput({
+        recipientIds: ['u1', 'u2'],
+        targetRole: 'UserGroupLeader',
+        speakerType: undefined,
+        releaseSkills: [{ skill: 'liveSupport' }],
+      });
+
+      const result = validateAdjustmentInput(original, input, config);
+
+      expect(result.valid).toBe(true);
+    });
+
+    it('should NOT return NO_CHANGES when only a skill is assigned (skill-only adjustment)', () => {
+      const original = makeDistribution({
+        recipientIds: ['u1', 'u2'],
+        targetRole: 'UserGroupLeader',
+        speakerType: undefined,
+      });
+      const input = makeInput({
+        recipientIds: ['u1', 'u2'],
+        targetRole: 'UserGroupLeader',
+        speakerType: undefined,
+        addSkillClaims: [{ skill: 'articleEditing', userId: 'u2' }],
+      });
+
+      const result = validateAdjustmentInput(original, input, config);
+
+      expect(result.valid).toBe(true);
+    });
+
     it('should reject when recipients are same but in different order', () => {
       const original = makeDistribution({
         recipientIds: ['u1', 'u2', 'u3'],
@@ -828,6 +864,31 @@ function featureTogglesResponse(overrides: Partial<PointsRuleConfig> = {}) {
   };
 }
 
+/**
+ * QueryCommand response for findBaseEarnRecordId. The NEW executeAdjustment issues
+ * one QueryCommand (on the `userId-createdAt-index` GSI) per remove-op and per
+ * modify-op user to locate the original base `earn` PointsRecord so it can be
+ * deleted (removed recipient) or updated in place (retained recipient whose role
+ * or points changed). Production only reads back `recordId`, so the returned
+ * `recordId` is what the resulting Delete/Update targets.
+ */
+function baseEarnRecordResponse(
+  recordId: string,
+  source = '批量发放:Speaker|Tokyo|AWS Summit|2024-06-15',
+) {
+  return {
+    Items: [
+      {
+        recordId,
+        createdAt: '2024-06-15T00:00:00.000Z',
+        type: 'earn',
+        activityId: 'act-001',
+        source,
+      },
+    ],
+  };
+}
+
 describe('executeAdjustment', () => {
   let client: ReturnType<typeof createMockDynamoClient>;
 
@@ -897,6 +958,11 @@ describe('executeAdjustment', () => {
           ],
         },
       });
+      // 5. QueryCommand ×3 — findBaseEarnRecordId for remove u3, then modify u1, modify u2
+      //    (added u4 does NOT query; ops built as removed → added → retained-that-change)
+      client.send.mockResolvedValueOnce(baseEarnRecordResponse('earn-u3'));
+      client.send.mockResolvedValueOnce(baseEarnRecordResponse('earn-u1'));
+      client.send.mockResolvedValueOnce(baseEarnRecordResponse('earn-u2'));
       // 5. TransactWriteCommand �?user batch succeeds
       client.send.mockResolvedValueOnce({});
       // 6. UpdateCommand �?update DistributionRecord
@@ -915,23 +981,44 @@ describe('executeAdjustment', () => {
       expect(result.success).toBe(true);
       expect(result.error).toBeUndefined();
 
-      // Verify TransactWriteCommand was called (call index 4)
-      const txCmd = client.send.mock.calls[4][0];
+      // Verify TransactWriteCommand was called (now call index 7 after the 3 QueryCommands)
+      const txCmd = client.send.mock.calls[7][0];
       expect(txCmd.constructor.name).toBe('TransactWriteCommand');
       const items = txCmd.input.TransactItems;
       // 4 affected users (u3 removed, u4 added, u1 & u2 retained with delta) × 2 ops = 8 items
       expect(items).toHaveLength(8);
 
-      // Verify correction records have type 'adjust'
+      // Added user u4 → one fresh base 'earn' Put (NEW behavior writes no 'adjust' records)
       const putItems = items.filter((item: any) => item.Put);
-      expect(putItems).toHaveLength(4);
-      for (const putItem of putItems) {
-        expect(putItem.Put.Item.type).toBe('adjust');
-        expect(putItem.Put.Item.distributionId).toBe('dist-001');
-      }
+      expect(putItems).toHaveLength(1);
+      expect(putItems[0].Put.Item.type).toBe('earn');
+      expect(putItems[0].Put.Item.amount).toBe(50); // speakerTypeBPoints
+      expect(putItems[0].Put.Item.targetRole).toBe('Speaker');
+      expect(putItems[0].Put.Item.source).toBe('批量发放:Speaker|Tokyo|AWS Summit|2024-06-15');
 
-      // Verify UpdateCommand for DistributionRecord (call index 5)
-      const updateCmd = client.send.mock.calls[5][0];
+      // Removed user u3 → Delete of its base earn record by the mocked recordId
+      const deleteItems = items.filter((item: any) => item.Delete);
+      expect(deleteItems).toHaveLength(1);
+      expect(deleteItems[0].Delete.TableName).toBe(POINTS_RECORDS_TABLE);
+      expect(deleteItems[0].Delete.Key.recordId).toBe('earn-u3');
+
+      // Retained users u1 & u2 → in-place Update of their base earn records (recordId preserved)
+      const recordUpdates = items.filter(
+        (item: any) => item.Update && item.Update.TableName === POINTS_RECORDS_TABLE,
+      );
+      expect(recordUpdates).toHaveLength(2);
+      for (const upd of recordUpdates) {
+        expect(upd.Update.ExpressionAttributeNames['#tr']).toBe('targetRole');
+        expect(upd.Update.ExpressionAttributeNames['#amt']).toBe('amount');
+        expect(upd.Update.ExpressionAttributeNames['#src']).toBe('source');
+        expect(upd.Update.ExpressionAttributeValues[':tr']).toBe('Speaker');
+        expect(upd.Update.ExpressionAttributeValues[':amt']).toBe(50);
+        expect(upd.Update.ExpressionAttributeValues[':src']).toBe('批量发放:Speaker|Tokyo|AWS Summit|2024-06-15');
+      }
+      expect(recordUpdates.map((u: any) => u.Update.Key.recordId).sort()).toEqual(['earn-u1', 'earn-u2']);
+
+      // Verify UpdateCommand for DistributionRecord (now call index 8)
+      const updateCmd = client.send.mock.calls[8][0];
       expect(updateCmd.constructor.name).toBe('UpdateCommand');
       expect(updateCmd.input.TableName).toBe(BATCH_DISTRIBUTIONS_TABLE);
       expect(updateCmd.input.Key).toEqual({ distributionId: 'dist-001' });
@@ -943,7 +1030,7 @@ describe('executeAdjustment', () => {
       expect(updateCmd.input.ExpressionAttributeValues[':aby']).toBe('superadmin-001');
     });
 
-    it('should write correction records preserving original earn records (Req 8.5)', async () => {
+    it('should edit the original earn record in place and add a fresh earn record for the new recipient (Req 8.5)', async () => {
       const originalDist = makeDistribution({
         recipientIds: ['u1'],
         targetRole: 'Speaker',
@@ -966,6 +1053,8 @@ describe('executeAdjustment', () => {
           ],
         },
       });
+      // QueryCommand — findBaseEarnRecordId for retained/modify user u1
+      client.send.mockResolvedValueOnce(baseEarnRecordResponse('earn-u1'));
       client.send.mockResolvedValueOnce({}); // TransactWrite
       client.send.mockResolvedValueOnce({}); // UpdateCommand
 
@@ -981,18 +1070,29 @@ describe('executeAdjustment', () => {
 
       expect(result.success).toBe(true);
 
-      // Verify correction records contain activity metadata
-      const txCmd = client.send.mock.calls[4][0];
+      // Added user u2 → fresh base 'earn' Put carrying activity metadata (now call index 5)
+      const txCmd = client.send.mock.calls[5][0];
       const putItems = txCmd.input.TransactItems.filter((item: any) => item.Put);
+      expect(putItems).toHaveLength(1);
       for (const putItem of putItems) {
         expect(putItem.Put.Item.activityId).toBe('act-001');
         expect(putItem.Put.Item.activityUG).toBe('Tokyo');
         expect(putItem.Put.Item.activityTopic).toBe('AWS Summit');
         expect(putItem.Put.Item.activityDate).toBe('2024-06-15');
-        expect(putItem.Put.Item.type).toBe('adjust');
+        expect(putItem.Put.Item.type).toBe('earn');
+        expect(putItem.Put.Item.source).toBe('批量发放:Speaker|Tokyo|AWS Summit|2024-06-15');
         expect(putItem.Put.Item.recordId).toBeDefined();
         expect(putItem.Put.Item.createdAt).toBeDefined();
       }
+
+      // Retained user u1 → its original base earn record is edited in place (not duplicated)
+      const u1RecordUpdate = txCmd.input.TransactItems.find(
+        (item: any) => item.Update && item.Update.TableName === POINTS_RECORDS_TABLE,
+      );
+      expect(u1RecordUpdate).toBeDefined();
+      expect(u1RecordUpdate.Update.Key.recordId).toBe('earn-u1');
+      expect(u1RecordUpdate.Update.ExpressionAttributeValues[':amt']).toBe(50);
+      expect(u1RecordUpdate.Update.ExpressionAttributeValues[':src']).toBe('批量发放:Speaker|Tokyo|AWS Summit|2024-06-15');
     });
   });
 
@@ -1086,6 +1186,8 @@ describe('executeAdjustment', () => {
           [USERS_TABLE]: [{ userId: 'u1', nickname: 'Alice', email: 'alice@test.com' }],
         },
       });
+      // QueryCommand — findBaseEarnRecordId for removed user u2
+      client.send.mockResolvedValueOnce(baseEarnRecordResponse('earn-u2'));
       client.send.mockResolvedValueOnce({}); // TransactWrite
       client.send.mockResolvedValueOnce({}); // UpdateCommand
 
@@ -1139,6 +1241,8 @@ describe('executeAdjustment', () => {
           })),
         },
       });
+      // QueryCommand — findBaseEarnRecordId for the retained/modify user u-orig (added users don't query)
+      client.send.mockResolvedValueOnce(baseEarnRecordResponse('earn-u-orig'));
       // Two TransactWriteCommand batches (12 + 3 users)
       client.send.mockResolvedValueOnce({}); // batch 1
       client.send.mockResolvedValueOnce({}); // batch 2
@@ -1232,6 +1336,8 @@ describe('executeAdjustment', () => {
           [USERS_TABLE]: [{ userId: 'u1', nickname: 'Alice', email: 'alice@test.com' }],
         },
       });
+      // QueryCommand — findBaseEarnRecordId for retained/modify user u1
+      client.send.mockResolvedValueOnce(baseEarnRecordResponse('earn-u1'));
       client.send.mockResolvedValueOnce({}); // TransactWrite
       client.send.mockResolvedValueOnce({}); // UpdateCommand
 
@@ -1247,9 +1353,12 @@ describe('executeAdjustment', () => {
 
       expect(result.success).toBe(true);
 
-      // Verify the Update item for u1 handles role change
-      const txCmd = client.send.mock.calls[4][0];
-      const updateItem = txCmd.input.TransactItems.find((item: any) => item.Update);
+      // Verify the Update item for u1 handles role change (now call index 5 after the QueryCommand)
+      const txCmd = client.send.mock.calls[5][0];
+      // The first Update in the batch is the user-counter Update (record Update follows it)
+      const updateItem = txCmd.input.TransactItems.find(
+        (item: any) => item.Update && item.Update.TableName === USERS_TABLE,
+      );
       expect(updateItem).toBeDefined();
 
       // Role changed: should reference both original (earnTotalSpeaker) and new (earnTotalVolunteer) fields
@@ -1280,6 +1389,8 @@ describe('executeAdjustment', () => {
           [USERS_TABLE]: [{ userId: 'u1', nickname: 'Alice', email: 'alice@test.com' }],
         },
       });
+      // QueryCommand — findBaseEarnRecordId for retained/modify user u1
+      client.send.mockResolvedValueOnce(baseEarnRecordResponse('earn-u1'));
       client.send.mockResolvedValueOnce({}); // TransactWrite
       client.send.mockResolvedValueOnce({}); // UpdateCommand
 
@@ -1295,8 +1406,10 @@ describe('executeAdjustment', () => {
 
       expect(result.success).toBe(true);
 
-      const txCmd = client.send.mock.calls[3][0];
-      const updateItem = txCmd.input.TransactItems.find((item: any) => item.Update);
+      const txCmd = client.send.mock.calls[4][0];
+      const updateItem = txCmd.input.TransactItems.find(
+        (item: any) => item.Update && item.Update.TableName === USERS_TABLE,
+      );
       const names = updateItem.Update.ExpressionAttributeNames;
       expect(names['#origRole']).toBe('earnTotalVolunteer');
       expect(names['#newRole']).toBe('earnTotalLeader');
@@ -1325,6 +1438,8 @@ describe('executeAdjustment', () => {
           ],
         },
       });
+      // QueryCommand — findBaseEarnRecordId for retained/modify user u1 (added u2 doesn't query)
+      client.send.mockResolvedValueOnce(baseEarnRecordResponse('earn-u1'));
       client.send.mockResolvedValueOnce({}); // TransactWrite
       client.send.mockResolvedValueOnce({}); // UpdateCommand
 
@@ -1340,7 +1455,7 @@ describe('executeAdjustment', () => {
 
       expect(result.success).toBe(true);
 
-      const txCmd = client.send.mock.calls[4][0];
+      const txCmd = client.send.mock.calls[5][0];
       const txItems = txCmd.input.TransactItems;
 
       // Find the Update for u2 (added user) �?should use normal path with newRole field
@@ -1426,6 +1541,75 @@ describe('executeAdjustment', () => {
       expect(result.deleted).toBe(true);
       expect(result.distributionId).toBe('dist-001');
       expect(result.reversedCount).toBe(2);
+    });
+
+    it('should reverse only distribution points and NOT touch skill claims when a recipient is also a skill-claim holder', async () => {
+      // Regression: deleting the Volunteer distribution for 小飛, who ALSO holds a
+      // skill claim for the same activity, must reverse only the volunteer points.
+      // Previously this produced two Updates on the same user in one transaction
+      // (DynamoDB rejects it) → "删除事务执行失败", and wrongly removed skill points.
+      const SKILL_CLAIMS_TABLE = 'ActivitySkillClaims';
+      const originalDist = makeDistribution({
+        distributionId: 'dist-001',
+        targetRole: 'Volunteer',
+        speakerType: undefined,
+        recipientIds: ['xiaofei'],
+        points: 30,
+        activityId: 'act-awb',
+        activityUG: 'Shenzhen',
+        activityTopic: 'AWB申请介绍会',
+        activityDate: '2026-07-03',
+      });
+
+      // 1. GetCommand → original distribution
+      client.send.mockResolvedValueOnce({ Item: originalDist });
+      // 2. getFeatureToggles
+      client.send.mockResolvedValueOnce(featureTogglesResponse());
+      // 3. BatchGetCommand → balances (xiaofei has enough)
+      client.send.mockResolvedValueOnce({
+        Responses: { [USERS_TABLE]: [{ userId: 'xiaofei', points: 500 }] },
+      });
+      // 4. TransactWriteCommand → volunteer reversal only
+      client.send.mockResolvedValueOnce({});
+      // 5. DeleteCommand → hard-delete distribution
+      client.send.mockResolvedValueOnce({});
+
+      const result = await executeAdjustment(
+        makeInput({ distributionId: 'dist-001', recipientIds: [], targetRole: 'Volunteer', speakerType: undefined }),
+        client,
+        { ...TABLES, activitySkillClaimsTable: SKILL_CLAIMS_TABLE },
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.deleted).toBe(true);
+      expect(result.reversedCount).toBe(1);
+
+      // Exactly 5 calls: Get dist, Get toggles, BatchGet balances, TransactWrite, Delete.
+      // No extra query against the skill-claims table (skill claims are never read).
+      expect(client.send).toHaveBeenCalledTimes(5);
+
+      // The reversal transaction touches only the volunteer role field and never
+      // references the skill-claims table or earnTotalLeader.
+      const txItems = client.send.mock.calls[3][0].input.TransactItems;
+      expect(txItems).toHaveLength(2); // 1 user × (Update + Put)
+
+      const updateItem = txItems.find((i: any) => i.Update);
+      expect(updateItem.Update.TableName).toBe(USERS_TABLE);
+      expect(updateItem.Update.ExpressionAttributeNames['#rf']).toBe('earnTotalVolunteer');
+      expect(updateItem.Update.ExpressionAttributeValues[':pts']).toBe(30);
+      expect(updateItem.Update.UpdateExpression).not.toContain('earnTotalLeader');
+
+      const putItem = txItems.find((i: any) => i.Put);
+      expect(putItem.Put.Item.source).toContain('发放删除:Volunteer');
+      expect(putItem.Put.Item.amount).toBe(-30);
+
+      // Nothing in the transaction targets the skill-claims table.
+      const touchesSkillTable = txItems.some((i: any) =>
+        i.Delete?.TableName === SKILL_CLAIMS_TABLE ||
+        i.Put?.TableName === SKILL_CLAIMS_TABLE ||
+        i.Update?.TableName === SKILL_CLAIMS_TABLE,
+      );
+      expect(touchesSkillTable).toBe(false);
     });
   });
 
@@ -1798,5 +1982,100 @@ describe('participant removal preserving skill claims', () => {
 
     expect(result.success).toBe(false);
     expect(result.error?.code).toBe('FORBIDDEN');
+  });
+});
+
+// ============================================================
+// 5. Skill release/assign edit the 技能认领 earn record directly
+//    (no 技能释放/技能指派 correction records; counter is earnTotalVolunteer)
+// ============================================================
+
+describe('skill release edits the 技能认领 earn record', () => {
+  let client: ReturnType<typeof createMockDynamoClient>;
+  beforeEach(() => { client = createMockDynamoClient(); });
+
+  const SKILL_CLAIMS_TABLE = 'PointsMall-ActivitySkillClaims';
+
+  it('should reduce the combined 技能认领 earn record and decrement earnTotalVolunteer (no 技能释放 record)', async () => {
+    const originalDist = makeDistribution({
+      recipientIds: ['u1'],
+      targetRole: 'UserGroupLeader',
+      speakerType: undefined,
+      points: 50,
+      activityId: 'act-1',
+      activityUG: 'Tokyo',
+      activityTopic: 'AI Builder',
+      activityDate: '2026-07-05',
+    });
+
+    // 1. GetCommand → original distribution
+    client.send.mockResolvedValueOnce({ Item: originalDist });
+    // 2. getFeatureToggles
+    client.send.mockResolvedValueOnce(featureTogglesResponse());
+    // 3. BatchGet user details (recipients unchanged → [u1])
+    client.send.mockResolvedValueOnce({
+      Responses: { [USERS_TABLE]: [{ userId: 'u1', nickname: '勇', email: 'y@test.com', points: 480 }] },
+    });
+    // 4. getSkillClaimsForActivity → the existing articleEditing claim (30 pts)
+    client.send.mockResolvedValueOnce({
+      Items: [{ activityId: 'act-1', skill: 'articleEditing', userId: 'u1', userNickname: '勇', pointsAwarded: 30 }],
+    });
+    // 5. findSkillEarnRecord → combined skill earn (posterDesign+articleEditing = 60)
+    client.send.mockResolvedValueOnce({
+      Items: [{
+        recordId: 'earn-skill-1',
+        userId: 'u1',
+        type: 'earn',
+        amount: 60,
+        activityId: 'act-1',
+        source: '技能认领:Volunteer|Tokyo|AI Builder|2026-07-05|技能:posterDesign+articleEditing',
+        createdAt: '2026-07-06T00:00:00.000Z',
+      }],
+    });
+    // 6. TransactWrite (standalone skill batch) + 7. UpdateCommand distribution
+    client.send.mockResolvedValueOnce({});
+    client.send.mockResolvedValueOnce({});
+
+    const result = await executeAdjustment(
+      makeInput({
+        recipientIds: ['u1'],
+        targetRole: 'UserGroupLeader',
+        speakerType: undefined,
+        callerRoles: ['SuperAdmin'],
+        releaseSkills: [{ skill: 'articleEditing' }],
+      }),
+      client,
+      { ...TABLES, activitySkillClaimsTable: SKILL_CLAIMS_TABLE },
+    );
+
+    expect(result.success).toBe(true);
+
+    const txCall = client.send.mock.calls.find(
+      (c: any) => c[0]?.constructor?.name === 'TransactWriteCommand',
+    );
+    expect(txCall).toBeDefined();
+    const items = txCall![0].input.TransactItems;
+
+    // No 技能释放 / adjust record is written
+    const adjustPuts = items.filter((i: any) => i.Put && i.Put.Item?.type === 'adjust');
+    expect(adjustPuts).toHaveLength(0);
+
+    // The SkillClaim is deleted
+    const claimDelete = items.find((i: any) => i.Delete && i.Delete.TableName === SKILL_CLAIMS_TABLE);
+    expect(claimDelete).toBeDefined();
+
+    // User counter update decrements earnTotalVolunteer (not earnTotalLeader) by 30
+    const userUpdate = items.find((i: any) => i.Update && i.Update.TableName === USERS_TABLE);
+    expect(userUpdate.Update.UpdateExpression).toContain('earnTotalVolunteer');
+    expect(userUpdate.Update.UpdateExpression).not.toContain('earnTotalLeader');
+    expect(userUpdate.Update.ExpressionAttributeValues[':pts']).toBe(30);
+
+    // The 技能认领 earn record is edited in place: amount 60→30, source drops articleEditing
+    const earnUpdate = items.find(
+      (i: any) => i.Update && i.Update.TableName === POINTS_RECORDS_TABLE && i.Update.Key.recordId === 'earn-skill-1',
+    );
+    expect(earnUpdate).toBeDefined();
+    expect(earnUpdate.Update.ExpressionAttributeValues[':amt']).toBe(30);
+    expect(earnUpdate.Update.ExpressionAttributeValues[':src']).toBe('技能认领:Volunteer|Tokyo|AI Builder|2026-07-05|技能:posterDesign');
   });
 });

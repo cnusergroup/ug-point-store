@@ -6,7 +6,7 @@ import { request, RequestError } from '../../utils/request';
 import { goBack } from '../../utils/navigation';
 import { useTranslation } from '../../i18n';
 import type { Locale } from '../../i18n/types';
-import { KeyIcon, LogoutIcon, AdminIcon, ChevronRightIcon, GlobeIcon, SettingsIcon, MailIcon, LockIcon } from '../../components/icons';
+import { KeyIcon, LogoutIcon, AdminIcon, ChevronRightIcon, GlobeIcon, SettingsIcon, MailIcon, LockIcon, ProfileIcon } from '../../components/icons';
 import PageToolbar from '../../components/PageToolbar';
 import './index.scss';
 
@@ -28,6 +28,7 @@ export default function SettingsPage() {
   const user = useAppStore((s) => s.user);
   const logout = useAppStore((s) => s.logout);
   const changePassword = useAppStore((s) => s.changePassword);
+  const changeNickname = useAppStore((s) => s.changeNickname);
   const locale = useAppStore((s) => s.locale);
   const setLocale = useAppStore((s) => s.setLocale);
   const theme = useAppStore((s) => s.theme);
@@ -43,6 +44,13 @@ export default function SettingsPage() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // Nickname change state
+  const [showNicknameForm, setShowNicknameForm] = useState(false);
+  const [newNickname, setNewNickname] = useState('');
+  const [nicknameError, setNicknameError] = useState('');
+  const [nicknameLoading, setNicknameLoading] = useState(false);
+  const [nicknameSuccess, setNicknameSuccess] = useState(false);
 
   // Email subscription state
   const [emailSubs, setEmailSubs] = useState<{ newProduct: boolean; newContent: boolean }>({ newProduct: false, newContent: false });
@@ -159,6 +167,44 @@ export default function SettingsPage() {
     }
   };
 
+  const handleNicknameToggle = () => {
+    setShowNicknameForm((prev) => !prev);
+    setNicknameError('');
+    setNicknameSuccess(false);
+    if (showNicknameForm) {
+      setNewNickname('');
+    }
+  };
+
+  const handleNicknameSubmit = async () => {
+    setNicknameError('');
+    setNicknameSuccess(false);
+    setNicknameLoading(true);
+    try {
+      const result = await changeNickname(newNickname);
+      if (result.success) {
+        setNicknameSuccess(true);
+        setNewNickname('');
+        setTimeout(() => setShowNicknameForm(false), 1500);
+      } else {
+        const code = result.error?.code || '';
+        const errorMap: Record<string, string> = {
+          NICKNAME_EMPTY: t('settings.nicknameEmpty'),
+          NICKNAME_TOO_LONG: t('settings.nicknameTooLong'),
+          NICKNAME_INVALID_CHARS: t('settings.nicknameInvalidChars'),
+          NICKNAME_SAME_AS_CURRENT: t('settings.nicknameSameAsCurrent'),
+          NICKNAME_ALREADY_TAKEN: t('settings.nicknameAlreadyTaken'),
+          NICKNAME_CHANGE_TOO_FREQUENT: t('settings.nicknameTooFrequent'),
+        };
+        setNicknameError(errorMap[code] || result.error?.message || '');
+      }
+    } catch (err: any) {
+      setNicknameError(err?.message || '');
+    } finally {
+      setNicknameLoading(false);
+    }
+  };
+
   const handleQueryPasswordToggle = () => {
     setShowQueryPasswordForm((prev) => !prev);
     setQueryPasswordError('');
@@ -229,6 +275,48 @@ export default function SettingsPage() {
       <PageToolbar title={t('settings.title')} onBack={() => goBack('/pages/hub/index')} />
 
       <View className='settings-list'>
+        {/* Change Nickname */}
+        <View className='settings-item' onClick={handleNicknameToggle}>
+          <View className='settings-item__left'>
+            <View className='settings-item__icon'>
+              <ProfileIcon size={20} color='var(--accent-primary)' />
+            </View>
+            <Text className='settings-item__label'>{t('settings.changeNickname')}</Text>
+          </View>
+          <View className={`settings-item__arrow ${showNicknameForm ? 'settings-item__arrow--expanded' : ''}`}>
+            <ChevronRightIcon size={16} color='var(--text-tertiary)' />
+          </View>
+        </View>
+
+        {showNicknameForm && (
+          <View className='settings-password-form'>
+            <Text className='settings-password-form__hint'>{`当前昵称: ${user?.nickname || ''}`}</Text>
+            <View className='settings-password-form__field'>
+              <Input
+                className='settings-password-form__input'
+                type='text'
+                placeholder={t('settings.newNicknamePlaceholder')}
+                value={newNickname}
+                onInput={(e) => setNewNickname(e.detail.value)}
+              />
+            </View>
+            {nicknameError && (
+              <Text className='settings-password-form__error'>{nicknameError}</Text>
+            )}
+            {nicknameSuccess && (
+              <Text className='settings-password-form__success'>{t('settings.nicknameChangeSuccess')}</Text>
+            )}
+            <View
+              className={`settings-password-form__submit ${nicknameLoading ? 'settings-password-form__submit--loading' : ''}`}
+              onClick={!nicknameLoading ? handleNicknameSubmit : undefined}
+            >
+              <Text>{nicknameLoading ? t('settings.submitting') : t('settings.confirmChange')}</Text>
+            </View>
+          </View>
+        )}
+
+        <View className='settings-divider' />
+
         {/* Change Password */}
         <View className='settings-item' onClick={handlePasswordToggle}>
           <View className='settings-item__left'>

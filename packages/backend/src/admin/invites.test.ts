@@ -36,7 +36,7 @@ describe('batchGenerateInvites', () => {
     if (!result.success) {
       expect(result.error.code).toBe(ErrorCodes.INVALID_ROLES);
     }
-    expect(mockBatchCreateInvites).toHaveBeenCalledWith(5, [], mockDynamoClient, INVITES_TABLE, REGISTER_BASE_URL, undefined, undefined);
+    expect(mockBatchCreateInvites).toHaveBeenCalledWith(5, [], mockDynamoClient, INVITES_TABLE, REGISTER_BASE_URL, undefined, undefined, undefined);
   });
 
   /**
@@ -75,6 +75,7 @@ describe('batchGenerateInvites', () => {
       REGISTER_BASE_URL,
       undefined,
       undefined,
+      undefined,
     );
   });
 
@@ -109,6 +110,7 @@ describe('batchGenerateInvites', () => {
       REGISTER_BASE_URL,
       undefined,
       undefined,
+      undefined,
     );
   });
 
@@ -128,6 +130,7 @@ describe('batchGenerateInvites', () => {
       mockDynamoClient,
       INVITES_TABLE,
       REGISTER_BASE_URL,
+      undefined,
       undefined,
       undefined,
     );
@@ -167,6 +170,7 @@ describe('batchGenerateInvites', () => {
       mockDynamoClient,
       INVITES_TABLE,
       REGISTER_BASE_URL,
+      undefined,
       undefined,
       undefined,
     );
@@ -235,6 +239,7 @@ describe('batchGenerateInvites', () => {
       REGISTER_BASE_URL,
       undefined,
       true,
+      undefined,
     );
   });
 
@@ -276,6 +281,7 @@ describe('batchGenerateInvites', () => {
       REGISTER_BASE_URL,
       undefined,
       false,
+      undefined,
     );
   });
 });

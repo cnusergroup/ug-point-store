@@ -42,14 +42,13 @@ const usersArb = fc.array(userArb, { minLength: 0, maxLength: 15 });
 // For any list of user records with randomly generated roles, status, createdAt, and
 // uglExitStatus values, and any quarterStart boundary, filterEligibleUGLsForExit returns
 // exactly those users where roles contains 'UserGroupLeader' AND status === 'active' AND
-// createdAt < quarterStart AND uglExitStatus !== 'pending_exit' — regardless of how recently
-// a user was promoted to UserGroupLeader (no separate role-tenure check), and regardless of
-// any uglExitStatus value other than 'pending_exit'.
+// uglExitStatus !== 'pending_exit'. The createdAt condition has been removed (all UGLs are
+// eligible regardless of account age).
 //
 // **Validates: Requirements 2.1, 2.2, 7.1**
 // ============================================================
 describe('Property 2: Eligible UGL determination correctness', () => {
-  it('returns exactly the users satisfying all four eligibility conditions', () => {
+  it('returns exactly the users satisfying eligibility conditions (no createdAt check)', () => {
     fc.assert(
       fc.property(usersArb, isoDateArb, (users, quarterStart) => {
         const result = filterEligibleUGLsForExit(users, quarterStart);
@@ -58,7 +57,6 @@ describe('Property 2: Eligible UGL determination correctness', () => {
           (u) =>
             u.roles.includes('UserGroupLeader') &&
             u.status === 'active' &&
-            u.createdAt < quarterStart &&
             u.uglExitStatus !== 'pending_exit',
         );
 
@@ -69,14 +67,13 @@ describe('Property 2: Eligible UGL determination correctness', () => {
     );
   });
 
-  it('every returned user satisfies all four conditions individually', () => {
+  it('every returned user satisfies all conditions individually', () => {
     fc.assert(
       fc.property(usersArb, isoDateArb, (users, quarterStart) => {
         const result = filterEligibleUGLsForExit(users, quarterStart);
         for (const u of result) {
           expect(u.roles.includes('UserGroupLeader')).toBe(true);
           expect(u.status).toBe('active');
-          expect(u.createdAt < quarterStart).toBe(true);
           expect(u.uglExitStatus).not.toBe('pending_exit');
         }
       }),
@@ -84,10 +81,10 @@ describe('Property 2: Eligible UGL determination correctness', () => {
     );
   });
 
-  it('excludes no user based on role tenure and excludes only uglExitStatus === "pending_exit"', () => {
+  it('excludes only uglExitStatus === "pending_exit"', () => {
     fc.assert(
       fc.property(isoDateArb, fc.constantFrom(undefined, 'pending_exit' as const), (quarterStart, exitStatus) => {
-        const createdAt = new Date(new Date(quarterStart).getTime() - 1000).toISOString();
+        const createdAt = new Date(new Date(quarterStart).getTime() + 86400000).toISOString(); // even after quarterStart
         const user: ExitEligibleUser = {
           userId: 'u1',
           nickname: 'n',
@@ -144,6 +141,9 @@ const recordArb: fc.Arbitrary<ExitQualifyingRecord> = fc.record({
   activityDate: fc.option(anyDateArb.map((d) => d.substring(0, 10)), { nil: undefined }),
   createdAt: anyDateArb,
   consumedForQuarter: consumedForQuarterArb,
+  // Signed amount: positive earn awards and negative adjust corrections both occur, so a
+  // user's activity is decided by the NET sum of their qualifying records (net > 0 = active).
+  amount: fc.integer({ min: -100, max: 100 }),
 });
 
 const recordsArb = fc.array(recordArb, { minLength: 0, maxLength: 20 });
@@ -162,8 +162,22 @@ function isQualifyingInWindow(record: ExitQualifyingRecord, start: string, end: 
   return eff >= start.substring(0, 10) && eff <= end.substring(0, 10);
 }
 
+/** Oracle: a user is active iff the NET sum of their qualifying-in-window records is > 0. */
+function expectedActiveUserIds(records: ExitQualifyingRecord[], start: string, end: string): Set<string> {
+  const netByUser = new Map<string, number>();
+  for (const r of records) {
+    if (!isQualifyingInWindow(r, start, end)) continue;
+    netByUser.set(r.userId, (netByUser.get(r.userId) ?? 0) + (r.amount ?? 0));
+  }
+  const active = new Set<string>();
+  for (const [userId, net] of netByUser) {
+    if (net > 0) active.add(userId);
+  }
+  return active;
+}
+
 describe('Property 3: Fully inactive UGL classification correctness', () => {
-  it('returns exactly the eligible users with zero qualifying records in the window', () => {
+  it('returns exactly the eligible users whose net qualifying points in the window are not positive', () => {
     fc.assert(
       fc.property(usersArb, recordsArb, (users, records) => {
         // Treat all input users as the "eligible" set for this property (eligibility
@@ -173,9 +187,7 @@ describe('Property 3: Fully inactive UGL classification correctness', () => {
         const activeUserIds = extractActiveUserIdsForQuarter(records, QUARTER_START, QUARTER_END);
         const result = computeFullyInactiveUGLs(eligibleUsers, activeUserIds);
 
-        const expectedActiveIds = new Set(
-          records.filter((r) => isQualifyingInWindow(r, QUARTER_START, QUARTER_END)).map((r) => r.userId),
-        );
+        const expectedActiveIds = expectedActiveUserIds(records, QUARTER_START, QUARTER_END);
         const expectedFullyInactive = eligibleUsers.filter((u) => !expectedActiveIds.has(u.userId));
 
         expect(new Set(result.map((u) => u.userId))).toEqual(new Set(expectedFullyInactive.map((u) => u.userId)));
@@ -235,15 +247,39 @@ describe('Property 3: Fully inactive UGL classification correctness', () => {
     );
   });
 
-  it('a qualifying record (UGL, unconsumed, in-window) does count as evidence of activity', () => {
+  it('a qualifying record (UGL, unconsumed, in-window) with positive net does count as evidence of activity', () => {
     const record: ExitQualifyingRecord = {
       recordId: 'r1',
       userId: 'u1',
       targetRole: 'UserGroupLeader',
       activityDate: '2025-05-15',
       createdAt: '2025-05-15T00:00:00.000Z',
+      amount: 50,
     };
     const activeUserIds = extractActiveUserIdsForQuarter([record], QUARTER_START, QUARTER_END);
     expect(activeUserIds.has('u1')).toBe(true);
+  });
+
+  it('a qualifying earn record fully reversed by an adjust in the same window nets to zero and is NOT active', () => {
+    const records: ExitQualifyingRecord[] = [
+      {
+        recordId: 'e1',
+        userId: 'u1',
+        targetRole: 'UserGroupLeader',
+        activityDate: '2025-05-15',
+        createdAt: '2025-05-15T00:00:00.000Z',
+        amount: 50,
+      },
+      {
+        recordId: 'a1',
+        userId: 'u1',
+        targetRole: 'UserGroupLeader',
+        activityDate: '2025-05-15',
+        createdAt: '2025-06-01T00:00:00.000Z',
+        amount: -50,
+      },
+    ];
+    const activeUserIds = extractActiveUserIdsForQuarter(records, QUARTER_START, QUARTER_END);
+    expect(activeUserIds.has('u1')).toBe(false);
   });
 });

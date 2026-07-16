@@ -5,6 +5,7 @@ import {
   TransactWriteCommand,
   UpdateCommand,
   DeleteCommand,
+  QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { ulid } from 'ulid';
 import type { DistributionRecord } from '@points-mall/shared';
@@ -22,7 +23,7 @@ import { getSkillClaimsForActivity } from './skill-claims';
 export interface AdjustmentInput {
   distributionId: string;
   recipientIds: string[];
-  targetRole: 'UserGroupLeader' | 'Speaker' | 'Volunteer';
+  targetRole: 'UserGroupLeader' | 'Speaker' | 'Volunteer' | 'SpecialActivity' | 'SpecialReward';
   speakerType?: 'typeA' | 'typeB' | 'roundtable';
   adjustedBy: string;
   /** Caller's roles — used for SuperAdmin validation on skill lock operations */
@@ -31,6 +32,8 @@ export interface AdjustmentInput {
   releaseSkills?: Array<{ skill: SkillType }>;
   /** Add new skill lock claims (SuperAdmin only) */
   addSkillClaims?: Array<{ skill: SkillType; userId: string }>;
+  /** Free Amount Mode: 特殊类型调整时由 SuperAdmin 指定的每人积分值（正整数） */
+  adjustedPoints?: number;
 }
 
 /** 单用户调整金额 */
@@ -86,7 +89,13 @@ export function computeAdjustmentDiff(
   const retainedUserIds = original.recipientIds.filter(id => newSet.has(id));
 
   const originalPoints = original.points;
-  const newPoints = calculateExpectedPoints(input.targetRole, input.speakerType, config);
+
+  // Free Amount Mode: 特殊类型使用 adjustedPoints，否则从 config 计算
+  const isFreeAmountMode = input.targetRole === 'SpecialActivity' || input.targetRole === 'SpecialReward';
+  const newPoints = isFreeAmountMode
+    ? input.adjustedPoints!  // 已在 validate 中确保为正整数
+    : calculateExpectedPoints(input.targetRole, input.speakerType, config);
+
   const pointsDelta = newPoints - originalPoints;
 
   const userAdjustments: UserAdjustment[] = [];
@@ -140,6 +149,11 @@ export type AdjustmentValidationResult =
 
 const VALID_SPEAKER_TYPES: ReadonlySet<string> = new Set(['typeA', 'typeB', 'roundtable']);
 
+/** All valid targetRole values accepted by the adjustment service */
+export const VALID_TARGET_ROLES: ReadonlySet<string> = new Set([
+  'UserGroupLeader', 'Speaker', 'Volunteer', 'SpecialActivity', 'SpecialReward',
+]);
+
 export function validateAdjustmentInput(
   original: DistributionRecord,
   input: AdjustmentInput,
@@ -150,7 +164,28 @@ export function validateAdjustmentInput(
     return { valid: true, isDeletion: true };
   }
 
-  // 2. Reject Speaker without speakerType
+  // 2. Reject invalid targetRole early
+  if (!VALID_TARGET_ROLES.has(input.targetRole)) {
+    return {
+      valid: false,
+      error: { code: 'INVALID_REQUEST', message: `无效的 targetRole: ${input.targetRole}` },
+    };
+  }
+
+  // 3. For special types (SpecialActivity/SpecialReward), validate adjustedPoints
+  if (
+    (input.targetRole === 'SpecialActivity' || input.targetRole === 'SpecialReward') &&
+    input.recipientIds.length > 0
+  ) {
+    if (!input.adjustedPoints || !Number.isInteger(input.adjustedPoints) || input.adjustedPoints <= 0) {
+      return {
+        valid: false,
+        error: { code: 'INVALID_REQUEST', message: '特殊类型调整必须提供有效的积分金额' },
+      };
+    }
+  }
+
+  // 4. Reject Speaker without speakerType
   if (input.targetRole === 'Speaker' && !input.speakerType) {
     return {
       valid: false,
@@ -158,7 +193,7 @@ export function validateAdjustmentInput(
     };
   }
 
-  // 3. Reject Speaker with invalid speakerType value
+  // 5. Reject Speaker with invalid speakerType value
   if (input.targetRole === 'Speaker' && input.speakerType && !VALID_SPEAKER_TYPES.has(input.speakerType)) {
     return {
       valid: false,
@@ -166,7 +201,7 @@ export function validateAdjustmentInput(
     };
   }
 
-  // 4. Reject volunteer count exceeding limit
+  // 6. Reject volunteer count exceeding limit
   if (input.targetRole === 'Volunteer') {
     const uniqueCount = new Set(input.recipientIds).size;
     if (uniqueCount > config.volunteerMaxPerEvent) {
@@ -180,7 +215,7 @@ export function validateAdjustmentInput(
     }
   }
 
-  // 5. Reject if no actual changes detected
+  // 7. Reject if no actual changes detected
   const originalSorted = [...original.recipientIds].sort();
   const newSorted = [...new Set(input.recipientIds)].sort();
   const sameRecipients =
@@ -188,8 +223,25 @@ export function validateAdjustmentInput(
     originalSorted.every((id, i) => id === newSorted[i]);
   const sameRole = input.targetRole === original.targetRole;
   const sameSpeakerType = input.speakerType === original.speakerType;
+  // Skill lock release/assign are standalone changes: releasing or assigning a skill
+  // must be allowed even when recipients/role/speakerType are unchanged, otherwise a
+  // skill-only adjustment is wrongly rejected as NO_CHANGES.
+  const hasSkillOps =
+    (input.releaseSkills?.length ?? 0) > 0 || (input.addSkillClaims?.length ?? 0) > 0;
 
-  if (sameRecipients && sameRole && sameSpeakerType) {
+  // 7a. Special type NO_CHANGES detection: check adjustedPoints === original.points alongside recipients
+  if (input.targetRole === 'SpecialActivity' || input.targetRole === 'SpecialReward') {
+    const samePoints = input.adjustedPoints === original.points;
+    if (sameRecipients && samePoints && !hasSkillOps) {
+      return { valid: false, error: { code: 'NO_CHANGES', message: '未检测到任何变更' } };
+    }
+  }
+
+  // 7b. Traditional role NO_CHANGES detection
+  if (
+    (input.targetRole === 'UserGroupLeader' || input.targetRole === 'Speaker' || input.targetRole === 'Volunteer') &&
+    sameRecipients && sameRole && sameSpeakerType && !hasSkillOps
+  ) {
     return {
       valid: false,
       error: { code: 'NO_CHANGES', message: '未检测到任何变更' },
@@ -237,38 +289,26 @@ export async function executeDeletion(
 ): Promise<AdjustmentResult> {
   const now = new Date().toISOString();
   const activityId = original.activityId ?? '';
-  const skillClaimsTableName = tables.activitySkillClaimsTable ?? process.env.ACTIVITY_SKILL_CLAIMS_TABLE ?? '';
+  // Distribution deletion reverses ONLY this distribution's own role points.
+  // Skill-claim points (技能分) are a separate award and are intentionally left
+  // untouched here: deleting a role distribution must not remove a user's skill
+  // points. Reversing them here also produced two Update operations on the same
+  // user inside one DynamoDB transaction whenever a recipient was also a
+  // skill-claim holder for the activity, which DynamoDB rejects (causing the
+  // "删除事务执行失败" error). Skill points are managed separately via releaseSkills.
 
-  // 1. Fetch skill claims for the activity
-  let skillClaims: SkillClaimRecord[] = [];
-  if (activityId && skillClaimsTableName) {
-    skillClaims = await getSkillClaimsForActivity(activityId, client, skillClaimsTableName);
-  }
-
-  // 2. Compute total reversal per user: originalPoints + any skill-claim pointsAwarded
+  // 1. Compute reversal per user (this distribution's role points only)
   const originalPoints = original.points;
   const roleFieldMap: Record<string, string> = {
     Speaker: 'earnTotalSpeaker',
     UserGroupLeader: 'earnTotalLeader',
     Volunteer: 'earnTotalVolunteer',
+    SpecialActivity: 'earnTotalSpecialActivity',
+    SpecialReward: 'earnTotalSpecialReward',
   };
   const roleField = roleFieldMap[original.targetRole] ?? 'earnTotalSpeaker';
 
-  // Build a map of userId → total skill claim points for that user
-  const skillClaimPointsByUser = new Map<string, number>();
-  for (const claim of skillClaims) {
-    const current = skillClaimPointsByUser.get(claim.userId) ?? 0;
-    skillClaimPointsByUser.set(claim.userId, current + claim.pointsAwarded);
-  }
-
-  // Total reversal per user = originalPoints + skill claim points for that user
-  const totalReversalByUser = new Map<string, number>();
-  for (const userId of original.recipientIds) {
-    const skillPts = skillClaimPointsByUser.get(userId) ?? 0;
-    totalReversalByUser.set(userId, originalPoints + skillPts);
-  }
-
-  // 3. Pre-check all users have sufficient balance
+  // 2. Pre-check all users have sufficient balance
   const allUserIds = [...new Set(original.recipientIds)];
   const balanceChunks = chunkArray(allUserIds, 100);
   const balanceMap = new Map<string, number>();
@@ -290,73 +330,23 @@ export async function executeDeletion(
     }
   }
 
-  // Check each user's balance against total reversal
+  // Check each user's balance against the distribution reversal amount
   for (const userId of allUserIds) {
     const currentBalance = balanceMap.get(userId) ?? 0;
-    const totalReversal = totalReversalByUser.get(userId) ?? originalPoints;
-    if (currentBalance < totalReversal) {
+    if (currentBalance < originalPoints) {
       return {
         success: false,
         error: {
           code: 'INSUFFICIENT_BALANCE',
-          message: `用户 ${userId} 积分余额不足，当前 ${currentBalance}，需扣减 ${totalReversal}`,
+          message: `用户 ${userId} 积分余额不足，当前 ${currentBalance}，需扣减 ${originalPoints}`,
         },
       };
     }
   }
 
-  // 4. Build transaction items
-
-  // 4a. Build skill claim transaction items (3 items per claim: Delete + Update user + Put correction)
-  const skillClaimTransactItems: any[] = [];
-  for (const claim of skillClaims) {
-    const recordId = ulid();
-
-    // Delete the skill claim record
-    skillClaimTransactItems.push({
-      Delete: {
-        TableName: skillClaimsTableName,
-        Key: { activityId: claim.activityId, skill: claim.skill },
-      },
-    });
-
-    // Update user: reverse skill points from points, earnTotal, earnTotalLeader
-    skillClaimTransactItems.push({
-      Update: {
-        TableName: tables.usersTable,
-        Key: { userId: claim.userId },
-        UpdateExpression: `SET points = points - :pts, earnTotal = if_not_exists(earnTotal, :zero) - :pts, earnTotalLeader = if_not_exists(earnTotalLeader, :zero) - :pts, updatedAt = :now`,
-        ExpressionAttributeValues: {
-          ':pts': claim.pointsAwarded,
-          ':zero': 0,
-          ':now': now,
-        },
-      },
-    });
-
-    // Put correction record for skill claim reversal
-    skillClaimTransactItems.push({
-      Put: {
-        TableName: tables.pointsRecordsTable,
-        Item: {
-          recordId,
-          userId: claim.userId,
-          type: 'adjust',
-          amount: -claim.pointsAwarded,
-          source: `技能释放(删除):${claim.skill}|${original.activityUG ?? ''}|${original.activityTopic ?? ''}|${original.activityDate ?? ''}`,
-          createdAt: now,
-          activityId,
-          activityUG: original.activityUG ?? '',
-          activityTopic: original.activityTopic ?? '',
-          activityDate: original.activityDate ?? '',
-          targetRole: 'UserGroupLeader',
-          distributionId: input.distributionId,
-        },
-      },
-    });
-  }
-
-  // 4b. Build user transaction items (2 items per user: Update + Put correction)
+  // 4. Build user transaction items (2 items per user: Update + Put correction).
+  //    Skill claims are intentionally NOT reversed or deleted during a
+  //    distribution deletion (see note above).
   const userTransactItems: any[] = [];
   for (const userId of allUserIds) {
     const recordId = ulid();
@@ -398,40 +388,8 @@ export async function executeDeletion(
     });
   }
 
-  // 5. Batch transaction items into groups of ≤25 items
-  // Strategy: skill claim items (3 each) prepended to first user batch;
-  // if they overflow, they get their own batch(es)
-  const allBatches: any[][] = [];
-
-  // Split user items into batches of 12 users (24 items)
-  const userBatches = chunkArray(userTransactItems, DELETION_USERS_PER_BATCH * 2); // 2 items per user
-
-  if (skillClaimTransactItems.length === 0) {
-    // No skill claims — just user batches
-    allBatches.push(...userBatches);
-  } else if (userBatches.length > 0) {
-    // Try to prepend skill claim items to the first user batch
-    const firstUserBatch = userBatches[0];
-    const combined = [...skillClaimTransactItems, ...firstUserBatch];
-
-    if (combined.length <= 25) {
-      // Fits in one batch
-      allBatches.push(combined);
-      // Add remaining user batches
-      for (let i = 1; i < userBatches.length; i++) {
-        allBatches.push(userBatches[i]);
-      }
-    } else {
-      // Skill claims overflow — put them in their own batch(es)
-      const skillBatches = chunkArray(skillClaimTransactItems, 25);
-      allBatches.push(...skillBatches);
-      allBatches.push(...userBatches);
-    }
-  } else {
-    // No users but have skill claims (edge case)
-    const skillBatches = chunkArray(skillClaimTransactItems, 25);
-    allBatches.push(...skillBatches);
-  }
+  // 5. Batch transaction items into groups of ≤24 items (12 users × 2 items)
+  const allBatches = chunkArray(userTransactItems, DELETION_USERS_PER_BATCH * 2);
 
   // 6. Execute batches sequentially
   for (const batch of allBatches) {
@@ -477,8 +435,125 @@ export async function executeDeletion(
 // Adjustment Execution
 // ============================================================
 
-/** Max items per DynamoDB TransactWriteCommand (each user = 2 items: Update + Put) */
+/** Max items per DynamoDB TransactWriteCommand (each user = 2 items: Update + earn Put/Update/Delete) */
 const USERS_PER_BATCH = 12; // 12 users × 2 items = 24 items (within 25 limit)
+
+/**
+ * Build the exact `source` string of a distribution's base (non-skill) `earn`
+ * PointsRecord for a given role. Mirrors `buildMergedSource(true, undefined, ...)`
+ * in `batch-points.ts` (prefix `批量发放:{role}|{ug}|{topic}|{date}`), so it can be
+ * used both to locate the original earn record and to write the corrected one.
+ *
+ * For special types:
+ * - SpecialActivity: `特殊活动:{topic}|{ug}|{awardDate}|{normalizedTagName}`
+ * - SpecialReward: `特殊奖励:{tagName}|{awardDate}`
+ */
+export function buildBaseEarnSource(
+  role: string,
+  activityUG?: string,
+  activityTopic?: string,
+  activityDate?: string,
+  original?: DistributionRecord,
+): string {
+  if (role === 'SpecialActivity') {
+    // 格式：特殊活动:{topic}|{ug}|{awardDate}|{normalizedTagName}
+    const tagName = original?.awardTagName ?? '';
+    return `特殊活动:${activityTopic ?? ''}|${activityUG ?? ''}|${activityDate ?? ''}|${tagName}`;
+  }
+  if (role === 'SpecialReward') {
+    // 格式：特殊奖励:{tagName}|{awardDate}
+    const tagName = original?.rewardTagName ?? '';
+    return `特殊奖励:${tagName}|${activityDate ?? ''}`;
+  }
+  // 现有角色格式不变
+  return `批量发放:${role}|${activityUG ?? ''}|${activityTopic ?? ''}|${activityDate ?? ''}`;
+}
+
+/**
+ * Locate a recipient's base (non-skill) `earn` PointsRecord for a distribution so
+ * it can be modified in place (role/points correction) or deleted (recipient
+ * removed). Matches by `userId` (via the `userId-createdAt-index` GSI) + `type='earn'`
+ * + `activityId` + exact base `source`, which uniquely identifies the base award
+ * (skill records carry a `技能` source and are intentionally excluded). Returns the
+ * earliest-created match's `recordId`, or `undefined` when none is found (e.g. a
+ * historical record whose source shape differs — the caller then adjusts counters
+ * only and skips the ledger op rather than failing).
+ */
+async function findBaseEarnRecordId(
+  client: DynamoDBDocumentClient,
+  pointsRecordsTable: string,
+  userId: string,
+  activityId: string,
+  baseSource: string,
+): Promise<string | undefined> {
+  let earliest: Record<string, any> | undefined;
+  let startKey: Record<string, any> | undefined;
+  do {
+    const res = await client.send(
+      new QueryCommand({
+        TableName: pointsRecordsTable,
+        IndexName: 'userId-createdAt-index',
+        KeyConditionExpression: 'userId = :uid',
+        FilterExpression: '#type = :earn AND activityId = :aid AND #src = :src',
+        ExpressionAttributeNames: { '#type': 'type', '#src': 'source' },
+        ExpressionAttributeValues: { ':uid': userId, ':earn': 'earn', ':aid': activityId, ':src': baseSource },
+        ...(startKey && { ExclusiveStartKey: startKey }),
+      }),
+    );
+    for (const item of res.Items ?? []) {
+      if (!earliest || String(item.createdAt ?? '') < String(earliest.createdAt ?? '')) {
+        earliest = item;
+      }
+    }
+    startKey = res.LastEvaluatedKey;
+  } while (startKey);
+  return earliest?.recordId as string | undefined;
+}
+
+/**
+ * Locate a recipient's `技能认领` (skill-claim) earn PointsRecord for an activity so it
+ * can be edited in place when skills are released or assigned. batch-points merges all
+ * of a user's skills for one activity into a single record, so there is at most one.
+ * Matches by userId (GSI) + type='earn' + activityId + source begins_with '技能认领:'.
+ * Returns the earliest-created matching item (with recordId/amount/source), or undefined.
+ */
+async function findSkillEarnRecord(
+  client: DynamoDBDocumentClient,
+  pointsRecordsTable: string,
+  userId: string,
+  activityId: string,
+): Promise<Record<string, any> | undefined> {
+  let earliest: Record<string, any> | undefined;
+  let startKey: Record<string, any> | undefined;
+  do {
+    const res = await client.send(
+      new QueryCommand({
+        TableName: pointsRecordsTable,
+        IndexName: 'userId-createdAt-index',
+        KeyConditionExpression: 'userId = :uid',
+        FilterExpression: '#type = :earn AND activityId = :aid AND begins_with(#src, :pfx)',
+        ExpressionAttributeNames: { '#type': 'type', '#src': 'source' },
+        ExpressionAttributeValues: { ':uid': userId, ':earn': 'earn', ':aid': activityId, ':pfx': '技能认领:' },
+        ...(startKey && { ExclusiveStartKey: startKey }),
+      }),
+    );
+    for (const item of res.Items ?? []) {
+      if (!earliest || String(item.createdAt ?? '') < String(earliest.createdAt ?? '')) {
+        earliest = item;
+      }
+    }
+    startKey = res.LastEvaluatedKey;
+  } while (startKey);
+  return earliest;
+}
+
+/** Skill-claim earn record source marker separating activity fields from the skill list. */
+const SKILL_SOURCE_MARKER = '|技能:';
+
+/** Build the `技能认领` earn source for a given skill set. */
+function buildSkillClaimSource(activityUG: string, activityTopic: string, activityDate: string, skills: string[]): string {
+  return `技能认领:Volunteer|${activityUG}|${activityTopic}|${activityDate}${SKILL_SOURCE_MARKER}${skills.join('+')}`;
+}
 
 /**
  * Execute a batch points adjustment.
@@ -589,9 +664,10 @@ export async function executeAdjustment(
     }
   }
 
-  // 6. Fetch user details for new recipients (for recipientDetails update)
+  // 6. Fetch user details for new recipients (for recipientDetails update + balanceAfter on newly-added earn records)
   const allNewUserIds = [...new Set(input.recipientIds)];
   const userDetailsMap = new Map<string, { userId: string; nickname: string; email: string }>();
+  const balanceByUser = new Map<string, number>();
   const detailChunks = chunkArray(allNewUserIds, 100);
   for (const chunk of detailChunks) {
     const batchResult = await client.send(
@@ -599,7 +675,7 @@ export async function executeAdjustment(
         RequestItems: {
           [tables.usersTable]: {
             Keys: chunk.map(userId => ({ userId })),
-            ProjectionExpression: 'userId, nickname, email',
+            ProjectionExpression: 'userId, nickname, email, points',
           },
         },
       }),
@@ -611,6 +687,7 @@ export async function executeAdjustment(
         nickname: (item.nickname as string) ?? '',
         email: (item.email as string) ?? '',
       });
+      balanceByUser.set(item.userId as string, (item.points as number) ?? 0);
     }
   }
 
@@ -620,6 +697,8 @@ export async function executeAdjustment(
     Speaker: 'earnTotalSpeaker',
     UserGroupLeader: 'earnTotalLeader',
     Volunteer: 'earnTotalVolunteer',
+    SpecialActivity: 'earnTotalSpecialActivity',
+    SpecialReward: 'earnTotalSpecialReward',
   };
   const originalRoleField = roleFieldMap[original.targetRole] ?? 'earnTotalSpeaker';
   const newRoleField = roleFieldMap[input.targetRole] ?? 'earnTotalSpeaker';
@@ -653,7 +732,6 @@ export async function executeAdjustment(
       }
 
       const { userId, pointsAwarded } = existingClaim;
-      const recordId = ulid();
 
       // a. Delete the SkillClaim record
       releaseSkillItems.push({
@@ -663,12 +741,14 @@ export async function executeAdjustment(
         },
       });
 
-      // b. Update user's balance: decrease points, earnTotal, earnTotalLeader by pointsAwarded
+      // b. Update user's balance: decrease points, earnTotal, and earnTotalVolunteer
+      //    by pointsAwarded. Skill points are Volunteer-classified (that's how they are
+      //    awarded in batch-points), so the role counter to decrement is earnTotalVolunteer.
       releaseSkillItems.push({
         Update: {
           TableName: tables.usersTable,
           Key: { userId },
-          UpdateExpression: `SET points = points - :pts, earnTotal = if_not_exists(earnTotal, :zero) - :pts, earnTotalLeader = if_not_exists(earnTotalLeader, :zero) - :pts, updatedAt = :now`,
+          UpdateExpression: `SET points = points - :pts, earnTotal = if_not_exists(earnTotal, :zero) - :pts, earnTotalVolunteer = if_not_exists(earnTotalVolunteer, :zero) - :pts, updatedAt = :now`,
           ExpressionAttributeValues: {
             ':pts': pointsAwarded,
             ':zero': 0,
@@ -677,26 +757,34 @@ export async function executeAdjustment(
         },
       });
 
-      // c. Put a new PointsRecord with type: 'adjust', amount: -pointsAwarded
-      releaseSkillItems.push({
-        Put: {
-          TableName: tables.pointsRecordsTable,
-          Item: {
-            recordId,
-            userId,
-            type: 'adjust',
-            amount: -pointsAwarded,
-            source: `技能释放:${releaseItem.skill}|${original.activityUG ?? ''}|${original.activityTopic ?? ''}|${original.activityDate ?? ''}`,
-            createdAt: now,
-            activityId,
-            activityUG: original.activityUG ?? '',
-            activityTopic: original.activityTopic ?? '',
-            activityDate: original.activityDate ?? '',
-            targetRole: 'UserGroupLeader',
-            distributionId: input.distributionId,
-          },
-        },
-      });
+      // c. Directly edit the original 技能认领 earn record instead of writing a
+      //    技能释放 correction record: drop this skill from it (reduce amount + remove
+      //    the skill token), or delete the record entirely if it was the only skill.
+      const skillEarn = await findSkillEarnRecord(client, tables.pointsRecordsTable, userId, activityId);
+      if (skillEarn) {
+        const src = String(skillEarn.source ?? '');
+        const mi = src.indexOf(SKILL_SOURCE_MARKER);
+        const remaining = mi >= 0
+          ? src.slice(mi + SKILL_SOURCE_MARKER.length).split('+').filter(s => s && s !== releaseItem.skill)
+          : [];
+        if (remaining.length === 0) {
+          releaseSkillItems.push({
+            Delete: { TableName: tables.pointsRecordsTable, Key: { recordId: skillEarn.recordId } },
+          });
+        } else {
+          const newAmount = (typeof skillEarn.amount === 'number' ? skillEarn.amount : 0) - pointsAwarded;
+          const newSource = src.slice(0, mi) + SKILL_SOURCE_MARKER + remaining.join('+');
+          releaseSkillItems.push({
+            Update: {
+              TableName: tables.pointsRecordsTable,
+              Key: { recordId: skillEarn.recordId },
+              UpdateExpression: `SET #amt = :amt, #src = :src`,
+              ExpressionAttributeNames: { '#amt': 'amount', '#src': 'source' },
+              ExpressionAttributeValues: { ':amt': newAmount, ':src': newSource },
+            },
+          });
+        }
+      }
     }
   }
 
@@ -752,7 +840,6 @@ export async function executeAdjustment(
         addItem.skill === 'liveSupport' ? config.liveSupportPoints
         : addItem.skill === 'posterDesign' ? config.posterDesignPoints
         : config.articleEditingPoints;
-      const recordId = ulid();
       const userNickname = skillUserNicknameMap.get(addItem.userId) ?? '';
 
       // a. Put new SkillClaim with attribute_not_exists(activityId) condition
@@ -773,12 +860,13 @@ export async function executeAdjustment(
         },
       });
 
-      // b. Update user's balance: increase points, earnTotal, earnTotalLeader by pointsAwarded
+      // b. Update user's balance: increase points, earnTotal, and earnTotalVolunteer
+      //    by pointsAwarded (skill points are Volunteer-classified, matching batch-points).
       addSkillClaimItems.push({
         Update: {
           TableName: tables.usersTable,
           Key: { userId: addItem.userId },
-          UpdateExpression: `SET points = points + :pts, earnTotal = if_not_exists(earnTotal, :zero) + :pts, earnTotalLeader = if_not_exists(earnTotalLeader, :zero) + :pts, updatedAt = :now`,
+          UpdateExpression: `SET points = points + :pts, earnTotal = if_not_exists(earnTotal, :zero) + :pts, earnTotalVolunteer = if_not_exists(earnTotalVolunteer, :zero) + :pts, updatedAt = :now`,
           ExpressionAttributeValues: {
             ':pts': pointsAwarded,
             ':zero': 0,
@@ -787,32 +875,112 @@ export async function executeAdjustment(
         },
       });
 
-      // c. Put a new PointsRecord with type: 'adjust', amount: +pointsAwarded
-      addSkillClaimItems.push({
-        Put: {
-          TableName: tables.pointsRecordsTable,
-          Item: {
-            recordId,
-            userId: addItem.userId,
-            type: 'adjust',
-            amount: pointsAwarded,
-            source: `技能指派:${addItem.skill}|${original.activityUG ?? ''}|${original.activityTopic ?? ''}|${original.activityDate ?? ''}`,
-            createdAt: now,
-            activityId,
-            activityUG: original.activityUG ?? '',
-            activityTopic: original.activityTopic ?? '',
-            activityDate: original.activityDate ?? '',
-            targetRole: 'UserGroupLeader',
-            distributionId: input.distributionId,
+      // c. Directly add this skill to the recipient's 技能认领 earn record instead of
+      //    writing a 技能指派 correction record: merge into the existing record (amount +
+      //    skill token), or create a fresh one when the user has no skill record yet.
+      const existingSkillEarn = await findSkillEarnRecord(client, tables.pointsRecordsTable, addItem.userId, activityId);
+      if (existingSkillEarn) {
+        const src = String(existingSkillEarn.source ?? '');
+        const mi = src.indexOf(SKILL_SOURCE_MARKER);
+        const skills = mi >= 0 ? src.slice(mi + SKILL_SOURCE_MARKER.length).split('+').filter(Boolean) : [];
+        if (!skills.includes(addItem.skill)) skills.push(addItem.skill);
+        const base = mi >= 0 ? src.slice(0, mi) : src;
+        const newAmount = (typeof existingSkillEarn.amount === 'number' ? existingSkillEarn.amount : 0) + pointsAwarded;
+        addSkillClaimItems.push({
+          Update: {
+            TableName: tables.pointsRecordsTable,
+            Key: { recordId: existingSkillEarn.recordId },
+            UpdateExpression: `SET #amt = :amt, #src = :src`,
+            ExpressionAttributeNames: { '#amt': 'amount', '#src': 'source' },
+            ExpressionAttributeValues: { ':amt': newAmount, ':src': base + SKILL_SOURCE_MARKER + skills.join('+') },
           },
-        },
-      });
+        });
+      } else {
+        addSkillClaimItems.push({
+          Put: {
+            TableName: tables.pointsRecordsTable,
+            Item: {
+              recordId: ulid(),
+              userId: addItem.userId,
+              type: 'earn',
+              amount: pointsAwarded,
+              source: buildSkillClaimSource(original.activityUG ?? '', original.activityTopic ?? '', original.activityDate ?? '', [addItem.skill]),
+              balanceAfter: (balanceByUser.get(addItem.userId) ?? 0) + pointsAwarded,
+              createdAt: now,
+              activityId,
+              activityType: original.activityType,
+              activityUG: original.activityUG ?? '',
+              activityTopic: original.activityTopic ?? '',
+              activityDate: original.activityDate ?? '',
+              targetRole: 'Volunteer',
+            },
+          },
+        });
+      }
     }
   }
 
-  // Build transaction items for all affected users
-  const affectedUsers = diff.userAdjustments;
-  const userBatches = chunkArray(affectedUsers, USERS_PER_BATCH);
+  // Build the per-user operations. This feature edits the original distribution's
+  // `earn` PointsRecords directly instead of writing `adjust` correction history:
+  //   - remove  → decrement counters + DELETE the recipient's base earn record
+  //   - add     → increment counters + PUT a new base earn record
+  //   - modify  → adjust counters + UPDATE the recipient's base earn record in place
+  //               (new role / new points / new source), preserving its recordId and
+  //               createdAt so the award keeps its original position on the timeline.
+  // No `adjust` records are produced here. Skill lock release/assign (handled above)
+  // likewise edit the recipient's 技能认领 earn record directly instead of writing
+  // 技能释放/技能指派 correction records.
+  const originalBaseSource = buildBaseEarnSource(
+    original.targetRole,
+    original.activityUG,
+    original.activityTopic,
+    original.activityDate,
+    original,
+  );
+  const newBaseSource = buildBaseEarnSource(
+    input.targetRole,
+    original.activityUG,
+    original.activityTopic,
+    original.activityDate,
+    original,
+  );
+
+  interface UserOp {
+    userId: string;
+    kind: 'add' | 'remove' | 'modify';
+    delta: number;
+    earnRecordId?: string;
+  }
+  const userOps: UserOp[] = [];
+  for (const userId of diff.removedUserIds) {
+    userOps.push({ userId, kind: 'remove', delta: -diff.originalPoints });
+  }
+  for (const userId of diff.addedUserIds) {
+    userOps.push({ userId, kind: 'add', delta: diff.newPoints });
+  }
+  // Retained recipients only need a ledger edit when the role changed or the points value changed.
+  for (const userId of diff.retainedUserIds) {
+    if (roleChanged || diff.pointsDelta !== 0) {
+      userOps.push({ userId, kind: 'modify', delta: diff.pointsDelta });
+    }
+  }
+
+  // Resolve the recordId of the base earn record for remove/modify ops (needed to
+  // Delete/Update by primary key inside the transaction). The original earn record
+  // still carries the ORIGINAL role, so it is located via originalBaseSource.
+  for (const op of userOps) {
+    if (op.kind === 'remove' || op.kind === 'modify') {
+      op.earnRecordId = await findBaseEarnRecordId(
+        client,
+        tables.pointsRecordsTable,
+        op.userId,
+        original.activityId ?? '',
+        originalBaseSource,
+      );
+    }
+  }
+
+  const userBatches = chunkArray(userOps, USERS_PER_BATCH);
 
   // Include releaseSkillItems and addSkillClaimItems in the first transaction batch for atomicity
   // Per requirement 12.9: releaseSkills first, then addSkillClaims
@@ -886,71 +1054,114 @@ export async function executeAdjustment(
       skillItemsIncluded = true;
     }
 
-    for (const ua of batch) {
-      const recordId = ulid();
-      const isRetained = diff.retainedUserIds.includes(ua.userId);
-      const isAdded = diff.addedUserIds.includes(ua.userId);
-      const isRemoved = diff.removedUserIds.includes(ua.userId);
-
-      // Determine which role fields to update
-      if (roleChanged && isRetained) {
-        // Role change for retained users: decrease original role earnTotal, increase new role earnTotal
+    for (const op of batch) {
+      if (op.kind === 'add') {
+        // Newly-added recipient: increment counters and write a fresh base earn record.
         transactItems.push({
           Update: {
             TableName: tables.usersTable,
-            Key: { userId: ua.userId },
-            UpdateExpression: `SET points = points + :delta, earnTotal = if_not_exists(earnTotal, :zero) + :delta, #origRole = if_not_exists(#origRole, :zero) - :origPts, #newRole = if_not_exists(#newRole, :zero) + :newPts, updatedAt = :now`,
-            ExpressionAttributeNames: {
-              '#origRole': originalRoleField,
-              '#newRole': newRoleField,
-            },
-            ExpressionAttributeValues: {
-              ':delta': ua.delta,
-              ':origPts': diff.originalPoints,
-              ':newPts': diff.newPoints,
-              ':zero': 0,
-              ':now': now,
-            },
-          },
-        });
-      } else {
-        // Normal case: adjust points, earnTotal, and the appropriate role field
-        const roleField = isRemoved ? originalRoleField : newRoleField;
-        transactItems.push({
-          Update: {
-            TableName: tables.usersTable,
-            Key: { userId: ua.userId },
+            Key: { userId: op.userId },
             UpdateExpression: `SET points = points + :delta, earnTotal = if_not_exists(earnTotal, :zero) + :delta, #rf = if_not_exists(#rf, :zero) + :delta, updatedAt = :now`,
-            ExpressionAttributeNames: { '#rf': roleField },
-            ExpressionAttributeValues: {
-              ':delta': ua.delta,
-              ':zero': 0,
-              ':now': now,
-            },
+            ExpressionAttributeNames: { '#rf': newRoleField },
+            ExpressionAttributeValues: { ':delta': op.delta, ':zero': 0, ':now': now },
           },
         });
-      }
-
-      // Put Correction_Record
-      transactItems.push({
-        Put: {
-          TableName: tables.pointsRecordsTable,
-          Item: {
-            recordId,
-            userId: ua.userId,
-            type: 'adjust',
-            amount: ua.delta,
-            source: `积分调整:${input.targetRole}|${original.activityUG ?? ''}|${original.activityTopic ?? ''}|${original.activityDate ?? ''}`,
-            createdAt: now,
-            activityId: original.activityId ?? '',
-            activityUG: original.activityUG ?? '',
-            activityTopic: original.activityTopic ?? '',
-            activityDate: original.activityDate ?? '',
-            targetRole: isRemoved ? original.targetRole : input.targetRole,
-            distributionId: input.distributionId,
+        const currentBalance = balanceByUser.get(op.userId) ?? 0;
+        const earnItem: Record<string, any> = {
+          recordId: ulid(),
+          userId: op.userId,
+          type: 'earn',
+          amount: diff.newPoints,
+          source: newBaseSource,
+          balanceAfter: currentBalance + diff.newPoints,
+          createdAt: now,
+          activityId: original.activityId ?? '',
+          activityType: original.activityType,
+          activityUG: original.activityUG ?? '',
+          activityTopic: original.activityTopic ?? '',
+          activityDate: original.activityDate ?? '',
+          targetRole: input.targetRole,
+        };
+        // Special types carry tag-specific fields on their earn records
+        if (input.targetRole === 'SpecialActivity') {
+          earnItem.awardTagId = original.awardTagId ?? '';
+          earnItem.awardTagName = original.awardTagName ?? '';
+        }
+        if (input.targetRole === 'SpecialReward') {
+          earnItem.rewardTagId = original.rewardTagId ?? '';
+          earnItem.rewardTagName = original.rewardTagName ?? '';
+        }
+        transactItems.push({
+          Put: {
+            TableName: tables.pointsRecordsTable,
+            Item: earnItem,
           },
-        },
-      });
+        });
+      } else if (op.kind === 'remove') {
+        // Removed recipient: decrement counters (original role) and delete the base earn record.
+        transactItems.push({
+          Update: {
+            TableName: tables.usersTable,
+            Key: { userId: op.userId },
+            UpdateExpression: `SET points = points + :delta, earnTotal = if_not_exists(earnTotal, :zero) + :delta, #rf = if_not_exists(#rf, :zero) + :delta, updatedAt = :now`,
+            ExpressionAttributeNames: { '#rf': originalRoleField },
+            ExpressionAttributeValues: { ':delta': op.delta, ':zero': 0, ':now': now },
+          },
+        });
+        if (op.earnRecordId) {
+          transactItems.push({
+            Delete: {
+              TableName: tables.pointsRecordsTable,
+              Key: { recordId: op.earnRecordId },
+            },
+          });
+        }
+      } else {
+        // Retained recipient with a role and/or points change: adjust counters and
+        // UPDATE the original base earn record in place (recordId + createdAt preserved).
+        if (roleChanged) {
+          transactItems.push({
+            Update: {
+              TableName: tables.usersTable,
+              Key: { userId: op.userId },
+              UpdateExpression: `SET points = points + :delta, earnTotal = if_not_exists(earnTotal, :zero) + :delta, #origRole = if_not_exists(#origRole, :zero) - :origPts, #newRole = if_not_exists(#newRole, :zero) + :newPts, updatedAt = :now`,
+              ExpressionAttributeNames: { '#origRole': originalRoleField, '#newRole': newRoleField },
+              ExpressionAttributeValues: {
+                ':delta': op.delta,
+                ':origPts': diff.originalPoints,
+                ':newPts': diff.newPoints,
+                ':zero': 0,
+                ':now': now,
+              },
+            },
+          });
+        } else {
+          transactItems.push({
+            Update: {
+              TableName: tables.usersTable,
+              Key: { userId: op.userId },
+              UpdateExpression: `SET points = points + :delta, earnTotal = if_not_exists(earnTotal, :zero) + :delta, #rf = if_not_exists(#rf, :zero) + :delta, updatedAt = :now`,
+              ExpressionAttributeNames: { '#rf': newRoleField },
+              ExpressionAttributeValues: { ':delta': op.delta, ':zero': 0, ':now': now },
+            },
+          });
+        }
+        if (op.earnRecordId) {
+          transactItems.push({
+            Update: {
+              TableName: tables.pointsRecordsTable,
+              Key: { recordId: op.earnRecordId },
+              UpdateExpression: `SET #tr = :tr, #amt = :amt, #src = :src`,
+              ExpressionAttributeNames: { '#tr': 'targetRole', '#amt': 'amount', '#src': 'source' },
+              ExpressionAttributeValues: {
+                ':tr': input.targetRole,
+                ':amt': diff.newPoints,
+                ':src': newBaseSource,
+              },
+            },
+          });
+        }
+      }
     }
 
     try {

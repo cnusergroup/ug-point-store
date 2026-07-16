@@ -70,6 +70,7 @@ interface SyncEvent {
 
 /** 从飞书获取的原始活动数据 */
 interface RawActivity {
+  rsvp?: number;
   activityType: string;
   ugName: string;
   topic: string;
@@ -359,24 +360,28 @@ export async function syncActivities(
         if (existingResult.Items && existingResult.Items.length > 0) {
           const existingItem = existingResult.Items[0];
           // Update if topic, date, ugName, or activityType changed
+          const newRsvp = activity.rsvp ?? null;
+          const existingRsvp = existingItem.rsvp ?? null;
           if (
             existingItem.topic !== activity.topic ||
             existingItem.activityDate !== activity.activityDate ||
             existingItem.ugName !== activity.ugName ||
-            existingItem.activityType !== activity.activityType
+            existingItem.activityType !== activity.activityType ||
+            existingRsvp !== newRsvp
           ) {
             await dynamo.send(
               new UpdateCommand({
                 TableName: activitiesTable,
                 Key: { activityId: existingItem.activityId },
                 UpdateExpression:
-                  'SET topic = :topic, activityDate = :date, ugName = :ug, activityType = :type, syncedAt = :syncedAt',
+                  'SET topic = :topic, activityDate = :date, ugName = :ug, activityType = :type, syncedAt = :syncedAt, rsvp = :rsvp',
                 ExpressionAttributeValues: {
                   ':topic': activity.topic,
                   ':date': activity.activityDate,
                   ':ug': activity.ugName,
                   ':type': activity.activityType,
                   ':syncedAt': now,
+                  ':rsvp': newRsvp,
                 },
               }),
             );
@@ -407,6 +412,7 @@ export async function syncActivities(
             ugName: activity.ugName,
             topic: activity.topic,
             activityDate: activity.activityDate,
+            ...(activity.rsvp !== undefined ? { rsvp: activity.rsvp } : {}),
             syncedAt: now,
             sourceUrl: config.feishuTableUrl,
             dedupeKey,

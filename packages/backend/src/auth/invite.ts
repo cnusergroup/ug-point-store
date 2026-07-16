@@ -147,11 +147,11 @@ export async function batchCreateInvites(
     }
   }
 
-  // 员工邀请仅限 Speaker 身份
-  if (isEmployee && !(uniqueRoles.length === 1 && uniqueRoles[0] === 'Speaker')) {
+  // 员工邀请仅限 Speaker / Volunteer 身份（可同时具备两者）
+  if (isEmployee && !uniqueRoles.every(r => r === 'Speaker' || r === 'Volunteer')) {
     return {
       success: false,
-      error: { code: 'EMPLOYEE_SPEAKER_ONLY', message: '员工邀请仅限 Speaker 身份' },
+      error: { code: 'EMPLOYEE_ROLE_ONLY', message: '员工邀请仅限 Speaker 或 Volunteer 身份' },
     };
   }
 

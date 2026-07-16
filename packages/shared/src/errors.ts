@@ -247,6 +247,18 @@ export const ErrorCodes = {
   QUERY_CREDENTIAL_CORRUPTED: 'QUERY_CREDENTIAL_CORRUPTED',
   /** 目标用户当前并非待退出复核状态 (400) - ugl-inactivity-exit-flow 需求 10.6 */
   NOT_PENDING_EXIT: 'NOT_PENDING_EXIT',
+  /** 昵称不能为空 (400) - nickname-change 需求 1.6, 2.3 */
+  NICKNAME_EMPTY: 'NICKNAME_EMPTY',
+  /** 昵称不能超过20个字符 (400) - nickname-change 需求 2.4 */
+  NICKNAME_TOO_LONG: 'NICKNAME_TOO_LONG',
+  /** 昵称包含非法字符 (400) - nickname-change 需求 2.6 */
+  NICKNAME_INVALID_CHARS: 'NICKNAME_INVALID_CHARS',
+  /** 新昵称与当前昵称相同 (400) - nickname-change 需求 1.6 */
+  NICKNAME_SAME_AS_CURRENT: 'NICKNAME_SAME_AS_CURRENT',
+  /** 该昵称已被使用 (409) - nickname-change 需求 3.2 */
+  NICKNAME_ALREADY_TAKEN: 'NICKNAME_ALREADY_TAKEN',
+  /** 改名过于频繁请稍后再试 (429) - nickname-change 需求 4.3 */
+  NICKNAME_CHANGE_TOO_FREQUENT: 'NICKNAME_CHANGE_TOO_FREQUENT',
 } as const;
 
 /** 错误码类型 */
@@ -376,6 +388,12 @@ export const ErrorHttpStatus: Record<ErrorCode, number> = {
   [ErrorCodes.QUERY_EXPORT_FAILED]: 500,
   [ErrorCodes.QUERY_CREDENTIAL_CORRUPTED]: 500,
   [ErrorCodes.NOT_PENDING_EXIT]: 400,
+  [ErrorCodes.NICKNAME_EMPTY]: 400,
+  [ErrorCodes.NICKNAME_TOO_LONG]: 400,
+  [ErrorCodes.NICKNAME_INVALID_CHARS]: 400,
+  [ErrorCodes.NICKNAME_SAME_AS_CURRENT]: 400,
+  [ErrorCodes.NICKNAME_ALREADY_TAKEN]: 409,
+  [ErrorCodes.NICKNAME_CHANGE_TOO_FREQUENT]: 429,
 };
 
 /** 错误码对应的默认错误消息 */
@@ -502,4 +520,10 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.QUERY_EXPORT_FAILED]: '导出失败，请稍后重试',
   [ErrorCodes.QUERY_CREDENTIAL_CORRUPTED]: '查询凭证数据异常，请联系管理员',
   [ErrorCodes.NOT_PENDING_EXIT]: '目标用户当前并非待退出复核状态',
+  [ErrorCodes.NICKNAME_EMPTY]: '昵称不能为空',
+  [ErrorCodes.NICKNAME_TOO_LONG]: '昵称不能超过20个字符',
+  [ErrorCodes.NICKNAME_INVALID_CHARS]: '昵称包含非法字符',
+  [ErrorCodes.NICKNAME_SAME_AS_CURRENT]: '新昵称与当前昵称相同',
+  [ErrorCodes.NICKNAME_ALREADY_TAKEN]: '该昵称已被使用',
+  [ErrorCodes.NICKNAME_CHANGE_TOO_FREQUENT]: '改名过于频繁请稍后再试',
 };

@@ -2,386 +2,230 @@
 
 ## Overview
 
-新增自包含后端模块 `packages/backend/src/ugl-exit/`，实现 UGL 季度不活跃检测 → 提醒邮件 → 30 天宽限期 → SuperAdmin 人工审核的完整生命周期。按层级从底向上实现：shared 错误码扩展 → 纯函数模块（quarter 解析、eligibility 判定、reminder-tracking 幂等声明、grace-evaluation）→ 依赖 DynamoDB 的编排模块（review-actions、pending-exit-list、detection-job、grace-period-job）→ Lambda 入口（新 UGLExit Lambda）→ Admin Lambda 新增路由 → 邮件通知扩展（3 类新通知 + 5 语言模板种子 + feature toggle）→ CDK 基础设施（新表 + 新 Lambda + 两条 EventBridge 规则 + Admin Lambda 权限）→ 前端 Pending_Exit_List 页面 + dashboard 卡片 + i18n。本功能不修改 `reports/inactive-ugl-query.ts`，只复用其中的 `quarter-utils.ts` 与 `admin/users.ts` 的 `setUserStatus`。
+This spec was originally implemented with an auto-send reminder flow (detection job sends the Reminder_Email directly) and has already been merged and is pending deployment. The requirements and design have since been reworked: detection now only **records** an Awaiting_Reminder_UGL entry and sends a Detection_Completion_Notification summary; a SuperAdmin must explicitly review the Awaiting_Reminder_List and invoke a new Send_Reminder_Action before any Reminder_Email is ever sent, and the 30-day Grace_Period now starts at that send moment, not at detection time. This plan covers only the **delta** needed to move the already-implemented auto-send version to the new manual-dispatch version — foundational modules that are unaffected by this behavior change (`quarter.ts`, `eligibility.ts`, `grace-evaluation.ts`, `review-actions.ts`, `pending-exit-list.ts`, the CDK table/Lambda/EventBridge infrastructure, the `ugl-exit/handler.ts` EventBridge dispatcher) are already correct and are marked complete below without further changes.
 
 Convert the feature design into a series of prompts for a code-generation LLM that will implement each step with incremental progress. Make sure that each prompt builds on the previous prompts, and ends with wiring things together. There should be no hanging or orphaned code that isn't integrated into a previous step. Focus ONLY on tasks that involve writing, modifying, or testing code.
 
 ## Tasks
 
-- [x] 1. Shared error code extension
-  - [x] 1.1 Add `NOT_PENDING_EXIT` error code in `packages/shared/src/errors.ts`
-    - Add `NOT_PENDING_EXIT: 'NOT_PENDING_EXIT'` to `ErrorCodes`
-    - Add `[ErrorCodes.NOT_PENDING_EXIT]: 400` to `ErrorHttpStatus`
-    - Add `[ErrorCodes.NOT_PENDING_EXIT]: '目标用户当前并非待退出复核状态'` to `ErrorMessages`
-    - Mirror the exact pattern used by `CANNOT_DISABLE_SUPERADMIN`
-    - _Requirements: 10.6_
+- [x] 1. Foundational modules unaffected by the rework (already implemented, verified against new design.md)
+  - [x] 1.1 `packages/backend/src/ugl-exit/quarter.ts` and its tests — unchanged, no rework needed
+  - [x] 1.2 `packages/backend/src/ugl-exit/eligibility.ts` and its tests — unchanged, no rework needed
+  - [x] 1.3 `packages/backend/src/ugl-exit/grace-evaluation.ts` and its tests — unchanged, no rework needed
+  - [x] 1.4 `packages/backend/src/ugl-exit/review-actions.ts` and its tests — unchanged, no rework needed
+  - [x] 1.5 `packages/backend/src/ugl-exit/pending-exit-list.ts` and its tests — unchanged, no rework needed
+  - [x] 1.6 `packages/backend/src/ugl-exit/handler.ts` (EventBridge `jobType` dispatch) and its tests — unchanged, no rework needed
+  - [x] 1.7 CDK `PointsMall-UGLReminderTracking` table + `outcome-gracePeriodDeadline-index` GSI + `PointsMall-UGLExit` Lambda + two EventBridge rules — unchanged shape, no new CDK resources needed for this rework (per design.md's GSI sparse-index note)
 
-- [x] 2. Quarter resolution module
-  - [x] 2.1 Create `packages/backend/src/ugl-exit/quarter.ts`
-    - Import `parseQuarter`, `quarterToDateRange`, `getCurrentQuarter` from `../reports/quarter-utils` (unmodified, verbatim reuse)
-    - Implement `getPreviousQuarter(quarter: string): string` — rolls Q1 back to Q4 of the previous year
-    - Implement `resolveAutoDetectionQuarter(now?: Date): string` — the quarter immediately preceding `now`'s current quarter
-    - Implement `resolveDetectionQuarter(explicitQuarter: string | undefined, now?: Date): DetectionQuarterResolution` — validates an explicit quarter via `parseQuarter` (format + not-future) without checking it against the fixed-date mapping; falls back to `resolveAutoDetectionQuarter` when omitted
-    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.6_
+- [x] 2. Reminder tracking module rewrite — 4-state machine
+  - [x] 2.1 Rewrite `packages/backend/src/ugl-exit/reminder-tracking.ts`
+    - Change `ReminderOutcome` to `'awaiting_reminder' | 'pending' | 'remedied' | 'exited'`; make `reminderSentAt`/`gracePeriodDeadline` optional on `ReminderTrackingRecord`
+    - Replace `claimReminderSlot` with `recordAwaitingReminder(userId, quarter, now, dynamoClient, trackingTable)` — conditional `PutCommand` (`attribute_not_exists(userId)`) creating the record in outcome `'awaiting_reminder'` with NO `reminderSentAt`/`gracePeriodDeadline` set; returns `{ recorded: false }` without writing when a record already exists
+    - Add `queryAwaitingReminderRecords(dynamoClient, trackingTable)` — `Scan` with `FilterExpression outcome = 'awaiting_reminder'`, paginated (cannot use the GSI since `gracePeriodDeadline` is absent for these records)
+    - Add `claimAndStartGracePeriod(userId, quarter, now, dynamoClient, trackingTable)` — conditional `UpdateCommand` (`outcome = :awaitingReminder`) transitioning to `'pending'` and computing/setting `reminderSentAt=now`, `gracePeriodDeadline=computeGracePeriodDeadline(now)` in the same write; returns `{ claimed: false }` when the condition fails
+    - Add `revertToAwaitingReminder(userId, quarter, expectedReminderSentAt, dynamoClient, trackingTable)` — conditional `UpdateCommand` (`outcome = :pending AND reminderSentAt = :expected`) transitioning back to `'awaiting_reminder'` and clearing `reminderSentAt`/`gracePeriodDeadline`; returns `{ reverted: false }` when the condition fails
+    - Keep `computeGracePeriodDeadline`, `queryDueReminderRecords`, `transitionOutcome` unchanged
+    - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 5.3, 5.8, 15.1, 15.4_
 
-  - [x]* 2.2 Write property test for detection quarter resolution correctness
-    - **Property 1: Detection quarter resolution correctness**
-    - Create `packages/backend/src/ugl-exit/quarter.property.test.ts`
-    - Use `fast-check`, `numRuns: 100`; tag `// Feature: ugl-inactivity-exit-flow, Property 1: Detection quarter resolution correctness`
-    - **Validates: Requirements 1.1, 1.2, 1.3, 1.4, 1.6**
+  - [x]* 2.2 Rewrite property test for reminder-tracking idempotency and add claim/revert coverage
+    - **Property 10: Grace-period evaluation idempotency** (unchanged from prior `transitionOutcome` coverage)
+    - Update `packages/backend/src/ugl-exit/reminder-tracking.property.test.ts`: keep the existing `transitionOutcome` idempotency property test; add new property coverage for `recordAwaitingReminder` dedup (at most one record created per `(userId, quarter)` across repeated calls) and for `claimAndStartGracePeriod`/`revertToAwaitingReminder` round-tripping back to the exact pre-claim state
+    - Tag `// Feature: ugl-inactivity-exit-flow, Property 10: Grace-period evaluation idempotency`
+    - **Validates: Requirements 15.1, 15.3, 15.4**
 
-  - [x]* 2.3 Write unit tests for quarter resolution edge cases
-    - Test file: `packages/backend/src/ugl-exit/quarter.test.ts`
-    - Test the four fixed-date-to-quarter mappings (Apr 1 → Q1, Jul 1 → Q2, Oct 1 → Q3, Jan 1 → previous year Q4); test malformed/future explicit quarter rejection
-    - _Requirements: 1.1, 1.2, 1.3, 1.4_
+  - [x]* 2.3 Update unit tests for the new state machine
+    - Update `packages/backend/src/ugl-exit/reminder-tracking.test.ts`: replace `claimReminderSlot` tests with `recordAwaitingReminder` tests (no `reminderSentAt`/`gracePeriodDeadline` written); add tests for `queryAwaitingReminderRecords` Scan+filter pagination, `claimAndStartGracePeriod` success/already-claimed paths, and `revertToAwaitingReminder` success/stale-expected-timestamp paths
+    - _Requirements: 4.3, 5.3, 5.8_
 
-- [x] 3. Eligibility and inactivity determination module
-  - [x] 3.1 Implement pure filter functions in `packages/backend/src/ugl-exit/eligibility.ts`
-    - Define `ExitEligibleUser` and `ExitQualifyingRecord` interfaces
-    - Implement `filterEligibleUGLsForExit(users, quarterStart)` — `roles` contains `'UserGroupLeader'` AND `status === 'active'` AND `createdAt < quarterStart` AND `uglExitStatus !== 'pending_exit'`
-    - Implement `extractActiveUserIdsForQuarter(records, quarterStart, quarterEnd)` — counts a record only when `targetRole === 'UserGroupLeader'` AND `consumedForQuarter` unset AND effective date (`activityDate` falling back to `createdAt`'s date part) falls within `[quarterStart, quarterEnd]`
-    - Implement `computeFullyInactiveUGLs(eligibleUsers, activeUserIds)` — set difference
-    - _Requirements: 2.1, 2.2, 3.1, 3.2, 3.3, 7.1_
+- [x] 3. Detection job rewrite — record only, never send Reminder_Email
+  - [x] 3.1 Rewrite `runUGLDetectionJob` in `packages/backend/src/ugl-exit/detection-job.ts`
+    - Rename `DetectionJobSummary` fields: `remindersSent`→`awaitingReminderRecorded`, `remindersSkippedAlreadyClaimed`→`awaitingReminderSkippedAlreadyRecorded`
+    - Replace the per-user `claimReminderSlot` + `sendUGLExitReminderEmail` call with a single `recordAwaitingReminder` call — remove all calls to `sendUGLExitReminderEmail` from this file entirely
+    - After the per-user loop completes (success or partial-failure), always call `sendDetectionCompletionNotification(ctx, quarter, awaitingReminderRecorded)` exactly once — including when `awaitingReminderRecorded === 0`
+    - Keep per-user `try/catch` error isolation unchanged
+    - _Requirements: 4.1, 4.3, 4.4, 4.5, 6.1, 6.2, 15.1, 15.2_
 
-  - [x]* 3.2 Write property test for eligible UGL determination correctness
-    - **Property 2: Eligible UGL determination correctness**
-    - Create `packages/backend/src/ugl-exit/eligibility.property.test.ts`
-    - Tag `// Feature: ugl-inactivity-exit-flow, Property 2: Eligible UGL determination correctness`
-    - **Validates: Requirements 2.1, 2.2, 7.1**
+  - [x]* 3.2 Rewrite property test for awaiting-reminder recording idempotency and error isolation
+    - **Property 4: Awaiting-reminder recording idempotency and error isolation**
+    - Update `packages/backend/src/ugl-exit/detection-job.property.test.ts`: replace the old "exactly one Reminder_Email sent" assertion with "exactly one `awaiting_reminder` tracking record created per Fully_Inactive_UGL across repeated runs"; keep the per-user error isolation property (N attempts regardless of failures)
+    - Tag `// Feature: ugl-inactivity-exit-flow, Property 4: Awaiting-reminder recording idempotency and error isolation`
+    - **Validates: Requirements 4.1, 4.3, 4.4, 4.5, 15.1, 15.2**
 
-  - [x]* 3.3 Write property test for fully inactive UGL classification correctness
-    - **Property 3: Fully inactive UGL classification correctness**
-    - File: `packages/backend/src/ugl-exit/eligibility.property.test.ts` (append)
-    - Tag `// Feature: ugl-inactivity-exit-flow, Property 3: Fully inactive UGL classification correctness`
-    - **Validates: Requirements 3.1, 3.2, 3.3**
-
-  - [x] 3.4 Implement DynamoDB query functions in `packages/backend/src/ugl-exit/eligibility.ts`
-    - Implement `queryAllUGLUsersForExit(dynamoClient, usersTable)` — Query `entityType-createdAt-index` (PK=`'user'`) with `FilterExpression` on `roles contains 'UserGroupLeader'`, paginated
-    - Implement `queryQuarterQualifyingRecords(dynamoClient, pointsRecordsTable, quarterStart, quarterEnd)` — Query `type-createdAt-index` widened-range + `FilterExpression targetRole = 'UserGroupLeader'`, paginated, mirroring the existing report's widened-range pattern without importing it
-    - _Requirements: 2.1, 3.1_
-
-  - [x]* 3.5 Write unit tests for eligibility query pagination
-    - Test file: `packages/backend/src/ugl-exit/eligibility.test.ts`
-    - Mock DynamoDB client with paginated `LastEvaluatedKey` responses; verify both query functions aggregate all pages
-    - _Requirements: 2.1, 3.1_
-
-- [x] 4. Reminder tracking module (idempotency backbone)
-  - [x] 4.1 Implement pure and DynamoDB functions in `packages/backend/src/ugl-exit/reminder-tracking.ts`
-    - Define `ReminderOutcome`, `ReminderTrackingRecord` types
-    - Implement `computeGracePeriodDeadline(sentAt: string): string` — exactly `sentAt + 30*24h`
-    - Implement `claimReminderSlot(userId, quarter, now, dynamoClient, trackingTable)` — conditional `PutCommand` (`attribute_not_exists(userId)`); returns `{ claimed: false }` without writing when the condition fails
-    - Implement `queryDueReminderRecords(now, dynamoClient, trackingTable)` — Query `outcome-gracePeriodDeadline-index` for `outcome = 'pending' AND gracePeriodDeadline <= :now`, paginated
-    - Implement `transitionOutcome(userId, quarter, target, extra, dynamoClient, trackingTable)` — conditional `UpdateCommand` (`outcome = :pending`); returns `{ transitioned: false }` when the condition fails
-    - _Requirements: 4.4, 4.5, 5.1, 12.1, 12.3_
-
-  - [x]* 4.2 Write property test for grace-period evaluation idempotency
-    - **Property 8: Grace-period evaluation idempotency**
-    - Create `packages/backend/src/ugl-exit/reminder-tracking.property.test.ts`
-    - Simulate repeated `transitionOutcome` calls for the same `(userId, quarter)` against an in-memory mock DynamoDB client; assert at most one succeeds
-    - Tag `// Feature: ugl-inactivity-exit-flow, Property 8: Grace-period evaluation idempotency`
-    - **Validates: Requirements 12.3**
-
-  - [x]* 4.3 Write unit tests for reminder tracking claim/transition mechanics
-    - Test file: `packages/backend/src/ugl-exit/reminder-tracking.test.ts`
-    - Test `computeGracePeriodDeadline` exact 30-day offset; test `claimReminderSlot` returns `claimed: false` on a pre-existing record without issuing a second write; test `queryDueReminderRecords` GSI query shape and pagination
-    - _Requirements: 4.4, 5.1_
-
-- [x] 5. Grace-period evaluation module
-  - [x] 5.1 Implement pure functions in `packages/backend/src/ugl-exit/grace-evaluation.ts`
-    - Implement `selectEarliestMakeupRecord(candidates)` — the single candidate with minimum `createdAt`; `null` for empty input
-    - Implement `evaluateGracePeriodOutcome(candidates)` — `{ remedied: true, record }` iff non-empty, else `{ remedied: false }`
-    - Implement `queryMakeupCandidates(userId, sentAt, deadline, dynamoClient, pointsRecordsTable)` — Query `userId-createdAt-index` filtered to `targetRole = 'UserGroupLeader'`, `consumedForQuarter` unset, `createdAt` in `[sentAt, deadline]`
-    - _Requirements: 5.2, 5.3, 5.4, 5.5_
-
-  - [x]* 5.2 Write property test for grace-period evaluation outcome correctness
-    - **Property 6: Grace-period evaluation outcome correctness**
-    - Create `packages/backend/src/ugl-exit/grace-evaluation.property.test.ts`
-    - Tag `// Feature: ugl-inactivity-exit-flow, Property 6: Grace-period evaluation outcome correctness`
-    - **Validates: Requirements 5.2, 5.3, 5.5**
-
-  - [x]* 5.3 Write property test for earliest makeup record selection
-    - **Property 7: Earliest makeup record selection**
-    - File: `packages/backend/src/ugl-exit/grace-evaluation.property.test.ts` (append)
-    - Tag `// Feature: ugl-inactivity-exit-flow, Property 7: Earliest makeup record selection`
-    - **Validates: Requirements 5.4**
-
-  - [x]* 5.4 Write unit tests for makeup candidate query boundary
-    - Test file: `packages/backend/src/ugl-exit/grace-evaluation.test.ts`
-    - Test candidates exactly at `sentAt` and exactly at `deadline` boundaries are included; test already-consumed records are excluded from the query filter
-    - _Requirements: 5.2, 5.4_
-
-- [x] 6. Checkpoint - Ensure all pure-function module tests pass
-  - Ensure all tests pass, ask the user if questions arise.
-
-- [x] 7. Job orchestration: detection job
-  - [x] 7.1 Implement `runUGLDetectionJob` in `packages/backend/src/ugl-exit/detection-job.ts`
-    - Define `DetectionJobSummary` interface and `UGLExitServiceContext` interface (shared by both jobs)
-    - Orchestrate: `queryAllUGLUsersForExit` → `filterEligibleUGLsForExit` → `queryQuarterQualifyingRecords` → `extractActiveUserIdsForQuarter` → `computeFullyInactiveUGLs`
-    - For each Fully_Inactive_UGL, wrap in `try/catch`: call `claimReminderSlot`; on `claimed: true` call `sendUGLExitReminderEmail` (task 9.2); on `claimed: false` skip without sending
-    - Log and continue on any per-user error (increment `errors` count, never abort the loop)
-    - _Requirements: 4.1, 4.3, 4.4, 4.5, 4.6, 12.1, 12.2_
-
-  - [x]* 7.2 Write property test for reminder dispatch correctness and idempotency
-    - **Property 4: Reminder dispatch correctness and idempotency**
-    - Create `packages/backend/src/ugl-exit/detection-job.property.test.ts`
-    - Use an in-memory mock DynamoDB client; invoke `runUGLDetectionJob` multiple times sequentially for the same quarter and same user set; assert exactly one email per Fully_Inactive_UGL across all invocations and `gracePeriodDeadline` computed once
-    - Tag `// Feature: ugl-inactivity-exit-flow, Property 4: Reminder dispatch correctness and idempotency`
-    - **Validates: Requirements 4.1, 4.3, 4.4, 4.5, 12.1**
-
-  - [x]* 7.3 Write property test for per-user error isolation in the detection job
-    - **Property 5: Per-user error isolation in the detection job**
+  - [x]* 3.3 Write property test for detection job never sending the Reminder_Email and always sending the completion notification
+    - **Property 5: Detection job never sends the Reminder_Email; always sends the Detection_Completion_Notification**
     - File: `packages/backend/src/ugl-exit/detection-job.property.test.ts` (append)
-    - Generate N eligible users with an arbitrary subset configured to throw during processing (mocked send/DB failure); assert all N are attempted regardless of failures
-    - Tag `// Feature: ugl-inactivity-exit-flow, Property 5: Per-user error isolation in the detection job`
-    - **Validates: Requirements 4.6, 12.2**
+    - Generate arbitrary sets of Fully_Inactive_UGL users (including the empty set); assert `sendUGLExitReminderEmail` is called zero times and `sendDetectionCompletionNotification` is called exactly once per run, with the correct count argument including zero
+    - Tag `// Feature: ugl-inactivity-exit-flow, Property 5: Detection job never sends the Reminder_Email; always sends the Detection_Completion_Notification`
+    - **Validates: Requirements 4.1, 6.1, 6.2**
 
-- [x] 8. Job orchestration: grace-period evaluation job
-  - [x] 8.1 Implement `runGracePeriodEvaluationJob` in `packages/backend/src/ugl-exit/grace-period-job.ts`
-    - Define `GracePeriodJobSummary` interface
-    - Orchestrate: `queryDueReminderRecords(now)` → for each due record (wrapped in `try/catch`): `queryMakeupCandidates` → `evaluateGracePeriodOutcome`
-    - On `remedied: true`: conditionally `SET consumedForQuarter` on the earliest record, then `transitionOutcome(..., 'remedied', { consumedRecordId })`
-    - On `remedied: false`: `transitionOutcome(..., 'exited', {})`; only when `transitioned: true` does it proceed to `UpdateCommand` on Users (`uglExitStatus`, `uglExitTriggeredQuarter`, `uglExitMarkedAt`) and call `sendUGLExitNotifications` (task 9.3); when `transitioned: false`, skip (already handled by a prior/concurrent run)
-    - Log and continue on any per-record error
-    - _Requirements: 5.1, 5.3, 5.4, 5.5, 6.1, 6.2, 6.4, 8.1, 8.2, 11.1, 11.2, 12.2, 12.3_
+  - [x]* 3.4 Update unit test for the happy-path job sequence to include the completion notification and remove the auto-send assumption
+    - Update `packages/backend/src/ugl-exit/grace-period-job.test.ts`'s (or `detection-job.test.ts`'s) happy-path example: detection job run → user recorded as `awaiting_reminder`, no email sent, Detection_Completion_Notification sent with count=1 → separately invoke `sendReminderAction` (task 4) to actually send the reminder before continuing the grace-period example
+    - _Requirements: 4.1, 6.1_
 
-  - [x]* 8.2 Write property test for grace-period-job idempotency invariant (Property 8 combined assertion)
-    - Test file: `packages/backend/src/ugl-exit/grace-period-job.property.test.ts`
-    - Combined with Property 8 (task 4.2): invoke `runGracePeriodEvaluationJob` repeatedly against the same in-memory mock DynamoDB state for the same due record; assert at most one Exit_Notification is dispatched and at most one `consumedForQuarter` write occurs across all invocations
-    - **Validates: Requirements 12.3**
+- [x] 4. New module: Send Reminder Action
+  - [x] 4.1 Create `packages/backend/src/ugl-exit/send-reminder-action.ts`
+    - Define `SendReminderActionSummary` interface (`sentCount`, `alreadySentCount`, `sendFailedCount`, `errors`)
+    - Implement `sendReminderAction(userIds, ctx)`: empty array → no-op returning all-zero counts (not an error); otherwise for each `userId` (wrapped in `try/catch`, error isolation): call `claimAndStartGracePeriod`; on `claimed: false` increment `alreadySentCount` and skip; on `claimed: true` call `sendUGLExitReminderEmail(ctx, userId, quarter, gracePeriodDeadline)` — on `{ sent: true }` increment `sentCount`; on `{ sent: false }` call `revertToAwaitingReminder` (passing the exact `reminderSentAt` just claimed) and increment `sendFailedCount`
+    - Need to resolve which `(userId, quarter)` tracking entry to claim per userId — look up each user's current `'awaiting_reminder'` tracking record (single query per user, or reuse a preloaded map from `queryAwaitingReminderRecords`) before attempting the claim
+    - _Requirements: 5.3, 5.5, 5.6, 5.7, 5.8, 5.9, 15.4_
 
-  - [x]* 8.3 Write property test for no unauthorized account or role mutation by background jobs
-    - **Property 10: No unauthorized account or role mutation by background jobs**
-    - Create `packages/backend/src/ugl-exit/grace-period-job.property.test.ts` (append) — also exercises `runUGLDetectionJob` from task 7.1
-    - Generate arbitrary sequences of both jobs' executions over arbitrary user sets with no SuperAdmin action interleaved; assert `roles` and `status` never change, and only the whitelisted fields (`uglExitStatus`, `uglExitTriggeredQuarter`, `uglExitMarkedAt`, `consumedForQuarter`) are ever written
-    - Tag `// Feature: ugl-inactivity-exit-flow, Property 10: No unauthorized account or role mutation by background jobs`
-    - **Validates: Requirements 8.1, 8.2**
+  - [x]* 4.2 Write property test for Send_Reminder_Action dispatch, grace-period start timing, and idempotency
+    - **Property 6: Send_Reminder_Action dispatch, grace-period start timing, and idempotency**
+    - Create `packages/backend/src/ugl-exit/send-reminder-action.property.test.ts`
+    - Use an in-memory mock DynamoDB client; invoke `sendReminderAction` multiple times with overlapping/repeated `userIds` selections for the same entries; assert exactly one email per entry across all invocations, `gracePeriodDeadline` computed from the successful claim's own timestamp (not the entry's original `createdAt`), and no recomputation on duplicate calls
+    - Tag `// Feature: ugl-inactivity-exit-flow, Property 6: Send_Reminder_Action dispatch, grace-period start timing, and idempotency`
+    - **Validates: Requirements 5.3, 5.5, 5.6, 5.7, 15.4**
 
-  - [x]* 8.4 Write unit test for happy-path end-to-end job sequence
-    - Test file: `packages/backend/src/ugl-exit/grace-period-job.test.ts`
-    - One example test: detection job run over a small mocked dataset → reminder sent + tracking record created → simulate deadline passed → grace-period job run with no makeup record → `uglExitStatus` set + Exit_Notification sent
-    - _Requirements: 4.1, 5.5, 6.1_
+  - [x]* 4.3 Write property test for Send_Reminder_Action failure isolation, revert, and empty-selection no-op
+    - **Property 7: Send_Reminder_Action failure isolation, revert, and empty-selection no-op**
+    - File: `packages/backend/src/ugl-exit/send-reminder-action.property.test.ts` (append)
+    - Generate arbitrary subsets of `userIds` whose simulated email send fails; assert each failed entry's tracking record is left byte-for-byte identical to its pre-call `'awaiting_reminder'` state, while succeeding entries transition to `'pending'` with both fields set, and one entry's failure never blocks another entry's processing; assert an empty `userIds` array produces zero writes/sends and all-zero counts
+    - Tag `// Feature: ugl-inactivity-exit-flow, Property 7: Send_Reminder_Action failure isolation, revert, and empty-selection no-op`
+    - **Validates: Requirements 5.8, 5.9**
 
-- [x] 9. Checkpoint - Ensure all job orchestration tests pass
+  - [x]* 4.4 Write unit tests for send-reminder-action edge cases
+    - Test file: `packages/backend/src/ugl-exit/send-reminder-action.test.ts`
+    - Test a `userId` with no matching `'awaiting_reminder'` entry is skipped without error; test the summary counts match a mixed batch of successes/already-sent/failures
+    - _Requirements: 5.6, 5.8, 5.9_
+
+- [x] 5. New module: Awaiting Reminder List
+  - [x] 5.1 Create `packages/backend/src/ugl-exit/awaiting-reminder-list.ts`
+    - Define `AwaitingReminderRecord` interface (`userId`, `nickname`, `email`, `ugName`, `quarter`, `recordedAt`)
+    - Implement `queryAwaitingReminderUGLs(dynamoClient, tables)`: call `queryAwaitingReminderRecords` (reminder-tracking.ts), batch-load matching Users records (`BatchGetCommand`), Scan UGs table to build the `leaderId -> ugName` map (locally reimplemented, same pattern as `pending-exit-list.ts`), and join into `AwaitingReminderRecord[]`
+    - _Requirements: 5.1_
+
+  - [x]* 5.2 Write property test for awaiting reminder list correctness
+    - File: `packages/backend/src/ugl-exit/awaiting-reminder-list.property.test.ts`
+    - Generate arbitrary sets of tracking records (some `'awaiting_reminder'`, some other outcomes) and user/UG records; assert the result includes exactly the `'awaiting_reminder'` entries with correct joined fields, and a user leading no UG gets `ugName: ''`
+    - Tag `// Feature: ugl-inactivity-exit-flow, Property (list correctness, supports Requirement 5.1)`
+    - **Validates: Requirements 5.1**
+
+  - [x]* 5.3 Write unit test for awaiting-reminder-list pagination and empty UG mapping
+    - Test file: `packages/backend/src/ugl-exit/awaiting-reminder-list.test.ts`
+    - Test `queryAwaitingReminderRecords` pagination is fully aggregated before the join; test empty result when there are zero `'awaiting_reminder'` records
+    - _Requirements: 5.1, 5.11_
+
+- [x] 6. Checkpoint - Ensure reminder-tracking, detection-job, send-reminder-action, and awaiting-reminder-list tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [x] 10. Email notification extensions
-  - [x] 10.1 Add three new `NotificationType` values and template variable maps
-    - Add `'uglExitReminder' | 'uglExitNotification' | 'uglExitAdminNotification'` to the `NotificationType` union in `packages/backend/src/email/send.ts`
-    - Add `uglExitReminder: ['nickname', 'detectionQuarter', 'gracePeriodDeadline']`, `uglExitNotification: ['nickname', 'detectionQuarter']`, `uglExitAdminNotification: ['affectedNickname', 'affectedEmail', 'detectionQuarter']` to `TEMPLATE_VARIABLE_MAP` in `packages/backend/src/email/templates.ts`
-    - Add `'uglExitReminder'`, `'uglExitNotification'`, `'uglExitAdminNotification'` to `VALID_NOTIFICATION_TYPES` in `packages/backend/src/admin/handler.ts`
-    - _Requirements: 4.2, 6.3_
+- [x] 7. Email notifications: Detection Completion Notification + toggle/template plumbing
+  - [x] 7.1 Add `'uglExitDetectionCompletion'` to the `NotificationType` union and template variable map
+    - Add to `NotificationType` in `packages/backend/src/email/send.ts`
+    - Add `uglExitDetectionCompletion: ['detectionQuarter', 'newlyRecordedCount']` to `TEMPLATE_VARIABLE_MAP` in `packages/backend/src/email/templates.ts`
+    - Add `'uglExitDetectionCompletion'` to `VALID_NOTIFICATION_TYPES` in `packages/backend/src/admin/handler.ts`
+    - _Requirements: 6.1_
 
-  - [x] 10.2 Implement `sendUGLExitReminderEmail` in `packages/backend/src/email/notifications.ts`
-    - Signature: `(ctx: NotificationContext, userId: string, detectionQuarter: string, gracePeriodDeadline: string) => Promise<{ sent: boolean }>`
-    - Checks the `emailUglExitReminderEnabled` toggle (task 10.4), loads user locale, loads template with fallback, replaces variables, sends via SES; catches and logs its own errors, never throws (mirrors `sendPointsEarnedEmail`)
-    - Sends only to the target user's registered email — no other recipient
-    - _Requirements: 4.1, 4.2, 4.3, 4.6_
+  - [x] 7.2 Implement `sendDetectionCompletionNotification` in `packages/backend/src/email/notifications.ts`
+    - Signature: `(ctx: NotificationContext, detectionQuarter: string, newlyRecordedCount: number) => Promise<{ recipientsSent: number; recipientsFailed: number }>`
+    - Recipients = union of every current SuperAdmin's registered email (reuse the same Scan shape as `sendUGLExitNotifications`'s admin lookup) and every address in `getFeatureToggles(...).additionalNotificationRecipients`; best-effort per recipient (one failure logged, does not block others); sent even when `newlyRecordedCount === 0`
+    - Gated by the `emailUglExitNotificationEnabled` toggle (shared with the other two exit-lifecycle notification types, per design.md's `TOGGLE_MAP`)
+    - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
 
-  - [x] 10.3 Implement `sendUGLExitNotifications` in `packages/backend/src/email/notifications.ts`
-    - Signature: `(ctx: NotificationContext, affectedUserId: string, detectionQuarter: string) => Promise<{ userSent: boolean; adminsSent: number; adminsFailed: number }>`
-    - Sends `uglExitNotification` to the affected user; Scans Users table filtered to `roles contains 'SuperAdmin'` and sends `uglExitAdminNotification` to each (best-effort per recipient, one failure never blocks the others), mirroring `sendNewOrderEmail`'s admin-lookup Scan shape
-    - _Requirements: 6.1, 6.2, 6.3, 6.4_
+  - [x]* 7.3 Write property test for detection completion notification recipient correctness
+    - **Property 12: Detection completion notification recipient correctness**
+    - File: `packages/backend/src/email/notifications.property.test.ts` (append)
+    - Generate arbitrary SuperAdmin sets and `additionalNotificationRecipients` lists (including empty and non-account addresses); assert delivery is attempted to exactly the union, and that one recipient's simulated failure never blocks another's delivery
+    - Tag `// Feature: ugl-inactivity-exit-flow, Property 12: Detection completion notification recipient correctness`
+    - **Validates: Requirements 6.3, 6.4, 6.5**
 
-  - [x] 10.4 Add `emailUglExitReminderEnabled` and `emailUglExitNotificationEnabled` toggles in `packages/backend/src/settings/feature-toggles.ts`
-    - Add both boolean fields to `FeatureToggles` interface, `UpdateFeatureTogglesInput`, `DEFAULT_TOGGLES` (default `true`, per design decision — account-lifecycle-critical rather than optional-engagement), `getFeatureToggles()`, and `updateFeatureToggles()`
-    - Add `uglExitReminder: 'emailUglExitReminderEnabled'`, `uglExitNotification: 'emailUglExitNotificationEnabled'`, `uglExitAdminNotification: 'emailUglExitNotificationEnabled'` to `TOGGLE_MAP` in `packages/backend/src/email/notifications.ts` (last two share one toggle per design.md)
-    - _Requirements: 4.1, 6.1, 6.2_
+  - [x] 7.4 Seed default `uglExitDetectionCompletion` template for all 5 locales
+    - Add template records (zh / en / ja / ko / zh-TW) to `getDefaultTemplates()` in `packages/backend/src/email/seed.ts`, following the same pattern used for `uglExitReminder`/`uglExitNotification`
+    - _Requirements: 6.1_
 
-  - [x]* 10.5 Write property test for exit notification recipient correctness
-    - **Property 9: Exit notification recipient correctness**
-    - File: `packages/backend/src/email/notifications.property.test.ts` (append — existing project convention of one notifications property-test file)
-    - Generate arbitrary sets of affected users and current SuperAdmin users; assert `sendUGLExitNotifications` sends to exactly the affected user plus exactly the SuperAdmin set
-    - Tag `// Feature: ugl-inactivity-exit-flow, Property 9: Exit notification recipient correctness`
-    - **Validates: Requirements 6.1, 6.2, 6.4**
+  - [x]* 7.5 Update email template/toggle integration unit test
+    - Update `packages/backend/src/email/seed.test.ts` (or `notifications.test.ts`): assert `getDefaultTemplates()` now includes 4 exit-flow types × 5 locales; assert the new `TEMPLATE_VARIABLE_MAP` entry matches the variables passed by `sendDetectionCompletionNotification`
+    - _Requirements: 6.1_
 
-  - [x] 10.6 Seed default `uglExitReminder` / `uglExitNotification` / `uglExitAdminNotification` templates for all 5 locales
-    - Add template records (zh / en / ja / ko / zh-TW) to `getDefaultTemplates()` / `ALL_TYPES` in `packages/backend/src/email/seed.ts`, following the exact pattern used for `weeklyDigestTemplates`
-    - _Requirements: 4.2, 6.3_
+- [x] 8. Feature toggles: Additional Notification Recipients
+  - [x] 8.1 Add `additionalNotificationRecipients: string[]` to `packages/backend/src/settings/feature-toggles.ts`
+    - Add to `FeatureToggles` interface, `UpdateFeatureTogglesInput`, `DEFAULT_TOGGLES` (default `[]`)
+    - In `getFeatureToggles()`: safe-default read (array of strings, else `[]`), same pattern as `contentReviewerIds`
+    - In `updateFeatureToggles()`: validate every entry is a string matching the existing email-format regex already used elsewhere in this codebase; on any malformed entry, return `INVALID_REQUEST` (400) and perform no writes; on success, include the field in the `UpdateCommand` and in the returned `settings` object
+    - _Requirements: 7.1, 7.2, 7.4, 7.5_
 
-  - [x]* 10.7 Write unit test for email template/toggle integration
-    - Test file: `packages/backend/src/email/seed.test.ts` (extend if exists, else `packages/backend/src/email/notifications.test.ts`)
-    - Assert `getDefaultTemplates()` includes the 3 new types × 5 locales; assert `TEMPLATE_VARIABLE_MAP` entries match the variables passed by `sendUGLExitReminderEmail` / `sendUGLExitNotifications`
-    - _Requirements: 4.2, 6.3_
+  - [x]* 8.2 Write property test for Additional Notification Recipients CRUD correctness and authorization
+    - **Property 13: Additional Notification Recipients CRUD correctness and authorization**
+    - Create `packages/backend/src/settings/feature-toggles.property.test.ts` (append if the file already has toggle-update property tests, else create)
+    - Generate arbitrary well-formed and malformed email lists; assert well-formed lists persist and read back unchanged, malformed lists are rejected with `INVALID_REQUEST` leaving the prior value untouched; assert the existing `isSuperAdmin` gate in `handleUpdateFeatureToggles` (admin/handler.ts) rejects non-SuperAdmin callers with 403 `FORBIDDEN` without modifying stored state
+    - Tag `// Feature: ugl-inactivity-exit-flow, Property 13: Additional Notification Recipients CRUD correctness and authorization`
+    - **Validates: Requirements 7.2, 7.3, 7.4, 7.5**
 
-- [x] 11. Checkpoint - Ensure all email notification tests pass
+  - [x]* 8.3 Write unit test for malformed-email rejection
+    - Test file: `packages/backend/src/settings/feature-toggles.test.ts` (extend)
+    - Test a single malformed entry among otherwise-valid entries rejects the whole update and leaves the previously stored list unchanged
+    - _Requirements: 7.4, 7.5_
+
+- [x] 9. Checkpoint - Ensure email notification and feature-toggle tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [x] 12. Review actions and pending exit list modules
-  - [x] 12.1 Implement `confirmExit` and `restoreTracking` in `packages/backend/src/ugl-exit/review-actions.ts`
-    - Define `ReviewActionResult` interface
-    - `confirmExit(userId, callerUserId, callerRoles, dynamoClient, usersTable)`: load user (`USER_NOT_FOUND` if missing); `NOT_PENDING_EXIT` (no writes) if `uglExitStatus !== 'pending_exit'`; call `setUserStatus(userId, 'disabled', ...)` reused verbatim from `../admin/users.ts`; conditional `UpdateCommand` REMOVE `uglExitStatus`/`uglExitTriggeredQuarter`/`uglExitMarkedAt` with `ConditionExpression uglExitStatus = :pending_exit`; treat a condition failure here as already-cleared success
-    - `restoreTracking(userId, dynamoClient, usersTable)`: same pre-check; conditional `UpdateCommand` REMOVE the three `uglExit*` fields WITHOUT touching `status`
-    - _Requirements: 8.1, 10.2, 10.3, 10.4, 10.6_
+- [x] 10. Admin Lambda: new routes for Awaiting_Reminder_List and Send_Reminder_Action
+  - [x] 10.1 Add two new routes to `packages/backend/src/admin/handler.ts`
+    - `GET /api/admin/ugl-exit/awaiting-reminder` (SuperAdmin only) → `queryAwaitingReminderUGLs`; non-SuperAdmin → 403 `FORBIDDEN`
+    - `POST /api/admin/ugl-exit/send-reminder` (SuperAdmin only) body `{ userIds: string[] }` → `sendReminderAction`; non-SuperAdmin → 403 `FORBIDDEN`; empty/missing `userIds` → treat as empty array (200 all-zero summary, not a 400)
+    - No changes needed to the existing `PUT /api/admin/settings/feature-toggles` route beyond what task 8.1 already wires through `handleUpdateFeatureToggles`
+    - _Requirements: 5.9, 5.10_
 
-  - [x]* 12.2 Write property test for confirm exit action correctness
-    - **Property 13: Confirm exit action correctness**
-    - Create `packages/backend/src/ugl-exit/review-actions.property.test.ts`
-    - Tag `// Feature: ugl-inactivity-exit-flow, Property 13: Confirm exit action correctness`
-    - **Validates: Requirements 10.2**
+  - [x]* 10.2 Write property test for authorization gate covering the two new routes
+    - Update the existing authorization-gate property test (was **Property 12**, now **Property 16: Authorization gate for awaiting-reminder, send-reminder, pending-exit list, and review action endpoints**) — likely `packages/backend/src/admin/ugl-exit-routes.property.test.ts`
+    - Add `GET /api/admin/ugl-exit/awaiting-reminder` and `POST /api/admin/ugl-exit/send-reminder` to the set of routes exercised; assert non-SuperAdmin callers get 403 `FORBIDDEN` with no tracking-table mutation, for all five `ugl-exit` routes now covered
+    - Tag `// Feature: ugl-inactivity-exit-flow, Property 16: Authorization gate for awaiting-reminder, send-reminder, pending-exit list, and review action endpoints`
+    - **Validates: Requirements 5.10, 12.2, 13.5**
 
-  - [x]* 12.3 Write property test for restore tracking action correctness
-    - **Property 14: Restore tracking action correctness**
-    - File: `packages/backend/src/ugl-exit/review-actions.property.test.ts` (append)
-    - Include the follow-up assertion: feeding the resulting user record into `filterEligibleUGLsForExit` for the next quarter includes that user
-    - Tag `// Feature: ugl-inactivity-exit-flow, Property 14: Restore tracking action correctness`
-    - **Validates: Requirements 10.3, 10.4**
+  - [x]* 10.3 Write unit tests for the two new admin route happy paths and edge cases
+    - Update `packages/backend/src/admin/handler.test.ts`: test `GET /api/admin/ugl-exit/awaiting-reminder` 200 shape and 403 for non-SuperAdmin; test `POST /api/admin/ugl-exit/send-reminder` 200 with a mixed batch and with an empty `userIds` array (not an error)
+    - _Requirements: 5.9, 5.10_
 
-  - [x]* 12.4 Write property test for non-pending-exit rejection for review actions
-    - **Property 15: Non-pending-exit rejection for review actions**
-    - File: `packages/backend/src/ugl-exit/review-actions.property.test.ts` (append)
-    - Tag `// Feature: ugl-inactivity-exit-flow, Property 15: Non-pending-exit rejection for review actions`
-    - **Validates: Requirements 10.6**
-
-  - [x] 12.5 Implement `queryPendingExitUGLs` in `packages/backend/src/ugl-exit/pending-exit-list.ts`
-    - Define `PendingExitRecord` interface
-    - Query Users table via `entityType-createdAt-index` (PK=`'user'`) + `FilterExpression uglExitStatus = 'pending_exit'`, same shape as `listUsers` in `admin/users.ts`
-    - Scan UGs table to build a `leaderId -> ugName` map, reimplemented locally (not imported from `inactive-ugl-query.ts`)
-    - _Requirements: 9.1_
-
-  - [x]* 12.6 Write property test for pending exit list correctness
-    - **Property 11: Pending exit list correctness**
-    - Create `packages/backend/src/ugl-exit/pending-exit-list.property.test.ts`
-    - Tag `// Feature: ugl-inactivity-exit-flow, Property 11: Pending exit list correctness`
-    - **Validates: Requirements 9.1**
-
-  - [x]* 12.7 Write unit tests for review action pre-check and pending-exit-list empty UG mapping
-    - Test file: `packages/backend/src/ugl-exit/review-actions.test.ts` and `packages/backend/src/ugl-exit/pending-exit-list.test.ts`
-    - Test `USER_NOT_FOUND` path; test a user leading no UG returns `ugName: ''`
-    - _Requirements: 9.1, 10.6_
-
-- [x] 13. Checkpoint - Ensure all review action and pending-exit-list tests pass
+- [x] 11. Checkpoint - Ensure admin route tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [x] 14. UGLExit Lambda entry point
-  - [x] 14.1 Create `packages/backend/src/ugl-exit/handler.ts`
-    - Define `UGLExitJobEvent` interface (`jobType: 'detection' | 'graceEvaluation'`, `quarter?: string`)
-    - `handler(event)` dispatches: `jobType === 'detection'` → resolve quarter via `resolveDetectionQuarter(event.quarter)` then `runUGLDetectionJob`; `jobType === 'graceEvaluation'` → `runGracePeriodEvaluationJob(now)`
-    - Build `UGLExitServiceContext` from environment variables (`USERS_TABLE`, `POINTS_RECORDS_TABLE`, `UGL_REMINDER_TRACKING_TABLE`, `SENDER_EMAIL`, `EMAIL_TEMPLATES_TABLE`)
-    - _Requirements: 1.5_
+- [x] 12. Frontend: Awaiting_Reminder_List tab on `ugl-exit-review.tsx`
+  - [x] 12.1 Add a two-tab layout to `packages/frontend/src/pages/admin/ugl-exit-review.tsx`
+    - Introduce a tab switcher (mirrors the section-navigation pattern already used in `pages/admin/settings.tsx`) with "待发提醒" (Awaiting_Reminder_List, default-active) and "待退出审核" (Pending_Exit_List, existing) tabs, both inside the existing `useSuperAdminGuard`-gated page
+    - Tab 1: fetch `GET /api/admin/ugl-exit/awaiting-reminder`; render one row per `AwaitingReminderRecord` with a leading row checkbox, a header "select all" checkbox, columns for nickname/email/ugName/quarter/recordedAt; a "发送提醒" button (disabled when zero rows checked) that `POST`s the checked `userIds` to `/api/admin/ugl-exit/send-reminder`, then refetches the list and shows a toast summarizing `sentCount`/`sendFailedCount`; empty-state message when zero records
+    - Tab 2: keep the existing Pending_Exit_List behavior unchanged, just moved under its own tab
+    - Each tab independently hides itself and stops calling its API if its own request ever returns 403, per the existing pattern
+    - _Requirements: 5.1, 5.2, 5.4, 5.7, 5.8, 5.9, 5.10, 5.11_
 
-  - [x]* 14.2 Write unit tests for EventBridge event dispatch
-    - Test file: `packages/backend/src/ugl-exit/handler.test.ts`
-    - Test `jobType='detection'` and `jobType='graceEvaluation'` route to the correct job function; test an unrecognized `jobType` is handled gracefully (logged, no throw)
-    - _Requirements: 1.5_
+  - [x] 12.2 Update `ugl-exit-review.scss` for the tab switcher and checkbox/select-all UI
+    - Reuse only existing design-system CSS variables; ensure checkbox/row hover states have `cursor: pointer` and visible focus states; ensure light/dark contrast for the tab switcher per workspace UX rules
+    - _Requirements: 5.1_
 
-- [x] 15. Admin Lambda routes for manual trigger and SuperAdmin review
-  - [x] 15.1 Add four new routes to `packages/backend/src/admin/handler.ts`
-    - Add regex constants `UGL_EXIT_CONFIRM_REGEX = /^\/api\/admin\/ugl-exit\/([^/]+)\/confirm-exit$/` and `UGL_EXIT_RESTORE_REGEX = /^\/api\/admin\/ugl-exit\/([^/]+)\/restore-tracking$/`
-    - `GET /api/admin/ugl-exit/pending` (SuperAdmin only) → `queryPendingExitUGLs`; non-SuperAdmin → 403 `FORBIDDEN`
-    - `POST /api/admin/ugl-exit/detection-job` (SuperAdmin only) body `{ quarter?: string }` → `resolveDetectionQuarter` then `runUGLDetectionJob`; invalid/future quarter → 400 `INVALID_QUARTER_FORMAT`/`FUTURE_QUARTER` (from existing `parseQuarter` errors)
-    - `POST /api/admin/ugl-exit/{userId}/confirm-exit` (SuperAdmin only) → `confirmExit`; map `NOT_PENDING_EXIT → 400`, `USER_NOT_FOUND → 404`
-    - `POST /api/admin/ugl-exit/{userId}/restore-tracking` (SuperAdmin only) → `restoreTracking`; same error mapping
-    - New env vars: `UGL_REMINDER_TRACKING_TABLE`, `UGS_TABLE` (if not already present on Admin Lambda)
-    - _Requirements: 1.6, 8.1, 9.2, 9.3, 10.1, 10.2, 10.3, 10.5, 10.6_
+  - [x]* 12.3 Update unit tests for the two-tab UI
+    - Update `packages/frontend/src/pages/admin/ugl-exit-review.test.tsx`: test both tabs render, tab switching works, Awaiting_Reminder_List empty state, select-all checkbox behavior, disabled send button when nothing selected, and independent 403-hides-only-that-tab behavior
+    - _Requirements: 5.10, 5.11_
 
-  - [x]* 15.2 Write property test for authorization gate on pending-exit list and review actions
-    - **Property 12: Authorization gate for the pending-exit list and review actions**
-    - Create `packages/backend/src/admin/ugl-exit-routes.property.test.ts`
-    - Generate arbitrary caller role sets not containing `SuperAdmin`; assert all four routes return 403 `FORBIDDEN` and leave the target user record unmodified regardless of that user's `uglExitStatus`
-    - Tag `// Feature: ugl-inactivity-exit-flow, Property 12: Authorization gate for the pending-exit list and review actions`
-    - **Validates: Requirements 9.2, 10.5**
+- [x] 13. Frontend: Additional Notification Recipients editor on `settings.tsx`
+  - [x] 13.1 Add an Additional_Notification_Recipients editor to `packages/frontend/src/pages/admin/settings.tsx`
+    - Reuse the existing add/remove chip-style list-of-strings UI pattern already implemented for `contentReviewerIds`; include a client-side email-format pre-check before allowing add; include the field in the same `PUT /api/admin/settings/feature-toggles` payload as the rest of the toggles form
+    - On a malformed-email 400 response, show the error inline without resetting other unsaved toggle values
+    - _Requirements: 7.1, 7.2, 7.4_
 
-  - [x]* 15.3 Write unit tests for admin route happy paths and error codes
-    - Test file: `packages/backend/src/admin/handler.test.ts` (extend existing)
-    - Test each of the four routes: 403 for non-SuperAdmin, 404 `USER_NOT_FOUND` for a missing `userId`, happy-path 200 shape for a valid SuperAdmin request; test manual detection-job trigger with an explicit quarter that doesn't match the fixed-date mapping still succeeds
-    - _Requirements: 1.6, 9.2, 9.3, 10.1, 10.2, 10.3, 10.5, 10.6_
+  - [x]* 13.2 Write unit test for the Additional Notification Recipients editor
+    - Update `packages/frontend/src/pages/admin/settings.test.tsx` (extend if exists)
+    - Test add/remove of an email chip; test a malformed-email submission shows an inline error and does not clear other unsaved fields
+    - _Requirements: 7.1, 7.4_
 
-- [x] 16. Checkpoint - Ensure all Lambda entry point and admin route tests pass
-  - Ensure all tests pass, ask the user if questions arise.
+- [x] 14. i18n updates across all 5 locales
+  - [x] 14.1 Add i18n keys for the Awaiting_Reminder_List tab, tab labels, Send_Reminder_Action button/toast/confirmation text, and Additional_Notification_Recipients editor labels/placeholders/validation-error text
+    - Add to `packages/frontend/src/i18n/types.ts`, `zh.ts`, `en.ts`, `zh-TW.ts`, `ja.ts`, `ko.ts` — keep the key set identical across all 5 files to pass `i18n.property.test.ts`
+    - _Requirements: 5.1, 5.2, 7.1_
 
-- [x] 17. CDK infrastructure: new table, new Lambda, EventBridge rules
-  - [x] 17.1 Create `PointsMall-UGLReminderTracking` table in `packages/cdk/lib/database-stack.ts`
-    - Partition key `userId` (String), sort key `quarter` (String), `BillingMode.PAY_PER_REQUEST`, `RemovalPolicy.DESTROY`
-    - Add GSI `outcome-gracePeriodDeadline-index` with partition key `outcome` (String), sort key `gracePeriodDeadline` (String), projection ALL
-    - Add `CfnOutput` for table name and ARN; export the table construct so LambdaStack/ApiStack can reference it
-    - _Requirements: 11.1, 11.2_
-
-  - [x] 17.2 Add `uglExitStatus`, `uglExitTriggeredQuarter`, `uglExitMarkedAt` awareness and `consumedForQuarter` — no schema changes needed
-    - Confirm no new GSI is required on `PointsMall-Users` or `PointsMall-PointsRecords` (both existing GSIs are reused per design.md); add a brief comment in `database-stack.ts` near the Users table definition documenting the new attribute names for future maintainers
-    - _Requirements: 11.1, 11.2_
-
-  - [x] 17.3 Add `UGLExitFunction` Lambda and two EventBridge rules in `packages/cdk/lib/api-stack.ts`
-    - `NodejsFunction` `functionName: 'PointsMall-UGLExit'`, `entry: path.join(backendSrcPath, 'ugl-exit/handler.ts')`, `handler: 'handler'`, timeout ≥120s
-    - Environment variables: `USERS_TABLE`, `POINTS_RECORDS_TABLE`, `UGL_REMINDER_TRACKING_TABLE`, `UGS_TABLE`, `EMAIL_TEMPLATES_TABLE`, `SENDER_EMAIL`
-    - Grant read/write on `PointsMall-Users` (limited to the three `uglExit*` fields is not IAM-expressible — grant table-level read/write), read/write on `PointsMall-PointsRecords` (for `consumedForQuarter`), full read/write on the new `UGLReminderTracking` table, read-only on `UGs` and `EmailTemplates`
-    - Grant SES `ses:SendEmail`/`ses:SendRawEmail` scoped to sender identity (mirror `digestFn`'s policy statement)
-    - Add `events.Rule` `PointsMall-UGLExitDetectionSchedule` with `schedule: events.Schedule.expression('cron(0 0 1 1,4,7,10 ? *)')`, target the Lambda with input `{ jobType: 'detection' }`
-    - Add `events.Rule` `PointsMall-UGLExitGracePeriodSchedule` with `schedule: events.Schedule.rate(cdk.Duration.days(1))`, target the Lambda with input `{ jobType: 'graceEvaluation' }`
-    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 5.1_
-
-  - [x] 17.4 Wire Admin Lambda permissions and env vars for the manual trigger + review routes
-    - Grant Admin Lambda (`adminFn`) read/write on the new `UGLReminderTracking` table
-    - Add env var `UGL_REMINDER_TRACKING_TABLE` to `adminFn`; confirm `UGS_TABLE`/`POINTS_RECORDS_TABLE` env vars already exist on `adminFn` (add if missing)
-    - _Requirements: 1.6, 9.1, 10.1_
-
-  - [x]* 17.5 Write CDK synth snapshot assertions
-    - Test file: `packages/cdk/test/database-stack.test.ts` and `packages/cdk/test/api-stack.test.ts` (extend if exist, else create)
-    - Assert `PointsMall-UGLReminderTracking` table exists with the `outcome-gracePeriodDeadline-index` GSI; assert `PointsMall-UGLExit` Lambda exists; assert the `cron(0 0 1 1,4,7,10 ? *)` rule and the daily rate rule both target it with the correct `jobType` input
-    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 11.1_
-
-- [x] 18. Checkpoint - Ensure CDK infrastructure configuration passes synth/tests
-  - Ensure all tests pass, ask the user if questions arise.
-
-- [x] 19. Frontend: Pending Exit List page
-  - [x] 19.1 Create `packages/frontend/src/pages/admin/ugl-exit-review.tsx`
-    - Gate with the same SuperAdmin-guard pattern used by `pages/admin/reports.tsx` (`useSuperAdminGuard` or equivalent existing hook); render nothing beyond a "not authorized" placeholder and skip the API call entirely when `!isSuperAdmin` once `ready`
-    - List view: one row per `PendingExitRecord` (nickname, email, ugName, `triggeredQuarter`, formatted `markedAt`); empty state message when `records.length === 0`, reusing the existing `admin-wishes-empty`/`common.noData` pattern
-    - Each row has Confirm_Exit_Action (danger style) and Restore_Tracking_Action (secondary/primary style) buttons, each opening a confirmation dialog before submitting (mirror `pages/admin/wishes.tsx`'s `wish-form-overlay`/`wish-form-modal` pattern)
-    - On submit: `POST` to the corresponding endpoint; on success show a toast and refetch the list; on `NOT_PENDING_EXIT` (400) or `FORBIDDEN` (403) show the error inline in the dialog (same `reviewError` pattern as `wishes.tsx`)
-    - If any API call ever returns 403, immediately clear the list and switch to the hidden/forbidden state rather than rendering partial data
-    - _Requirements: 9.1, 9.2, 9.3, 9.4, 10.1, 10.2, 10.3, 10.5, 10.6_
-
-  - [x] 19.2 Create `packages/frontend/src/pages/admin/ugl-exit-review.config.ts`
-    - Export page config with an i18n-driven `navigationBarTitleText`
-    - _Requirements: 9.1_
-
-  - [x] 19.3 Create `packages/frontend/src/pages/admin/ugl-exit-review.scss`
-    - Mirror `wishes.scss`; use only design system CSS variables (`--space-*`, `--radius-*`, `--text-*`, `--bg-*`); `cursor: pointer` on clickable rows; light/dark borders + contrast per workspace UX rules
-    - _Requirements: 9.1_
-
-  - [x] 19.4 Register page route in `packages/frontend/src/app.config.ts`
-    - Append `'pages/admin/ugl-exit-review'` to the `pages` array
-    - _Requirements: 9.1_
-
-  - [x]* 19.5 Write unit tests for Pending Exit List rendering and 403 handling
-    - Test file: `packages/frontend/src/pages/admin/ugl-exit-review.test.tsx`
-    - Test empty-state message renders for zero records; test Confirm/Restore buttons render per row; test opening a confirmation dialog and submitting calls the correct endpoint; test a 403 response hides the page content instead of rendering a partial/error table
-    - _Requirements: 9.2, 9.3, 9.4, 10.1_
-
-- [x] 20. Frontend: dashboard card and i18n
-  - [x] 20.1 Add UGL Exit Review card to `packages/frontend/src/pages/admin/index.tsx`
-    - Append entry to `ADMIN_LINKS`: `key: 'ugl-exit-review'`, `category: 'operations'`, reuse the existing `ClaimIcon` (SVG, not emoji, per workspace UX rules), `titleKey: 'admin.dashboard.uglExitReviewTitle'`, `descKey: 'admin.dashboard.uglExitReviewDesc'`, `url: '/pages/admin/ugl-exit-review'`, `superAdminOnly: true`
-    - _Requirements: 9.3_
-
-  - [x] 20.2 Add i18n keys to all 5 locale files
-    - Add `admin.dashboard.uglExitReviewTitle`/`Desc` and page-specific keys (nickname/email/ugName/triggeredQuarter/markedAt column labels, Confirm_Exit_Action/Restore_Tracking_Action button labels, confirmation dialog text, empty-state message, error messages for `NOT_PENDING_EXIT`/`FORBIDDEN`/`USER_NOT_FOUND`) to `packages/frontend/src/i18n/zh.ts`, `en.ts`, `zh-TW.ts`, `ja.ts`, `ko.ts`
-    - Keep the key set identical across all 5 files to pass the existing `i18n.property.test.ts`
-    - _Requirements: 9.1, 9.3, 9.4, 10.1_
-
-  - [x]* 20.3 Write unit test for dashboard card visibility
-    - Test file: `packages/frontend/src/pages/admin/index.test.tsx` (extend if exists)
-    - Test the card is visible only when `user.roles` contains `SuperAdmin`
-    - _Requirements: 9.3_
-
-- [x] 21. Final checkpoint - Ensure all tests pass and build succeeds
+- [x] 15. Final checkpoint - Ensure all tests pass and build succeeds
   - Run `npm run build` from repo root to verify no TypeScript errors across `packages/shared`, `packages/backend`, `packages/frontend`, `packages/cdk`
-  - Run `npm test` to verify all unit and property tests pass, including no regression in `inactive-ugl-report` / existing email / leaderboard suites
+  - Run `npm test` to verify all unit and property tests pass, including no regression in `inactive-ugl-report` / existing email / leaderboard suites, and no regression in the unchanged foundational modules (task 1)
+  - Confirm `sendUGLExitReminderEmail` is called from exactly one place in the codebase: `send-reminder-action.ts`
   - Confirm this feature never modifies `packages/backend/src/reports/inactive-ugl-query.ts`
-  - Verify CDK changes (new `UGLReminderTracking` table, new `UGLExit` Lambda, two EventBridge rules) are documented for manual deployment; do NOT deploy from the agent — instruct the user to run `cdk deploy` manually
+  - Verify no new CDK resources are required (table/Lambda/EventBridge rules unchanged); confirm CDK synth still passes
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
 
 - Tasks marked with `*` are optional and can be skipped for faster MVP
-- Each task references specific requirements for traceability
-- Checkpoints ensure incremental validation
-- Property tests validate universal correctness properties (P1–P15) from `design.md`'s Property → Test File Mapping table; unit tests cover specific examples and edge cases
-- `packages/backend/src/reports/inactive-ugl-query.ts` is never imported or modified by this feature — only `quarter-utils.ts` (unmodified) and `admin/users.ts`'s `setUserStatus` (unmodified) are reused verbatim
-- Manual-only account mutation is a structural property of the code: only `confirmExit` calls `setUserStatus`; neither job ever does
-- Both idempotency guarantees (`claimReminderSlot`, `transitionOutcome`) rely on DynamoDB conditional writes, not application-level locking
-- The manual detection-job trigger (Admin Lambda) and the scheduled detection job (UGLExit Lambda) call the exact same `runUGLDetectionJob` function — there is only one implementation of the detection algorithm
-- Two separate EventBridge rules target the same `PointsMall-UGLExit` Lambda with different `jobType` payloads, mirroring the existing Digest/Sync Lambda + EventBridge pattern
-- Email toggles `emailUglExitReminderEnabled` / `emailUglExitNotificationEnabled` default to `true` (account-lifecycle-critical), unlike the opt-in `pointsEarned`-style toggles
+- Each task references specific requirements for traceability against the reworked `requirements.md` (Requirements 1–15)
+- Property numbers referenced above match the reworked `design.md`'s Correctness Properties section (Properties 1–19); Properties 1–3, 8, 9, 11, 14 (partially), 15, 17–19 are already covered by the unchanged foundational modules in task 1 and are not re-listed here
+- `packages/backend/src/reports/inactive-ugl-query.ts` is never imported or modified by this feature
+- The claim-then-compensate pattern (`claimAndStartGracePeriod` + `revertToAwaitingReminder`) is what makes Send_Reminder_Action simultaneously idempotent against duplicate calls (Req 15.4) and safe to leave un-started on a failed send (Req 5.8) — see design.md's "Send Reminder Action Flow" section for the full rationale
+- `additionalNotificationRecipients` deliberately reuses the existing `feature-toggles` settings record and its existing SuperAdmin-only PUT endpoint rather than introducing a new settings surface
 - All 5 i18n locales (zh / en / zh-TW / ja / ko) must be updated together to keep `i18n.property.test.ts` passing
 
 ## Task Dependency Graph
@@ -389,24 +233,21 @@ Convert the feature design into a series of prompts for a code-generation LLM th
 ```json
 {
   "waves": [
-    { "id": 0, "tasks": ["1.1"] },
-    { "id": 1, "tasks": ["2.1", "10.1", "17.1"] },
-    { "id": 2, "tasks": ["2.2", "2.3", "3.1", "10.4", "17.2"] },
-    { "id": 3, "tasks": ["3.2", "3.3", "3.4", "4.1", "10.2", "10.3"] },
-    { "id": 4, "tasks": ["3.5", "4.2", "4.3", "5.1", "10.5", "10.6"] },
-    { "id": 5, "tasks": ["5.2", "5.3", "5.4", "6", "10.7"] },
-    { "id": 6, "tasks": ["7.1", "12.1", "12.5"] },
-    { "id": 7, "tasks": ["7.2", "7.3", "8.1", "12.2", "12.3", "12.4", "12.6", "12.7"] },
-    { "id": 8, "tasks": ["8.2", "8.3", "8.4", "13", "14.1"] },
-    { "id": 9, "tasks": ["9", "14.2", "15.1"] },
-    { "id": 10, "tasks": ["15.2", "15.3", "17.3"] },
-    { "id": 11, "tasks": ["16", "17.4"] },
-    { "id": 12, "tasks": ["17.5"] },
-    { "id": 13, "tasks": ["18", "19.1"] },
-    { "id": 14, "tasks": ["19.2", "19.3", "19.4", "20.1"] },
-    { "id": 15, "tasks": ["19.5", "20.2"] },
-    { "id": 16, "tasks": ["20.3"] },
-    { "id": 17, "tasks": ["21"] }
+    { "id": 0, "tasks": ["1"] },
+    { "id": 1, "tasks": ["2.1", "7.1", "8.1"] },
+    { "id": 2, "tasks": ["2.2", "2.3", "7.2", "8.2", "8.3"] },
+    { "id": 3, "tasks": ["3.1", "7.3", "7.4"] },
+    { "id": 4, "tasks": ["3.2", "3.3", "3.4", "7.5"] },
+    { "id": 5, "tasks": ["4.1", "5.1"] },
+    { "id": 6, "tasks": ["4.2", "4.3", "4.4", "5.2", "5.3"] },
+    { "id": 7, "tasks": ["6"] },
+    { "id": 8, "tasks": ["9"] },
+    { "id": 9, "tasks": ["10.1"] },
+    { "id": 10, "tasks": ["10.2", "10.3"] },
+    { "id": 11, "tasks": ["11"] },
+    { "id": 12, "tasks": ["12.1", "13.1"] },
+    { "id": 13, "tasks": ["12.2", "12.3", "13.2", "14.1"] },
+    { "id": 14, "tasks": ["15"] }
   ]
 }
 ```

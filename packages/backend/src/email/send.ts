@@ -18,7 +18,8 @@ export type NotificationType =
   | 'codeDistribution'
   | 'uglExitReminder'
   | 'uglExitNotification'
-  | 'uglExitAdminNotification';
+  | 'uglExitAdminNotification'
+  | 'uglExitDetectionCompletion';
 
 export type EmailLocale = 'zh' | 'en' | 'ja' | 'ko' | 'zh-TW';
 

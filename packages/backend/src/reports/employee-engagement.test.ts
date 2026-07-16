@@ -74,12 +74,15 @@ describe('queryEmployeeEngagement', () => {
     // 2. QueryCommand — earn records in date range
     client.send.mockResolvedValueOnce(
       queryResponse([
-        { userId: 'emp1', amount: 100, activityId: 'act1', createdAt: '2024-03-01T10:00:00Z', targetRole: 'Speaker', activityUG: 'UG-Beijing', type: 'earn' },
-        { userId: 'emp1', amount: 50, activityId: 'act2', createdAt: '2024-04-15T12:00:00Z', targetRole: 'Speaker', activityUG: 'UG-Shanghai', type: 'earn' },
-        { userId: 'emp2', amount: 200, activityId: 'act1', createdAt: '2024-05-20T08:00:00Z', targetRole: 'Volunteer', activityUG: 'UG-Beijing', type: 'earn' },
-        { userId: 'non-employee', amount: 500, activityId: 'act3', createdAt: '2024-06-01T09:00:00Z', targetRole: 'Speaker', activityUG: 'UG-Shenzhen', type: 'earn' },
+        { userId: 'emp1', amount: 100, activityId: 'act1', createdAt: '2024-03-01T10:00:00Z', source: '批量发放:活动积分', targetRole: 'Speaker', activityUG: 'UG-Beijing', type: 'earn' },
+        { userId: 'emp1', amount: 50, activityId: 'act2', createdAt: '2024-04-15T12:00:00Z', source: '批量发放:活动积分', targetRole: 'Speaker', activityUG: 'UG-Shanghai', type: 'earn' },
+        { userId: 'emp2', amount: 200, activityId: 'act1', createdAt: '2024-05-20T08:00:00Z', source: '批量发放:活动积分', targetRole: 'Volunteer', activityUG: 'UG-Beijing', type: 'earn' },
+        { userId: 'non-employee', amount: 500, activityId: 'act3', createdAt: '2024-06-01T09:00:00Z', source: '批量发放:活动积分', targetRole: 'Speaker', activityUG: 'UG-Shenzhen', type: 'earn' },
       ]),
     );
+
+    // 2b. QueryCommand — adjust records in date range (none here)
+    client.send.mockResolvedValueOnce(queryResponse([]));
 
     // 3. BatchGetCommand — nicknames for active employees (emp1, emp2)
     client.send.mockResolvedValueOnce(
@@ -141,6 +144,9 @@ describe('queryEmployeeEngagement', () => {
       ]),
     );
 
+    // 2b. QueryCommand — adjust records (none)
+    client.send.mockResolvedValueOnce(queryResponse([]));
+
     // 3. BatchGetCommand — no active employees, so empty keys → no call needed
     //    But batchGetItems returns [] for empty keys, so no send call happens
 
@@ -173,6 +179,9 @@ describe('queryEmployeeEngagement', () => {
     );
 
     // 2. QueryCommand — no earn records in this date range
+    client.send.mockResolvedValueOnce(queryResponse([]));
+
+    // 2b. QueryCommand — adjust records (none)
     client.send.mockResolvedValueOnce(queryResponse([]));
 
     // No BatchGetCommand needed since no active employees
@@ -214,6 +223,9 @@ describe('queryEmployeeEngagement', () => {
         { userId: 'emp3', amount: 200, activityId: 'act3', createdAt: '2024-03-01T10:00:00Z', targetRole: 'Speaker', activityUG: 'UG-Shenzhen', type: 'earn' },
       ]),
     );
+
+    // 2b. QueryCommand — adjust records (none)
+    client.send.mockResolvedValueOnce(queryResponse([]));
 
     // 3. BatchGetCommand — nicknames
     client.send.mockResolvedValueOnce(
@@ -260,11 +272,14 @@ describe('queryEmployeeEngagement', () => {
     // 2. QueryCommand — no records
     client.send.mockResolvedValueOnce(queryResponse([]));
 
+    // 2b. QueryCommand — adjust records (none)
+    client.send.mockResolvedValueOnce(queryResponse([]));
+
     const result = await queryEmployeeEngagement(filter, client, TABLES);
 
     expect(result.success).toBe(true);
 
-    // Verify the QueryCommand was called with date range parameters
+    // Verify the earn QueryCommand (call index 1) was called with date range parameters
     const queryCmd = client.send.mock.calls[1][0];
     expect(queryCmd.constructor.name).toBe('QueryCommand');
     expect(queryCmd.input.IndexName).toBe('type-createdAt-index');
@@ -317,6 +332,9 @@ describe('queryEmployeeEngagement', () => {
       ]),
     );
 
+    // 2b. QueryCommand — adjust records (none)
+    client.send.mockResolvedValueOnce(queryResponse([]));
+
     // 3. BatchGetCommand — only emp1
     client.send.mockResolvedValueOnce(
       batchGetResponse(USERS_TABLE, [
@@ -351,11 +369,14 @@ describe('queryEmployeeEngagement', () => {
     // 2. QueryCommand — multiple records for emp1 with different roles and UGs
     client.send.mockResolvedValueOnce(
       queryResponse([
-        { userId: 'emp1', amount: 100, activityId: 'act1', createdAt: '2024-03-01T10:00:00Z', targetRole: 'Speaker', activityUG: 'UG-Beijing', type: 'earn' },
-        { userId: 'emp1', amount: 50, activityId: 'act2', createdAt: '2024-04-01T10:00:00Z', targetRole: 'Volunteer', activityUG: 'UG-Shanghai', type: 'earn' },
-        { userId: 'emp1', amount: 75, activityId: 'act3', createdAt: '2024-05-01T10:00:00Z', targetRole: 'Speaker', activityUG: 'UG-Beijing', type: 'earn' },
+        { userId: 'emp1', amount: 100, activityId: 'act1', createdAt: '2024-03-01T10:00:00Z', source: '批量发放:活动积分', targetRole: 'Speaker', activityUG: 'UG-Beijing', type: 'earn' },
+        { userId: 'emp1', amount: 50, activityId: 'act2', createdAt: '2024-04-01T10:00:00Z', source: '批量发放:活动积分', targetRole: 'Volunteer', activityUG: 'UG-Shanghai', type: 'earn' },
+        { userId: 'emp1', amount: 75, activityId: 'act3', createdAt: '2024-05-01T10:00:00Z', source: '批量发放:活动积分', targetRole: 'Speaker', activityUG: 'UG-Beijing', type: 'earn' },
       ]),
     );
+
+    // 2b. QueryCommand — adjust records (none)
+    client.send.mockResolvedValueOnce(queryResponse([]));
 
     // 3. BatchGetCommand
     client.send.mockResolvedValueOnce(
@@ -379,5 +400,96 @@ describe('queryEmployeeEngagement', () => {
     // ugList should contain both UG-Beijing and UG-Shanghai (Set → 顿号-separated)
     expect(record.ugList).toContain('UG-Beijing');
     expect(record.ugList).toContain('UG-Shanghai');
+  });
+
+  // ----------------------------------------------------------
+  // Regression: negative adjust correction records reduce totalPoints,
+  // and adjust records are NOT counted as new activities.
+  // ----------------------------------------------------------
+  it('should subtract negative adjust correction records from totalPoints without inflating activityCount', async () => {
+    const filter: EmployeeEngagementFilter = {
+      startDate: '2024-01-01T00:00:00Z',
+      endDate: '2024-12-31T23:59:59Z',
+    };
+
+    // 1. ScanCommand — 1 employee
+    client.send.mockResolvedValueOnce(
+      scanResponse([{ userId: 'emp1', isEmployee: true }]),
+    );
+
+    // 2. QueryCommand — earn records (original distribution)
+    client.send.mockResolvedValueOnce(
+      queryResponse([
+        { userId: 'emp1', amount: 300, activityId: 'act1', createdAt: '2024-03-01T10:00:00Z', source: '批量发放:讲师积分', targetRole: 'Speaker', activityUG: 'UG-Beijing', type: 'earn' },
+      ]),
+    );
+
+    // 2b. QueryCommand — adjust records: a -100 correction ("发放删除:") on the SAME activity
+    client.send.mockResolvedValueOnce(
+      queryResponse([
+        { userId: 'emp1', amount: -100, activityId: 'act1', createdAt: '2024-03-05T10:00:00Z', source: '发放删除:讲师积分', targetRole: 'Speaker', activityUG: 'UG-Beijing', type: 'adjust' },
+      ]),
+    );
+
+    // 3. BatchGetCommand — nickname
+    client.send.mockResolvedValueOnce(
+      batchGetResponse(USERS_TABLE, [{ userId: 'emp1', nickname: 'Alice' }]),
+    );
+
+    const result = await queryEmployeeEngagement(filter, client, TABLES);
+
+    expect(result.success).toBe(true);
+    expect(result.records).toHaveLength(1);
+    // totalPoints must reflect the adjustment: 300 + (-100) = 200
+    expect(result.records![0].totalPoints).toBe(200);
+    // adjust record does NOT start with 批量发放, so activityCount stays 1 (only act1 from earn)
+    expect(result.records![0].activityCount).toBe(1);
+    // Summary totals mirror the reduced total, activities not inflated by adjust
+    expect(result.summary!.totalPoints).toBe(200);
+    expect(result.summary!.totalActivities).toBe(1);
+  });
+
+  // ----------------------------------------------------------
+  // Regression: positive adjust correction records increase totalPoints.
+  // ----------------------------------------------------------
+  it('should add positive adjust correction records to totalPoints', async () => {
+    const filter: EmployeeEngagementFilter = {
+      startDate: '2024-01-01T00:00:00Z',
+      endDate: '2024-12-31T23:59:59Z',
+    };
+
+    // 1. ScanCommand — 1 employee
+    client.send.mockResolvedValueOnce(
+      scanResponse([{ userId: 'emp1', isEmployee: true }]),
+    );
+
+    // 2. QueryCommand — earn records
+    client.send.mockResolvedValueOnce(
+      queryResponse([
+        { userId: 'emp1', amount: 100, activityId: 'act1', createdAt: '2024-03-01T10:00:00Z', source: '批量发放:讲师积分', targetRole: 'Speaker', activityUG: 'UG-Beijing', type: 'earn' },
+      ]),
+    );
+
+    // 2b. QueryCommand — adjust records: a +50 upward correction ("积分调整:")
+    client.send.mockResolvedValueOnce(
+      queryResponse([
+        { userId: 'emp1', amount: 50, activityId: 'act1', createdAt: '2024-03-05T10:00:00Z', source: '积分调整:讲师积分', targetRole: 'Speaker', activityUG: 'UG-Beijing', type: 'adjust' },
+      ]),
+    );
+
+    // 3. BatchGetCommand — nickname
+    client.send.mockResolvedValueOnce(
+      batchGetResponse(USERS_TABLE, [{ userId: 'emp1', nickname: 'Alice' }]),
+    );
+
+    const result = await queryEmployeeEngagement(filter, client, TABLES);
+
+    expect(result.success).toBe(true);
+    expect(result.records).toHaveLength(1);
+    // totalPoints reflects the upward adjustment: 100 + 50 = 150
+    expect(result.records![0].totalPoints).toBe(150);
+    expect(result.records![0].activityCount).toBe(1);
+    expect(result.summary!.totalPoints).toBe(150);
+    expect(result.summary!.totalActivities).toBe(1);
   });
 });

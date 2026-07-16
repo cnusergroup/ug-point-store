@@ -559,10 +559,22 @@ function isValidUrl(url: string): boolean {
 }
 
 /**
- * Query all type="earn" AND targetRole="Speaker" PointsRecords for a user and sum the amount.
+ * Query all Speaker-role PointsRecords for a user and sum the amount to obtain the
+ * Speaker earnTotal used for travel-sponsorship quota calculation.
+ *
+ * Includes BOTH type="earn" (original awards) AND type="adjust" (correction records
+ * written by `admin/batch-points-adjust.ts` when a SuperAdmin adjusts a speaker-type
+ * classification or deletes a distribution). Adjust records carry a signed `amount`
+ * (positive when points are increased, negative when reduced/reversed) and the same
+ * `targetRole: 'Speaker'`, so summing earn + adjust yields the correct post-adjustment
+ * total. If adjust records were excluded, a speaker's travel quota would not reflect
+ * any later points adjustment or distribution deletion.
+ *
  * Uses the `userId-createdAt-index` GSI with a FilterExpression on type and targetRole.
- * Only Speaker role earn records are included; records with other targetRole values
- * (e.g. UserGroupLeader, Volunteer) or missing targetRole are excluded.
+ * Only Speaker-role records are included; records with other targetRole values
+ * (e.g. UserGroupLeader, Volunteer) or missing targetRole are excluded — this notably
+ * excludes the skill-related adjust records (`技能指派:` / `技能释放:`) which carry
+ * `targetRole: 'UserGroupLeader'`.
  */
 async function queryEarnTotal(
   userId: string,
@@ -578,9 +590,14 @@ async function queryEarnTotal(
         TableName: pointsRecordsTable,
         IndexName: 'userId-createdAt-index',
         KeyConditionExpression: 'userId = :uid',
-        FilterExpression: '#t = :earn AND #tr = :speaker',
+        FilterExpression: '(#t = :earn OR #t = :adjust) AND #tr = :speaker',
         ExpressionAttributeNames: { '#t': 'type', '#tr': 'targetRole' },
-        ExpressionAttributeValues: { ':uid': userId, ':earn': 'earn', ':speaker': 'Speaker' },
+        ExpressionAttributeValues: {
+          ':uid': userId,
+          ':earn': 'earn',
+          ':adjust': 'adjust',
+          ':speaker': 'Speaker',
+        },
         ProjectionExpression: 'amount',
         ...(exclusiveStartKey && { ExclusiveStartKey: exclusiveStartKey }),
       }),

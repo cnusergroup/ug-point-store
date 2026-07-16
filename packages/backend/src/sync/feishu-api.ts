@@ -15,6 +15,7 @@ export interface FeishuApiActivity {
   ugName: string;
   topic: string;
   activityDate: string;
+  rsvp?: number;            // 报名人数（来自飞书 RSVP 列），无值时为 undefined
   feishuRecordId?: string;  // feishu bitable record_id, used for deduplication
 }
 
@@ -312,17 +313,38 @@ function extractActivityFromRecord(record: BitableRecord): FeishuApiActivity | n
   const activityDate = getFieldString(fields, [
     '活动日期', 'activityDate', 'activity_date', 'date', '日期',
   ]);
+  // RSVP 报名人数（优先 RSVP 列，回退到 活动报名人数）
+  const rsvpRaw = getFieldString(fields, [
+    'RSVP', 'rsvp', '活动报名人数', '报名人数',
+  ]);
 
   if (!activityType || !ugName || !topic || !activityDate) {
     return null;
   }
+
+  const rsvp = parseRsvp(rsvpRaw);
 
   return {
     activityType: normalizeActivityType(activityType),
     ugName,
     topic,
     activityDate: normalizeDate(activityDate),
+    ...(rsvp !== undefined ? { rsvp } : {}),
   };
+}
+
+/**
+ * Parse an RSVP field value (text) into a non-negative integer.
+ * Returns undefined when the value is empty or not parseable.
+ */
+export function parseRsvp(raw: string): number | undefined {
+  if (!raw) return undefined;
+  // Extract the first run of digits (handles values like "182", "182人")
+  const match = raw.match(/\d+/);
+  if (!match) return undefined;
+  const n = parseInt(match[0], 10);
+  if (isNaN(n) || n < 0) return undefined;
+  return n;
 }
 
 /**

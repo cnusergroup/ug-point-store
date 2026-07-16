@@ -14,6 +14,7 @@ import {
   sendOrderShippedEmail,
   sendNewOrderEmail,
   sendUGLExitNotifications,
+  sendDetectionCompletionNotification,
 } from './notifications';
 import type { NotificationContext, SubscribedUser } from './notifications';
 import { getFeatureToggles } from '../settings/feature-toggles';
@@ -1009,6 +1010,199 @@ describe('Property 9: Exit notification recipient correctness', () => {
         // adminsSent count should equal the number of SuperAdmins.
         expect(result.adminsSent).toBe(expectedSuperAdminEmails.length);
       }),
+      { numRuns: 100 },
+    );
+  });
+});
+
+// ============================================================
+// Property 12: Detection completion notification recipient correctness
+// ============================================================
+
+// Feature: ugl-inactivity-exit-flow, Property 12: Detection completion notification recipient correctness
+describe('Property 12: Detection completion notification recipient correctness', () => {
+  /**
+   * **Validates: Requirements 6.3, 6.4, 6.5**
+   *
+   * For any set of current SuperAdmin users and any list of
+   * additionalNotificationRecipients (including empty and addresses that do
+   * not belong to any registered account), sendDetectionCompletionNotification
+   * SHALL attempt delivery to exactly the union of both sets (deduplicated),
+   * and one recipient's simulated send failure SHALL never block delivery to
+   * any other recipient.
+   */
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /** Arbitrary for a set of SuperAdmin users, deduplicated by email. */
+  const superAdminsArb = fc.uniqueArray(
+    fc.tuple(emailArb, localeArb).map(([email, locale]) => ({ email, locale })),
+    { selector: (u) => u.email, minLength: 0, maxLength: 10 },
+  );
+
+  /**
+   * Arbitrary for additionalNotificationRecipients: plain email strings that
+   * may overlap with SuperAdmin emails and are not required to belong to any
+   * registered account.
+   */
+  const additionalRecipientsArb = fc.array(emailArb, { minLength: 0, maxLength: 10 });
+
+  /** Build the mock dynamoClient.send implementation shared by both tests. */
+  function buildMockDynamoClient(superAdmins: { email: string; locale: EmailLocale }[]) {
+    return {
+      send: vi.fn().mockImplementation(async (command: any) => {
+        const input = command.input;
+
+        // ScanCommand for the SuperAdmin lookup (no Key on the input)
+        if (input.Key === undefined) {
+          const items = superAdmins.map((u) => ({
+            email: u.email,
+            nickname: '',
+            locale: u.locale,
+            roles: ['SuperAdmin'],
+          }));
+          return { Items: items };
+        }
+
+        // GetCommand for the template (templateId + locale key)
+        if (input.Key?.templateId !== undefined) {
+          return {
+            Item: {
+              templateId: input.Key.templateId,
+              locale: input.Key.locale,
+              subject: 'Test Subject',
+              body: '<p>{{detectionQuarter}} {{newlyRecordedCount}}</p>',
+            },
+          };
+        }
+
+        return { Items: [] };
+      }),
+    };
+  }
+
+  it('sends to exactly the union of SuperAdmins and additionalNotificationRecipients', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        superAdminsArb,
+        additionalRecipientsArb,
+        async (superAdmins, additionalRecipients) => {
+          mockedGetFeatureToggles.mockResolvedValue({
+            emailUglExitNotificationEnabled: true,
+            additionalNotificationRecipients: additionalRecipients,
+          } as any);
+
+          const sentTo: string[] = [];
+
+          const mockSesClient = {
+            send: vi.fn().mockImplementation(async (command: any) => {
+              const to: string[] = command.input?.Destination?.ToAddresses ?? [];
+              sentTo.push(...to);
+              return {};
+            }),
+          };
+
+          const mockDynamoClient = buildMockDynamoClient(superAdmins);
+
+          const ctx = createMockContext({
+            sesClient: mockSesClient,
+            dynamoClient: mockDynamoClient,
+          });
+
+          sentTo.length = 0;
+
+          const resultPromise = sendDetectionCompletionNotification(ctx, '2025-Q1', 5);
+          await vi.runAllTimersAsync();
+          const result = await resultPromise;
+
+          const expectedUnion = new Set([
+            ...superAdmins.map((u) => u.email),
+            ...additionalRecipients,
+          ]);
+
+          const sentSet = new Set(sentTo);
+
+          // The set of emails actually sent to equals exactly the expected union.
+          expect(sentSet).toEqual(expectedUnion);
+
+          // recipientsSent should equal the number of distinct recipients.
+          expect(result.recipientsSent).toBe(expectedUnion.size);
+          expect(result.recipientsFailed).toBe(0);
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
+  it('one recipient failing to send never blocks delivery to any other recipient', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        superAdminsArb,
+        additionalRecipientsArb,
+        async (superAdmins, additionalRecipients) => {
+          const expectedUnion = new Set([
+            ...superAdmins.map((u) => u.email),
+            ...additionalRecipients,
+          ]);
+
+          // Only meaningful when there's at least one recipient to fail.
+          fc.pre(expectedUnion.size > 0);
+
+          const failingEmail = [...expectedUnion][0];
+
+          mockedGetFeatureToggles.mockResolvedValue({
+            emailUglExitNotificationEnabled: true,
+            additionalNotificationRecipients: additionalRecipients,
+          } as any);
+
+          const sentTo: string[] = [];
+
+          const mockSesClient = {
+            send: vi.fn().mockImplementation(async (command: any) => {
+              const to: string[] = command.input?.Destination?.ToAddresses ?? [];
+              if (to.includes(failingEmail)) {
+                throw new Error('Simulated SES failure');
+              }
+              sentTo.push(...to);
+              return {};
+            }),
+          };
+
+          const mockDynamoClient = buildMockDynamoClient(superAdmins);
+
+          const ctx = createMockContext({
+            sesClient: mockSesClient,
+            dynamoClient: mockDynamoClient,
+          });
+
+          sentTo.length = 0;
+
+          const resultPromise = sendDetectionCompletionNotification(ctx, '2025-Q1', 5);
+          await vi.runAllTimersAsync();
+          const result = await resultPromise;
+
+          const sentSet = new Set(sentTo);
+          const expectedOthers = new Set(
+            [...expectedUnion].filter((email) => email !== failingEmail),
+          );
+
+          // Every other recipient still received the email.
+          expect(sentSet).toEqual(expectedOthers);
+          // The failing recipient never appears in the sent-to tracking.
+          expect(sentSet.has(failingEmail)).toBe(false);
+
+          // recipientsSent/recipientsFailed account for the failure and the rest.
+          expect(result.recipientsFailed).toBe(1);
+          expect(result.recipientsSent).toBe(expectedUnion.size - 1);
+        },
+      ),
       { numRuns: 100 },
     );
   });

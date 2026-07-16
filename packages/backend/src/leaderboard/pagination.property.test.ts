@@ -154,6 +154,13 @@ function createPaginatedAnnouncementsMockClient(
         const tableName = command.input?.TableName;
 
         if (tableName === 'PointsRecords') {
+          const queriedType = command.input?.ExpressionAttributeValues?.[':type'] ?? 'earn';
+          // Every record in this test's dataset is type='earn' — the parallel
+          // type='adjust' query (added by the earn+adjust merge) always returns empty.
+          if (queriedType !== 'earn') {
+            return Promise.resolve({ Items: [], LastEvaluatedKey: undefined });
+          }
+
           const limit = command.input?.Limit ?? sortedRecords.length;
           const exclusiveStartKey = command.input?.ExclusiveStartKey;
 

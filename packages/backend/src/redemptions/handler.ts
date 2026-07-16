@@ -1,14 +1,19 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { SESClient } from '@aws-sdk/client-ses';
 import { ErrorHttpStatus } from '@points-mall/shared';
 import { withAuth, type AuthenticatedEvent } from '../middleware/auth-middleware';
 import { redeemWithPoints } from './points-redemption';
 import { redeemWithCode, lookupCodeCandidates } from './code-redemption';
 import { getRedemptionHistory } from './history';
+import { getOrderDetail } from '../orders/order';
+import { sendNewOrderEmail } from '../email/notifications';
+import type { NotificationContext } from '../email/notifications';
 
 // Create client outside handler for Lambda container reuse
 const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const sesClient = new SESClient({});
 
 const USERS_TABLE = process.env.USERS_TABLE ?? '';
 const PRODUCTS_TABLE = process.env.PRODUCTS_TABLE ?? '';
@@ -17,6 +22,7 @@ const REDEMPTIONS_TABLE = process.env.REDEMPTIONS_TABLE ?? '';
 const POINTS_RECORDS_TABLE = process.env.POINTS_RECORDS_TABLE ?? '';
 const ADDRESSES_TABLE = process.env.ADDRESSES_TABLE ?? '';
 const ORDERS_TABLE = process.env.ORDERS_TABLE ?? '';
+const EMAIL_TEMPLATES_TABLE = process.env.EMAIL_TEMPLATES_TABLE ?? '';
 
 const CORS_HEADERS = {
   'Content-Type': 'application/json',
@@ -117,6 +123,15 @@ async function handleRedeemWithPoints(event: AuthenticatedEvent): Promise<APIGat
     return jsonResponse(status, result.error);
   }
 
+  // Send new order email notification to admins (best-effort, never fails redemption)
+  if (result.orderId) {
+    try {
+      await sendRedemptionOrderEmail(result.orderId, event.user.userId);
+    } catch (err) {
+      console.error('[Email] Failed to send newOrder email after points redemption:', err);
+    }
+  }
+
   return jsonResponse(200, { redemptionId: result.redemptionId, orderId: result.orderId });
 }
 
@@ -169,6 +184,15 @@ async function handleRedeemWithCode(event: AuthenticatedEvent): Promise<APIGatew
     return jsonResponse(status, result.error);
   }
 
+  // Send new order email notification to admins (best-effort, never fails redemption)
+  if (result.orderId) {
+    try {
+      await sendRedemptionOrderEmail(result.orderId, event.user.userId);
+    } catch (err) {
+      console.error('[Email] Failed to send newOrder email after code redemption:', err);
+    }
+  }
+
   return jsonResponse(200, { redemptionId: result.redemptionId, orderId: result.orderId });
 }
 
@@ -193,4 +217,37 @@ async function handleGetHistory(event: AuthenticatedEvent): Promise<APIGatewayPr
   }
 
   return jsonResponse(200, { items: result.items, total: result.total, page: result.page, pageSize: result.pageSize });
+}
+
+/**
+ * Send new-order email notification to order admins after a redemption creates an order.
+ * Best-effort — caller wraps in try/catch so email failures never affect the redemption result.
+ */
+async function sendRedemptionOrderEmail(orderId: string, userId: string): Promise<void> {
+  const orderDetail = await getOrderDetail(orderId, userId, dynamoClient, ORDERS_TABLE);
+  const orderItems = orderDetail.order?.items?.map((i) => ({
+    productName: i.productName,
+    quantity: i.quantity,
+    selectedSize: i.selectedSize,
+  })) ?? [];
+  const shippingAddress = orderDetail.order?.shippingAddress;
+
+  // Fetch buyer nickname
+  const buyerResult = await dynamoClient.send(
+    new GetCommand({ TableName: USERS_TABLE, Key: { userId }, ProjectionExpression: 'nickname' }),
+  );
+  const buyerNickname = (buyerResult.Item?.nickname as string) ?? '';
+
+  const notificationCtx: NotificationContext = {
+    sesClient,
+    dynamoClient,
+    emailTemplatesTable: EMAIL_TEMPLATES_TABLE,
+    usersTable: USERS_TABLE,
+    senderEmail: 'store@awscommunity.cn',
+  };
+  await sendNewOrderEmail(notificationCtx, orderId, orderItems, buyerNickname, {
+    recipientName: shippingAddress?.recipientName ?? '',
+    phone: shippingAddress?.phone ?? '',
+    detailAddress: shippingAddress?.detailAddress ?? '',
+  });
 }

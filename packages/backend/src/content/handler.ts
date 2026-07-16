@@ -1,6 +1,6 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, BatchGetCommand } from '@aws-sdk/lib-dynamodb';
 import { S3Client } from '@aws-sdk/client-s3';
 import { SESClient } from '@aws-sdk/client-ses';
 import { ErrorHttpStatus } from '@points-mall/shared';
@@ -267,6 +267,38 @@ async function handleCreateContentItem(event: AuthenticatedEvent): Promise<APIGa
   return jsonResponse(201, { item: result.item });
 }
 
+/**
+ * BatchGet live nicknames from Users table for a list of userIds.
+ * Returns a Map of userId → current nickname.
+ */
+async function batchGetLiveNicknames(userIds: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (userIds.length === 0) return map;
+
+  // Deduplicate
+  const uniqueIds = [...new Set(userIds)];
+
+  // Chunk into batches of 100 (DynamoDB BatchGetItem limit)
+  for (let i = 0; i < uniqueIds.length; i += 100) {
+    const chunk = uniqueIds.slice(i, i + 100);
+    const result = await dynamoClient.send(
+      new BatchGetCommand({
+        RequestItems: {
+          [USERS_TABLE]: {
+            Keys: chunk.map(userId => ({ userId })),
+            ProjectionExpression: 'userId, nickname',
+          },
+        },
+      }),
+    );
+    const items = result.Responses?.[USERS_TABLE] ?? [];
+    for (const item of items) {
+      map.set(item.userId as string, (item.nickname as string) ?? '');
+    }
+  }
+  return map;
+}
+
 async function handleListContentItems(event: AuthenticatedEvent): Promise<APIGatewayProxyResult> {
   const toggles = await getFeatureToggles(dynamoClient, USERS_TABLE);
   if (!checkContentPermission(event.user.roles, 'canAccess', toggles)) {
@@ -284,6 +316,7 @@ async function handleListContentItems(event: AuthenticatedEvent): Promise<APIGat
     { categoryId, tag, pageSize, lastKey },
     dynamoClient,
     CONTENT_ITEMS_TABLE,
+    USERS_TABLE,
   );
 
   return jsonResponse(200, { items: result.items, lastKey: result.lastKey });
@@ -324,6 +357,7 @@ async function handleGetContentDetail(contentId: string, event: AuthenticatedEve
       contentItemsTable: CONTENT_ITEMS_TABLE,
       reservationsTable: CONTENT_RESERVATIONS_TABLE,
       likesTable: CONTENT_LIKES_TABLE,
+      usersTable: USERS_TABLE,
     },
   );
 
@@ -373,6 +407,18 @@ async function handleListComments(contentId: string, event: AuthenticatedEvent):
     dynamoClient,
     CONTENT_COMMENTS_TABLE,
   );
+
+  // Override userNickname with live values from Users table
+  if (result.comments && result.comments.length > 0) {
+    const userIds = result.comments.map(c => c.userId).filter(Boolean);
+    const nicknameMap = await batchGetLiveNicknames(userIds);
+    for (const comment of result.comments) {
+      const liveNick = nicknameMap.get(comment.userId);
+      if (liveNick !== undefined) {
+        comment.userNickname = liveNick;
+      }
+    }
+  }
 
   return jsonResponse(200, { comments: result.comments, lastKey: result.lastKey });
 }

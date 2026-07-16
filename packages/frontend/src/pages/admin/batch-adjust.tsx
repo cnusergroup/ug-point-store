@@ -144,16 +144,35 @@ export default function BatchAdjustPage() {
   const [uglUsers, setUglUsers] = useState<UserListItem[]>([]);
   const [uglUsersLoading, setUglUsersLoading] = useState(false);
 
+  // Free Amount Mode (SpecialActivity / SpecialReward)
+  const [adjustedPoints, setAdjustedPoints] = useState<number>(0);
+  const [adjustedPointsInput, setAdjustedPointsInput] = useState<string>('');
+  const [adjustedPointsError, setAdjustedPointsError] = useState<string>('');
+
   // Confirm modal
   const [showConfirm, setShowConfirm] = useState(false);
   const [showDeletionConfirm, setShowDeletionConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // Detect Free Amount Mode
+  const isFreeAmountMode = useMemo(() => {
+    return originalRecord?.targetRole === 'SpecialActivity' || originalRecord?.targetRole === 'SpecialReward';
+  }, [originalRecord]);
+
+  // Initialize adjustedPoints from originalRecord when in Free Amount Mode
+  useEffect(() => {
+    if (originalRecord && isFreeAmountMode) {
+      setAdjustedPoints(originalRecord.points);
+      setAdjustedPointsInput(String(originalRecord.points));
+    }
+  }, [originalRecord, isFreeAmountMode]);
+
   // Computed points values
   const autoPoints = useMemo(() => {
+    if (isFreeAmountMode) return adjustedPoints;
     if (targetRole === 'Speaker' && !speakerType) return 0;
     return getPointsForRole(pointsRuleConfig, targetRole, speakerType ?? undefined);
-  }, [pointsRuleConfig, targetRole, speakerType]);
+  }, [pointsRuleConfig, targetRole, speakerType, isFreeAmountMode, adjustedPoints]);
 
   const originalPoints = useMemo(() => {
     return originalRecord?.points || 0;
@@ -195,11 +214,16 @@ export default function BatchAdjustPage() {
     if (!originalRecord) return false;
     if (isDeletionMode) return true;
     if (addedUserIds.size > 0 || removedUserIds.size > 0) return true;
-    if (targetRole !== originalRecord.targetRole) return true;
-    if (targetRole === 'Speaker' && speakerType !== originalRecord.speakerType) return true;
+    if (isFreeAmountMode) {
+      // In free amount mode, check if adjustedPoints differs from original
+      if (adjustedPoints !== originalRecord.points) return true;
+    } else {
+      if (targetRole !== originalRecord.targetRole) return true;
+      if (targetRole === 'Speaker' && speakerType !== originalRecord.speakerType) return true;
+    }
     if (releaseSkills.length > 0 || addSkillClaims.length > 0) return true;
     return false;
-  }, [originalRecord, isDeletionMode, addedUserIds, removedUserIds, targetRole, speakerType, releaseSkills, addSkillClaims]);
+  }, [originalRecord, isDeletionMode, addedUserIds, removedUserIds, targetRole, speakerType, releaseSkills, addSkillClaims, isFreeAmountMode, adjustedPoints]);
 
   // Skill points delta calculation
   const skillPointsDelta = useMemo(() => {
@@ -355,6 +379,22 @@ export default function BatchAdjustPage() {
     }
   }, [currentUserId]);
 
+  // Fetch all active users (for Free Amount Mode — no role filter)
+  const fetchAllUsers = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await request<{ users: UserListItem[] }>({ url: '/api/admin/users' });
+      const activeUsers = (res.users || []).filter(
+        (u) => u.status === 'active' && !u.roles?.includes('SuperAdmin') && !u.roles?.includes('OrderAdmin'),
+      );
+      setUsers(sortUsersWithInvitePriority(activeUsers, currentUserId));
+    } catch {
+      setUsers([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentUserId]);
+
   // Auth + SuperAdmin gate + initial data load
   useEffect(() => {
     if (!isAuthenticated) {
@@ -375,7 +415,11 @@ export default function BatchAdjustPage() {
 
   useEffect(() => {
     if (!initialLoadDone) return;
-    fetchUsers(targetRole);
+    if (isFreeAmountMode) {
+      fetchAllUsers();
+    } else {
+      fetchUsers(targetRole);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialLoadDone]);
 
@@ -452,8 +496,14 @@ export default function BatchAdjustPage() {
   // Speaker type valid
   const isSpeakerTypeValid = targetRole !== 'Speaker' || !!speakerType;
 
+  // Free Amount Mode points validation
+  const isAdjustedPointsValid = useMemo(() => {
+    if (!isFreeAmountMode) return true;
+    return Number.isInteger(adjustedPoints) && adjustedPoints > 0;
+  }, [isFreeAmountMode, adjustedPoints]);
+
   // Validation
-  const canSubmit = !!originalRecord && (isDeletionMode || (selectedIds.size > 0 || releaseSkills.length > 0 || addSkillClaims.length > 0)) && (isDeletionMode || autoPoints > 0 || releaseSkills.length > 0 || addSkillClaims.length > 0) && hasChanges && !volunteerLimitExceeded && (isDeletionMode || isSpeakerTypeValid);
+  const canSubmit = !!originalRecord && (isDeletionMode || (selectedIds.size > 0 || releaseSkills.length > 0 || addSkillClaims.length > 0)) && (isDeletionMode || autoPoints > 0 || releaseSkills.length > 0 || addSkillClaims.length > 0) && hasChanges && !volunteerLimitExceeded && (isDeletionMode || isSpeakerTypeValid) && isAdjustedPointsValid;
 
   const handleOpenConfirm = () => {
     if (!canSubmit) return;
@@ -461,6 +511,25 @@ export default function BatchAdjustPage() {
       setShowDeletionConfirm(true);
     } else {
       setShowConfirm(true);
+    }
+  };
+
+  // Handle adjustedPoints input change with validation
+  const handleAdjustedPointsChange = (value: string) => {
+    setAdjustedPointsInput(value);
+    const trimmed = value.trim();
+    if (trimmed === '') {
+      setAdjustedPoints(0);
+      setAdjustedPointsError(t('batchPoints.adjust.adjustedPointsError' as any));
+      return;
+    }
+    const num = Number(trimmed);
+    if (!Number.isInteger(num) || num <= 0) {
+      setAdjustedPoints(0);
+      setAdjustedPointsError(t('batchPoints.adjust.adjustedPointsError' as any));
+    } else {
+      setAdjustedPoints(num);
+      setAdjustedPointsError('');
     }
   };
 
@@ -476,16 +545,31 @@ export default function BatchAdjustPage() {
     if (!canSubmit || submitting || !originalRecord) return;
     setSubmitting(true);
     try {
+      const requestData: Record<string, any> = {
+        recipientIds: isDeletionMode ? [] : Array.from(selectedIds),
+        targetRole: isFreeAmountMode ? originalRecord.targetRole : targetRole,
+      };
+      if (isFreeAmountMode) {
+        // Free Amount Mode: include adjustedPoints, omit speakerType
+        if (!isDeletionMode) {
+          requestData.adjustedPoints = adjustedPoints;
+        }
+      } else {
+        // Standard mode
+        if (targetRole === 'Speaker' && speakerType) {
+          requestData.speakerType = speakerType;
+        }
+      }
+      if (releaseSkills.length > 0) {
+        requestData.releaseSkills = releaseSkills;
+      }
+      if (addSkillClaims.length > 0) {
+        requestData.addSkillClaims = addSkillClaims.map((a) => ({ skill: a.skill, userId: a.userId }));
+      }
       const res = await request<{ deleted?: boolean; distributionId?: string; reversedCount?: number }>({
         url: `/api/admin/batch-points/${distributionId}/adjust`,
         method: 'POST',
-        data: {
-          recipientIds: isDeletionMode ? [] : Array.from(selectedIds),
-          targetRole,
-          ...(targetRole === 'Speaker' && speakerType ? { speakerType } : {}),
-          ...(releaseSkills.length > 0 ? { releaseSkills } : {}),
-          ...(addSkillClaims.length > 0 ? { addSkillClaims: addSkillClaims.map((a) => ({ skill: a.skill, userId: a.userId })) } : {}),
-        },
+        data: requestData,
       });
       if (res.deleted) {
         Taro.showToast({ title: t('batchPoints.adjust.deletionSuccessToast' as any), icon: 'none' });
@@ -511,6 +595,23 @@ export default function BatchAdjustPage() {
 
   const currentRoleTab = ROLE_TABS.find((rt) => rt.key === targetRole);
   const originalRoleTab = ROLE_TABS.find((rt) => rt.key === originalRecord?.targetRole);
+
+  // Free Amount Mode: targetRole display label
+  const freeAmountRoleLabel = useMemo(() => {
+    if (!isFreeAmountMode || !originalRecord) return '';
+    return originalRecord.targetRole === 'SpecialActivity'
+      ? t('batchPoints.adjust.specialActivityLabel' as any)
+      : t('batchPoints.adjust.specialRewardLabel' as any);
+  }, [isFreeAmountMode, originalRecord, t]);
+
+  // Free Amount Mode: associated tag name
+  const freeAmountTagName = useMemo(() => {
+    if (!isFreeAmountMode || !originalRecord) return '';
+    if (originalRecord.targetRole === 'SpecialActivity') {
+      return (originalRecord as any).awardTagDisplayName || (originalRecord as any).awardTagName || '';
+    }
+    return (originalRecord as any).rewardTagDisplayName || (originalRecord as any).rewardTagName || '';
+  }, [isFreeAmountMode, originalRecord]);
 
   // Get nicknames for added/removed users from the user list
   const addedUsers = useMemo(
@@ -622,8 +723,8 @@ export default function BatchAdjustPage() {
             </View>
           </View>
 
-          {/* Skill Lock Panel — SuperAdmin only */}
-          {isSuperAdmin && originalRecord.activityId && (
+          {/* Skill Lock Panel — SuperAdmin only, hidden in Free Amount Mode */}
+          {isSuperAdmin && originalRecord.activityId && !isFreeAmountMode && (
             <View className='ba-skill-locks'>
               <Text className='ba-skill-locks__title'>{t('skillClaims.adjust.skillLockSection')}</Text>
               {skillClaimsLoading ? (
@@ -717,7 +818,72 @@ export default function BatchAdjustPage() {
             </View>
           )}
 
-          {/* Role Filter Tabs */}
+          {/* Free Amount Mode — readonly labels and points input */}
+          {isFreeAmountMode && (
+            <View className='ba-free-amount'>
+              <View className='ba-free-amount__label'>
+                <Text className='ba-free-amount__label-title'>{t('batchPoints.adjust.originalRole' as any)}</Text>
+                <Text className='ba-free-amount__label-value'>{freeAmountRoleLabel}</Text>
+              </View>
+              {freeAmountTagName && (
+                <View className='ba-free-amount__label'>
+                  <Text className='ba-free-amount__label-title'>
+                    {originalRecord?.targetRole === 'SpecialActivity'
+                      ? t('batchPoints.adjust.awardTagLabel' as any)
+                      : t('batchPoints.adjust.rewardTagLabel' as any)}
+                  </Text>
+                  <Text className='ba-free-amount__label-value'>{freeAmountTagName}</Text>
+                </View>
+              )}
+              <View className='ba-free-amount__input-section'>
+                <Text className='ba-free-amount__input-label'>{t('batchPoints.adjust.adjustedPointsLabel' as any)}</Text>
+                <Input
+                  className={`ba-free-amount__input ${adjustedPointsError ? 'ba-free-amount__input--invalid' : ''}`}
+                  type='number'
+                  value={adjustedPointsInput}
+                  onInput={(e) => handleAdjustedPointsChange(e.detail.value)}
+                  placeholder={t('batchPoints.adjust.adjustedPointsPlaceholder' as any)}
+                />
+                {adjustedPointsError && (
+                  <Text className='ba-free-amount__error'>{adjustedPointsError}</Text>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* Free Amount Mode Diff Summary */}
+          {isFreeAmountMode && originalRecord && (
+            <View className='ba-diff-special'>
+              <Text className='ba-diff-special__title'>{t('batchPoints.adjust.diffSummaryTitle' as any)}</Text>
+              <View className='ba-diff-special__grid'>
+                <View className='ba-diff-special__row'>
+                  <Text className='ba-diff-special__label'>{t('batchPoints.adjust.addedCount' as any, { count: addedUserIds.size })}</Text>
+                  <Text className='ba-diff-special__value ba-diff-special__value--added'>+{addedUserIds.size}</Text>
+                </View>
+                <View className='ba-diff-special__row'>
+                  <Text className='ba-diff-special__label'>{t('batchPoints.adjust.removedCount' as any, { count: removedUserIds.size })}</Text>
+                  <Text className='ba-diff-special__value ba-diff-special__value--removed'>-{removedUserIds.size}</Text>
+                </View>
+                <View className='ba-diff-special__row'>
+                  <Text className='ba-diff-special__label'>{t('batchPoints.adjust.freeAmountDiffOriginal' as any)}</Text>
+                  <Text className='ba-diff-special__value'>{originalPoints} {t('batchPoints.page.pointsUnit')}</Text>
+                </View>
+                <View className='ba-diff-special__row'>
+                  <Text className='ba-diff-special__label'>{t('batchPoints.adjust.freeAmountDiffNew' as any)}</Text>
+                  <Text className='ba-diff-special__value'>{adjustedPoints} {t('batchPoints.page.pointsUnit')}</Text>
+                </View>
+                <View className='ba-diff-special__row ba-diff-special__row--highlight'>
+                  <Text className='ba-diff-special__label'>{t('batchPoints.adjust.freeAmountDiffTotal' as any)}</Text>
+                  <Text className={`ba-diff-special__value ${totalDelta > 0 ? 'ba-diff-special__value--added' : totalDelta < 0 ? 'ba-diff-special__value--removed' : ''}`}>
+                    {formatDelta(totalDelta)} {t('batchPoints.page.pointsUnit')}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* Role Filter Tabs — hidden in Free Amount Mode */}
+          {!isFreeAmountMode && (
           <View className='bp-tabs'>
             {ROLE_TABS.map((tab) => (
               <View
@@ -729,9 +895,10 @@ export default function BatchAdjustPage() {
               </View>
             ))}
           </View>
+          )}
 
-          {/* Speaker Type Selector */}
-          {targetRole === 'Speaker' && (
+          {/* Speaker Type Selector — hidden in Free Amount Mode */}
+          {!isFreeAmountMode && targetRole === 'Speaker' && (
             <View className='bp-speaker-type'>
               <Text className='bp-speaker-type__label'>{t('batchPoints.page.speakerTypeLabel' as any)}</Text>
               <View className='bp-speaker-type__options'>
@@ -748,16 +915,16 @@ export default function BatchAdjustPage() {
             </View>
           )}
 
-          {/* Auto Points Display */}
-          {(targetRole !== 'Speaker' || speakerType) && (
+          {/* Auto Points Display — hidden in Free Amount Mode */}
+          {!isFreeAmountMode && (targetRole !== 'Speaker' || speakerType) && (
             <View className='bp-auto-points'>
               <Text className='bp-auto-points__label'>{t('batchPoints.adjust.newPoints' as any)}</Text>
               <Text className='bp-auto-points__value'>{autoPoints} {t('batchPoints.page.pointsUnit')}</Text>
             </View>
           )}
 
-          {/* Diff Summary Panel */}
-          {originalRecord && (
+          {/* Diff Summary Panel — hidden in Free Amount Mode (shown separately above) */}
+          {!isFreeAmountMode && originalRecord && (
             <View className='ba-diff-summary'>
               <Text className='ba-diff-summary__title'>{t('batchPoints.adjust.diffSummaryTitle' as any)}</Text>
               <View className='ba-diff-summary__grid'>
@@ -989,10 +1156,10 @@ export default function BatchAdjustPage() {
               <View className='ba-confirm__diff-row'>
                 <Text className='ba-confirm__diff-label'>{t('batchPoints.page.confirmTargetRole')}</Text>
                 <Text className={`role-badge ${currentRoleTab?.className || ''}`}>
-                  {currentRoleTab ? t(currentRoleTab.labelKey) : targetRole}
+                  {isFreeAmountMode ? freeAmountRoleLabel : (currentRoleTab ? t(currentRoleTab.labelKey) : targetRole)}
                 </Text>
               </View>
-              {targetRole === 'Speaker' && speakerTypeLabel && (
+              {!isFreeAmountMode && targetRole === 'Speaker' && speakerTypeLabel && (
                 <View className='ba-confirm__diff-row'>
                   <Text className='ba-confirm__diff-label'>{t('batchPoints.page.confirmSpeakerType' as any)}</Text>
                   <Text className='ba-confirm__diff-value'>{t(speakerTypeLabel as any)}</Text>
@@ -1026,11 +1193,7 @@ export default function BatchAdjustPage() {
               <View className='ba-confirm--deletion__warning'>
                 <Text className='ba-confirm--deletion__warning-icon'>⚠</Text>
                 <Text className='ba-confirm--deletion__warning-text'>
-                  {(t('batchPoints.adjust.deletionConfirmMessage' as any) as string)
-                    .replace('{activityTopic}', originalRecord.activityTopic || '-')
-                    .replace('{activityDate}', originalRecord.activityDate || '-')
-                    .replace('{count}', String(originalRecord.recipientIds?.length || 0))
-                    .replace('{points}', String(originalPoints))}
+                  {t('batchPoints.adjust.deletionConfirmMessage' as any)}
                 </Text>
               </View>
               <View className='ba-confirm--deletion__info'>

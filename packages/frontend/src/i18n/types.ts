@@ -462,6 +462,15 @@ export interface TranslationDict {
       invalidFormatError: string;
       genericError: string;
     };
+    changeNickname: string;
+    newNicknamePlaceholder: string;
+    nicknameChangeSuccess: string;
+    nicknameEmpty: string;
+    nicknameTooLong: string;
+    nicknameInvalidChars: string;
+    nicknameSameAsCurrent: string;
+    nicknameAlreadyTaken: string;
+    nicknameTooFrequent: string;
   };
   address: {
     title: string;
@@ -896,6 +905,20 @@ export interface TranslationDict {
       restoreTrackingConfirmText: string;
       restoreTrackingSuccess: string;
       triggeredQuarterLabel: string;
+      tabAwaitingReminder: string;
+      tabPendingExit: string;
+      awaitingReminderEmptyState: string;
+      nicknameLabel: string;
+      emailLabel: string;
+      ugNameLabel: string;
+      quarterLabel: string;
+      recordedAtLabel: string;
+      selectAllLabel: string;
+      sendReminderButton: string;
+      sendReminderConfirmTitle: string;
+      sendReminderConfirmText: string;
+      sendReminderSuccessToast: string;
+      sendReminderNoneSelected: string;
     };
     invites: {
       title: string;
@@ -1030,6 +1053,11 @@ export interface TranslationDict {
       productManagementModeSpecific: string;
       productManagerSearchPlaceholder: string;
       productManagerSelectedCount: string;
+      additionalNotificationRecipientsLabel: string;
+      additionalNotificationRecipientsDesc: string;
+      additionalNotificationRecipientsPlaceholder: string;
+      additionalNotificationRecipientsAddButton: string;
+      additionalNotificationRecipientsInvalidEmail: string;
       adminCategoriesLabel: string;
       adminCategoriesDesc: string;
       adminEmailProductsLabel: string;
@@ -1755,6 +1783,20 @@ export interface TranslationDict {
       deletionConfirmButton: string;
       deletionSuccessToast: string;
       errorToast: string;
+      specialActivityLabel: string;
+      specialRewardLabel: string;
+      awardTagLabel: string;
+      rewardTagLabel: string;
+      adjustedPointsLabel: string;
+      adjustedPointsPlaceholder: string;
+      adjustedPointsError: string;
+      freeAmountDiffOriginal: string;
+      freeAmountDiffNew: string;
+      freeAmountDiffTotal: string;
+      specialAdjustConfirmTitle: string;
+      specialAdjustConfirmMessage: string;
+      specialDeleteConfirmTitle: string;
+      specialDeleteConfirmMessage: string;
     };
     history: {
       title: string;
@@ -2027,6 +2069,11 @@ export interface TranslationDict {
     quarterlyAwardTemplate: string;
     specialActivityTemplate: string;
     specialRewardTemplate: string;
+    adjustmentAddedTemplate: string;
+    adjustmentReversedTemplate: string;
+    adjustmentReversedNoDistributorTemplate: string;
+    adjustmentRoleTransitionTemplate: string;
+    skillAssignTemplate: string;
     rankingEmpty: string;
     announcementEmpty: string;
     loading: string;

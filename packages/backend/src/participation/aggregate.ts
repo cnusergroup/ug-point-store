@@ -29,6 +29,7 @@ export interface ActivityMeta {
   topic: string;
   ugName: string;
   activityDate: string; // YYYY-MM-DD
+  rsvp?: number; // 报名人数（来自飞书 RSVP 列），无值时 undefined
 }
 
 export interface SupportCountRow {
@@ -90,6 +91,7 @@ export interface ActivityDetailRow {
   topic: string;
   ugName: string;
   activityDate: string;
+  rsvp?: number; // 报名人数（来自飞书 RSVP 列），无值时 undefined
   employees: ActivityDetailEmployee[]; // 按 nickname 字母顺序排列
 }
 
@@ -348,6 +350,7 @@ export function aggregateActivityDetail(
       topic: meta.topic,
       ugName: meta.ugName,
       activityDate: meta.activityDate,
+      ...(meta.rsvp !== undefined ? { rsvp: meta.rsvp } : {}),
       employees,
     });
   }

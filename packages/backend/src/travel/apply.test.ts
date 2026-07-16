@@ -340,6 +340,67 @@ describe('getTravelQuota', () => {
 
     expect(quota.speakerEarnTotal).toBe(300);
   });
+
+  // Regression: Speaker earnTotal (and thus travel quota) must reflect points
+  // adjustments/deletions made via admin/batch-points-adjust.ts, which write
+  // type="adjust" correction records (signed amount) rather than mutating the
+  // original type="earn" records.
+  it('should include type="adjust" correction records (positive and negative) in speakerEarnTotal', async () => {
+    // earnTotal query returns original earn records PLUS adjust corrections:
+    // 800 (earn) + 200 (earn) + 300 (adjust, points increased) - 100 (adjust, partial reversal) = 1200
+    client.send.mockResolvedValueOnce({
+      Items: [{ amount: 800 }, { amount: 200 }, { amount: 300 }, { amount: -100 }],
+      LastEvaluatedKey: undefined,
+    });
+    client.send.mockResolvedValueOnce({
+      Item: {
+        userId: 'travel-sponsorship',
+        travelSponsorshipEnabled: true,
+        domesticThreshold: 500,
+        internationalThreshold: 1000,
+      },
+    });
+    client.send.mockResolvedValueOnce({
+      Items: [],
+      LastEvaluatedKey: undefined,
+    });
+
+    const quota = await getTravelQuota('user-001', client, tables);
+
+    expect(quota.speakerEarnTotal).toBe(1200);
+    // floor(1200/500) - 0 = 2
+    expect(quota.domesticAvailable).toBe(2);
+    // floor(1200/1000) - 0 = 1
+    expect(quota.internationalAvailable).toBe(1);
+  });
+
+  it('should query both earn and adjust types via the FilterExpression when computing speakerEarnTotal', async () => {
+    client.send.mockResolvedValueOnce({
+      Items: [{ amount: 500 }],
+      LastEvaluatedKey: undefined,
+    });
+    client.send.mockResolvedValueOnce({
+      Item: {
+        userId: 'travel-sponsorship',
+        travelSponsorshipEnabled: true,
+        domesticThreshold: 100,
+        internationalThreshold: 200,
+      },
+    });
+    client.send.mockResolvedValueOnce({
+      Items: [],
+      LastEvaluatedKey: undefined,
+    });
+
+    await getTravelQuota('user-001', client, tables);
+
+    // First call is the PointsRecords earnTotal QueryCommand
+    const earnTotalCmd = client.send.mock.calls[0][0];
+    expect(earnTotalCmd.input.FilterExpression).toBe('(#t = :earn OR #t = :adjust) AND #tr = :speaker');
+    expect(earnTotalCmd.input.ExpressionAttributeValues[':earn']).toBe('earn');
+    expect(earnTotalCmd.input.ExpressionAttributeValues[':adjust']).toBe('adjust');
+    expect(earnTotalCmd.input.ExpressionAttributeValues[':speaker']).toBe('Speaker');
+  });
 });
 
 

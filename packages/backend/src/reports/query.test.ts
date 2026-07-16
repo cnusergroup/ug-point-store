@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   clampPageSize,
   applyDefaultDateRange,
@@ -7,6 +7,10 @@ import {
   aggregateByUG,
   aggregateByUser,
   aggregateByActivity,
+  queryUGActivitySummary,
+  queryUserPointsRanking,
+  queryActivityPointsSummary,
+  queryPointsDetail,
   type RawPointsRecord,
 } from './query';
 
@@ -305,5 +309,186 @@ describe('aggregateByActivity', () => {
 
   it('returns empty array for empty input', () => {
     expect(aggregateByActivity([])).toEqual([]);
+  });
+});
+
+// ============================================================
+// Async report queries — adjust records merged into aggregation
+// (regression for report/balance consistency bug)
+// ============================================================
+
+const TABLES = {
+  pointsRecordsTable: 'PointsRecords',
+  usersTable: 'Users',
+  batchDistributionsTable: 'BatchDistributions',
+};
+
+function createMockDynamoClient() {
+  return { send: vi.fn() } as any;
+}
+
+/** Page response for queryByTypeAndDateRange (single page, no more pages). */
+function page(items: Record<string, unknown>[]) {
+  return { Items: items, LastEvaluatedKey: undefined };
+}
+
+function batchGetUsers(items: Record<string, unknown>[]) {
+  return { Responses: { [TABLES.usersTable]: items } };
+}
+
+const DATE_FILTER = { startDate: '2024-01-01', endDate: '2024-12-31' };
+
+describe('queryUGActivitySummary — adjust merge', () => {
+  let client: ReturnType<typeof createMockDynamoClient>;
+  beforeEach(() => { client = createMockDynamoClient(); });
+
+  it('subtracts a negative adjust record from the UG total', async () => {
+    // earn query (call 1)
+    client.send.mockResolvedValueOnce(page([
+      { recordId: 'e1', userId: 'u1', type: 'earn', amount: 1000, source: '批量发放', createdAt: '2024-06-15T10:00:00Z', activityUG: 'UG-A', activityId: 'act-1', activityDate: '2024-06-15', targetRole: 'Speaker' },
+    ]));
+    // adjust query (call 2)
+    client.send.mockResolvedValueOnce(page([
+      { recordId: 'a1', userId: 'u1', type: 'adjust', amount: -400, source: '发放删除', createdAt: '2024-06-20T10:00:00Z', activityUG: 'UG-A', activityId: 'act-1', activityDate: '2024-06-15', targetRole: 'Speaker' },
+    ]));
+
+    const result = await queryUGActivitySummary(DATE_FILTER, client, { pointsRecordsTable: TABLES.pointsRecordsTable });
+
+    expect(result.success).toBe(true);
+    const ugA = result.records!.find(r => r.ugName === 'UG-A')!;
+    expect(ugA.totalPoints).toBe(600); // 1000 + (-400)
+  });
+
+  it('adds a positive adjust record to the UG total', async () => {
+    client.send.mockResolvedValueOnce(page([
+      { recordId: 'e1', userId: 'u1', type: 'earn', amount: 1000, source: '批量发放', createdAt: '2024-06-15T10:00:00Z', activityUG: 'UG-A', activityId: 'act-1', activityDate: '2024-06-15', targetRole: 'Speaker' },
+    ]));
+    client.send.mockResolvedValueOnce(page([
+      { recordId: 'a1', userId: 'u1', type: 'adjust', amount: 250, source: '积分调整', createdAt: '2024-06-20T10:00:00Z', activityUG: 'UG-A', activityId: 'act-1', activityDate: '2024-06-15', targetRole: 'Speaker' },
+    ]));
+
+    const result = await queryUGActivitySummary(DATE_FILTER, client, { pointsRecordsTable: TABLES.pointsRecordsTable });
+
+    expect(result.success).toBe(true);
+    const ugA = result.records!.find(r => r.ugName === 'UG-A')!;
+    expect(ugA.totalPoints).toBe(1250);
+  });
+});
+
+describe('queryUserPointsRanking — adjust merge', () => {
+  let client: ReturnType<typeof createMockDynamoClient>;
+  beforeEach(() => { client = createMockDynamoClient(); });
+
+  it('subtracts a negative adjust record from a user ranking total', async () => {
+    // earn (call 1)
+    client.send.mockResolvedValueOnce(page([
+      { recordId: 'e1', userId: 'u1', type: 'earn', amount: 1000, source: '批量发放', createdAt: '2024-06-15T10:00:00Z', activityUG: 'UG-A', activityId: 'act-1', activityDate: '2024-06-15', targetRole: 'Speaker' },
+    ]));
+    // adjust (call 2)
+    client.send.mockResolvedValueOnce(page([
+      { recordId: 'a1', userId: 'u1', type: 'adjust', amount: -300, source: '发放删除', createdAt: '2024-06-20T10:00:00Z', activityUG: 'UG-A', activityId: 'act-1', activityDate: '2024-06-15', targetRole: 'Speaker' },
+    ]));
+    // batchGetUserDetails (call 3)
+    client.send.mockResolvedValueOnce(batchGetUsers([
+      { userId: 'u1', nickname: 'Alice', roles: ['Speaker'], isEmployee: false },
+    ]));
+
+    const result = await queryUserPointsRanking({ ...DATE_FILTER }, client, { pointsRecordsTable: TABLES.pointsRecordsTable, usersTable: TABLES.usersTable });
+
+    expect(result.success).toBe(true);
+    expect(result.records).toHaveLength(1);
+    expect(result.records![0].userId).toBe('u1');
+    expect(result.records![0].totalEarnPoints).toBe(700); // 1000 + (-300)
+  });
+
+  it('adds a positive adjust record to a user ranking total', async () => {
+    client.send.mockResolvedValueOnce(page([
+      { recordId: 'e1', userId: 'u1', type: 'earn', amount: 500, source: '批量发放', createdAt: '2024-06-15T10:00:00Z', activityUG: 'UG-A', activityId: 'act-1', activityDate: '2024-06-15', targetRole: 'Speaker' },
+    ]));
+    client.send.mockResolvedValueOnce(page([
+      { recordId: 'a1', userId: 'u1', type: 'adjust', amount: 150, source: '积分调整', createdAt: '2024-06-20T10:00:00Z', activityUG: 'UG-A', activityId: 'act-1', activityDate: '2024-06-15', targetRole: 'Speaker' },
+    ]));
+    client.send.mockResolvedValueOnce(batchGetUsers([
+      { userId: 'u1', nickname: 'Alice', roles: ['Speaker'], isEmployee: false },
+    ]));
+
+    const result = await queryUserPointsRanking({ ...DATE_FILTER, targetRole: 'Speaker' }, client, { pointsRecordsTable: TABLES.pointsRecordsTable, usersTable: TABLES.usersTable });
+
+    expect(result.success).toBe(true);
+    expect(result.records![0].totalEarnPoints).toBe(650); // 500 + 150
+  });
+});
+
+describe('queryActivityPointsSummary — adjust merge', () => {
+  let client: ReturnType<typeof createMockDynamoClient>;
+  beforeEach(() => { client = createMockDynamoClient(); });
+
+  it('subtracts a negative adjust record from the activity total', async () => {
+    client.send.mockResolvedValueOnce(page([
+      { recordId: 'e1', userId: 'u1', type: 'earn', amount: 1000, source: '批量发放', createdAt: '2024-06-15T10:00:00Z', activityUG: 'UG-A', activityTopic: 'Summit', activityId: 'act-1', activityDate: '2024-06-15', targetRole: 'Speaker' },
+    ]));
+    client.send.mockResolvedValueOnce(page([
+      { recordId: 'a1', userId: 'u1', type: 'adjust', amount: -600, source: '发放删除', createdAt: '2024-06-20T10:00:00Z', activityUG: 'UG-A', activityTopic: 'Summit', activityId: 'act-1', activityDate: '2024-06-15', targetRole: 'Speaker' },
+    ]));
+
+    const result = await queryActivityPointsSummary(DATE_FILTER, client, { pointsRecordsTable: TABLES.pointsRecordsTable });
+
+    expect(result.success).toBe(true);
+    const act = result.records!.find(r => r.activityId === 'act-1')!;
+    expect(act.totalPoints).toBe(400); // 1000 + (-600)
+  });
+});
+
+describe('queryPointsDetail — adjust stream', () => {
+  let client: ReturnType<typeof createMockDynamoClient>;
+  beforeEach(() => { client = createMockDynamoClient(); });
+
+  it('type=all includes adjust rows merged with earn/spend', async () => {
+    // earn stream (call 1)
+    client.send.mockResolvedValueOnce(page([
+      { recordId: 'e1', userId: 'u1', type: 'earn', amount: 100, source: '批量发放:讲师积分', createdAt: '2024-06-15T10:00:00Z', activityUG: 'UG-A', activityTopic: 'Summit', activityId: 'act-1', activityDate: '2024-06-15', targetRole: 'Speaker' },
+    ]));
+    // spend stream (call 2)
+    client.send.mockResolvedValueOnce(page([]));
+    // adjust stream (call 3)
+    client.send.mockResolvedValueOnce(page([
+      { recordId: 'adj1', userId: 'u1', type: 'adjust', amount: -100, source: '发放删除:讲师积分', createdAt: '2024-06-20T10:00:00Z', activityUG: 'UG-A', activityTopic: 'Summit', activityId: 'act-1', activityDate: '2024-06-15', targetRole: 'Speaker' },
+    ]));
+    // batchGetUserDetails (call 4)
+    client.send.mockResolvedValueOnce(batchGetUsers([{ userId: 'u1', nickname: 'Alice', roles: ['Speaker'], isEmployee: false }]));
+    // getDistributorNicknames (call 5)
+    client.send.mockResolvedValueOnce(page([]));
+
+    const result = await queryPointsDetail({ ...DATE_FILTER, type: 'all' }, client, TABLES);
+
+    expect(result.success).toBe(true);
+    const ids = result.records!.map(r => r.recordId).sort();
+    expect(ids).toEqual(['adj1', 'e1']);
+    const adj = result.records!.find(r => r.recordId === 'adj1')!;
+    expect(adj.type).toBe('adjust');
+    expect(adj.amount).toBe(-100);
+  });
+
+  it('type=earn also includes adjust rows (spend stream skipped)', async () => {
+    // earn stream (call 1)
+    client.send.mockResolvedValueOnce(page([
+      { recordId: 'e1', userId: 'u1', type: 'earn', amount: 100, source: '批量发放:讲师积分', createdAt: '2024-06-15T10:00:00Z', activityUG: 'UG-A', activityTopic: 'Summit', activityId: 'act-1', activityDate: '2024-06-15', targetRole: 'Speaker' },
+    ]));
+    // adjust stream (call 2) — spend is skipped for type=earn
+    client.send.mockResolvedValueOnce(page([
+      { recordId: 'adj1', userId: 'u1', type: 'adjust', amount: 50, source: '积分调整:讲师积分', createdAt: '2024-06-20T10:00:00Z', activityUG: 'UG-A', activityTopic: 'Summit', activityId: 'act-1', activityDate: '2024-06-15', targetRole: 'Speaker' },
+    ]));
+    // batchGetUserDetails (call 3)
+    client.send.mockResolvedValueOnce(batchGetUsers([{ userId: 'u1', nickname: 'Alice', roles: ['Speaker'], isEmployee: false }]));
+    // getDistributorNicknames (call 4)
+    client.send.mockResolvedValueOnce(page([]));
+
+    const result = await queryPointsDetail({ ...DATE_FILTER, type: 'earn' }, client, TABLES);
+
+    expect(result.success).toBe(true);
+    const ids = result.records!.map(r => r.recordId).sort();
+    expect(ids).toEqual(['adj1', 'e1']);
+    // exactly 4 send calls: earn, adjust, batchGet, distributor (no spend stream)
+    expect(client.send).toHaveBeenCalledTimes(4);
   });
 });

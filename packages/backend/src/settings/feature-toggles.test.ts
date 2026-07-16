@@ -111,6 +111,7 @@ describe('getFeatureToggles', () => {
       wishFulfilledRewardPoints: 50,
       productManagementMode: 'all',
       productManagerIds: [],
+      additionalNotificationRecipients: [],
     });
   });
 
@@ -206,6 +207,7 @@ describe('getFeatureToggles', () => {
       wishFulfilledRewardPoints: 20,
       productManagementMode: 'all',
       productManagerIds: [],
+      additionalNotificationRecipients: [],
     });
   });
 
@@ -261,6 +263,7 @@ describe('getFeatureToggles', () => {
       wishFulfilledRewardPoints: 20,
       productManagementMode: 'all',
       productManagerIds: [],
+      additionalNotificationRecipients: [],
     });
   });
 
@@ -327,6 +330,7 @@ describe('getFeatureToggles', () => {
       wishFulfilledRewardPoints: 50,
       productManagementMode: 'all',
       productManagerIds: [],
+      additionalNotificationRecipients: [],
     });
   });
 
@@ -404,6 +408,7 @@ describe('updateFeatureToggles', () => {
         wishFulfilledRewardPoints: 50,
         productManagementMode: 'all',
         productManagerIds: [],
+        additionalNotificationRecipients: [],
         updatedBy: 'user-1',
       },
       client,
@@ -472,6 +477,7 @@ describe('updateFeatureToggles', () => {
         wishFulfilledRewardPoints: 50,
         productManagementMode: 'all',
         productManagerIds: [],
+        additionalNotificationRecipients: [],
         updatedBy: 'user-1',
       },
       client,
@@ -522,6 +528,7 @@ describe('updateFeatureToggles', () => {
         wishFulfilledRewardPoints: 50,
         productManagementMode: 'all',
         productManagerIds: [],
+        additionalNotificationRecipients: [],
         updatedBy: 'user-1',
       },
       client,
@@ -572,6 +579,7 @@ describe('updateFeatureToggles', () => {
         wishFulfilledRewardPoints: 50,
         productManagementMode: 'all',
         productManagerIds: [],
+        additionalNotificationRecipients: [],
         updatedBy: 'user-1',
       },
       client,
@@ -621,6 +629,7 @@ describe('updateFeatureToggles', () => {
         wishFulfilledRewardPoints: 50,
         productManagementMode: 'all',
         productManagerIds: [],
+        additionalNotificationRecipients: [],
         updatedBy: 'user-1',
       },
       client,
@@ -671,6 +680,7 @@ describe('updateFeatureToggles', () => {
         wishFulfilledRewardPoints: 50,
         productManagementMode: 'all',
         productManagerIds: [],
+        additionalNotificationRecipients: [],
         updatedBy: 'user-1',
       },
       client,
@@ -721,6 +731,7 @@ describe('updateFeatureToggles', () => {
         wishFulfilledRewardPoints: 50,
         productManagementMode: 'all',
         productManagerIds: [],
+        additionalNotificationRecipients: [],
         updatedBy: 'user-1',
       },
       client,
@@ -771,6 +782,7 @@ describe('updateFeatureToggles', () => {
         wishFulfilledRewardPoints: 50,
         productManagementMode: 'all',
         productManagerIds: [],
+        additionalNotificationRecipients: [],
         updatedBy: 'user-1',
       },
       client,
@@ -822,6 +834,7 @@ describe('updateFeatureToggles', () => {
         wishFulfilledRewardPoints: 50,
         productManagementMode: 'all',
         productManagerIds: [],
+        additionalNotificationRecipients: [],
         updatedBy: 'user-1',
       },
       client,
@@ -873,6 +886,7 @@ describe('updateFeatureToggles', () => {
           wishFulfilledRewardPoints: 50,
           productManagementMode: 'all',
           productManagerIds: [],
+          additionalNotificationRecipients: [],
           updatedBy: 'user-1',
         },
         client,
@@ -923,6 +937,7 @@ describe('updateFeatureToggles', () => {
         wishFulfilledRewardPoints: 50,
         productManagementMode: 'all',
         productManagerIds: [],
+        additionalNotificationRecipients: [],
         updatedBy: 'admin-1',
       },
       client,
@@ -958,6 +973,66 @@ describe('updateFeatureToggles', () => {
     // Second call is GetCommand (read-back)
     const getCall = client.send.mock.calls[1][0];
     expect(getCall.constructor.name).toBe('GetCommand');
+  });
+
+  it('should reject the whole update when a single malformed email is mixed with otherwise-valid entries, leaving the previously stored list unchanged', async () => {
+    const client = createMockClient({
+      userId: 'feature-toggles',
+      additionalNotificationRecipients: ['[email protected]'],
+    });
+
+    const result = await updateFeatureToggles(
+      {
+        codeRedemptionEnabled: true,
+        pointsClaimEnabled: false,
+        adminProductsEnabled: true,
+        adminOrdersEnabled: true,
+        adminContentReviewEnabled: false,
+        adminCategoriesEnabled: false,
+        emailPointsEarnedEnabled: false,
+        emailNewOrderEnabled: false,
+        emailOrderShippedEnabled: false,
+        emailNewProductEnabled: false,
+        emailNewContentEnabled: false,
+        emailContentUpdatedEnabled: false,
+        emailWeeklyDigestEnabled: false,
+        emailWishAdoptedEnabled: true,
+        emailWishFulfilledEnabled: true,
+        emailWishRejectedEnabled: true,
+        emailUglExitReminderEnabled: true,
+        emailUglExitNotificationEnabled: true,
+        adminEmailProductsEnabled: false,
+        adminEmailContentEnabled: false,
+        reservationApprovalPoints: 10,
+        leaderboardRankingEnabled: false,
+        leaderboardAnnouncementEnabled: false,
+        leaderboardUpdateFrequency: 'weekly',
+        brandLogoListEnabled: true,
+        brandLogoDetailEnabled: true,
+        employeeStoreEnabled: true,
+        employeeContentAutoApproved: false,
+        contentReviewMode: 'all',
+        contentReviewerIds: [],
+        wishPoolEnabled: false,
+        wishFulfilledRewardPoints: 50,
+        productManagementMode: 'all',
+        productManagerIds: [],
+        // Two well-formed entries plus one malformed entry mixed in
+        additionalNotificationRecipients: ['[email protected]', 'not-an-email', '[email protected]'],
+        updatedBy: 'user-1',
+      },
+      client,
+      'users-table',
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe('INVALID_REQUEST');
+    // No DynamoDB write should have been attempted
+    expect(client.send).not.toHaveBeenCalled();
+
+    // The previously stored list must remain untouched
+    const toggles = await getFeatureToggles(client, 'users-table');
+    expect(toggles.additionalNotificationRecipients).toEqual(['[email protected]']);
   });
 });
 

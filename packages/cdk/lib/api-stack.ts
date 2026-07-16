@@ -471,6 +471,12 @@ export class ApiStack extends cdk.Stack {
     pointsRecordsTable.grantReadWriteData(redemptionFn);
     addressesTable.grantReadData(redemptionFn);
     ordersTable.grantReadWriteData(redemptionFn);
+    emailTemplatesTable.grantReadData(redemptionFn);
+    redemptionFn.addEnvironment('EMAIL_TEMPLATES_TABLE', emailTemplatesTable.tableName);
+    redemptionFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ses:SendEmail'],
+      resources: ['*'],
+    }));
     // Admin Lambda needs access to all PointsMall tables.
     // Using a wildcard resource policy to avoid IAM managed policy size limits (20480 bytes)
     // that would be exceeded if granting each table individually.
@@ -600,6 +606,8 @@ export class ApiStack extends cdk.Stack {
     pointsRecordsTable.grantReadData(queryFn);
     batchDistributionsTable.grantReadData(queryFn);
     activitiesTable.grantReadData(queryFn);
+    contentItemsTable.grantReadData(queryFn);
+    queryFn.addEnvironment('CONTENT_ITEMS_TABLE', contentItemsTable.tableName);
 
     // Query Lambda: read its own independent SSM params only (JWT secret + default password).
     // Deliberately NOT added to the shared ssmReadPolicy/jwtSecretParam grant below —
@@ -671,6 +679,7 @@ export class ApiStack extends cdk.Stack {
     // User routes (reuse Points Lambda — it already has Users table access)
     const user = api.addResource('user');
     user.addResource('profile').addMethod('GET', pointsInt);
+    user.addResource('change-nickname').addMethod('POST', authInt);
     const emailSubscriptions = user.addResource('email-subscriptions');
     emailSubscriptions.addMethod('GET', pointsInt);
     emailSubscriptions.addMethod('PUT', pointsInt);
@@ -842,15 +851,13 @@ export class ApiStack extends cdk.Stack {
     // the independent Query Lambda (participation/handler.ts), which does its own internal
     // routing including the withQuerySession auth wrapper for protected routes.
     const queryInt = new apigateway.LambdaIntegration(queryFn);
+    // Query routes — collapsed to ANY + {proxy+} to stay under the 500-resource CFN limit.
+    // The Query Lambda self-routes by event.path (see participation/handler.ts): login, logout,
+    // speaker-support, volunteer-support, total-count, employee-activity-detail, activity-detail,
+    // impact-summary, export — including the withQuerySession auth wrapper for protected routes.
     const query = api.addResource('query');
-    query.addResource('login').addMethod('POST', queryInt);
-    query.addResource('logout').addMethod('POST', queryInt);
-    query.addResource('speaker-support').addMethod('GET', queryInt);
-    query.addResource('volunteer-support').addMethod('GET', queryInt);
-    query.addResource('total-count').addMethod('GET', queryInt);
-    query.addResource('employee-activity-detail').addMethod('GET', queryInt);
-    query.addResource('activity-detail').addMethod('GET', queryInt);
-    query.addResource('export').addMethod('POST', queryInt);
+    query.addMethod('ANY', queryInt);
+    query.addProxy({ defaultIntegration: queryInt, anyMethod: true });
 
     // Admin route for SuperAdmin query-credential password management — mounted on the
     // existing Admin Lambda (adminFn), which already has a catch-all {proxy+} under /api/admin.

@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { View, Text, Switch, Input } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useAppStore } from '../../store';
@@ -71,6 +71,7 @@ interface FeatureToggles {
   contentReviewerIds: string[];
   productManagementMode: 'all' | 'specific';
   productManagerIds: string[];
+  additionalNotificationRecipients: string[];
 }
 
 interface PointsRuleConfig {
@@ -499,6 +500,7 @@ export default function AdminSettingsPage() {
     contentReviewerIds: [],
     productManagementMode: 'all',
     productManagerIds: [],
+    additionalNotificationRecipients: [],
   });
 
 
@@ -533,6 +535,10 @@ export default function AdminSettingsPage() {
 
   // Product manager checklist search state
   const [productManagerSearch, setProductManagerSearch] = useState('');
+
+  // Additional notification recipients editor state
+  const [recipientInput, setRecipientInput] = useState('');
+  const [recipientError, setRecipientError] = useState('');
 
   // Email template editor state
   const [editingTemplateType, setEditingTemplateType] = useState<NotificationType | null>(null);
@@ -641,6 +647,7 @@ export default function AdminSettingsPage() {
         productManagerIds: Array.isArray(res.productManagerIds) ? res.productManagerIds : [],
         contentReviewMode: res.contentReviewMode || 'all',
         contentReviewerIds: Array.isArray(res.contentReviewerIds) ? res.contentReviewerIds : [],
+        additionalNotificationRecipients: Array.isArray(res.additionalNotificationRecipients) ? res.additionalNotificationRecipients : [],
       });
       if (res.contentRolePermissions) {
         setContentRolePermissions(res.contentRolePermissions);
@@ -1152,6 +1159,7 @@ export default function AdminSettingsPage() {
           contentReviewerIds: updated.contentReviewerIds,
           productManagementMode: updated.productManagementMode,
           productManagerIds: updated.productManagerIds,
+          additionalNotificationRecipients: updated.additionalNotificationRecipients,
         },
       });
       Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
@@ -1207,6 +1215,7 @@ export default function AdminSettingsPage() {
           contentReviewerIds: updated.contentReviewerIds,
           productManagementMode: updated.productManagementMode,
           productManagerIds: updated.productManagerIds,
+          additionalNotificationRecipients: updated.additionalNotificationRecipients,
         },
       });
       Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
@@ -1264,6 +1273,7 @@ export default function AdminSettingsPage() {
           contentReviewerIds: updated.contentReviewerIds,
           productManagementMode: updated.productManagementMode,
           productManagerIds: updated.productManagerIds,
+          additionalNotificationRecipients: updated.additionalNotificationRecipients,
         },
       });
       Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
@@ -1318,6 +1328,7 @@ export default function AdminSettingsPage() {
           contentReviewerIds: updated.contentReviewerIds,
           productManagementMode: updated.productManagementMode,
           productManagerIds: updated.productManagerIds,
+          additionalNotificationRecipients: updated.additionalNotificationRecipients,
         },
       });
       Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
@@ -1376,11 +1387,112 @@ export default function AdminSettingsPage() {
           contentReviewerIds: updated.contentReviewerIds,
           productManagementMode: updated.productManagementMode,
           productManagerIds: updated.productManagerIds,
+          additionalNotificationRecipients: updated.additionalNotificationRecipients,
         },
       });
       Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
     } catch {
       setSettings(prev);
+      Taro.showToast({ title: t('admin.settings.updateFailed'), icon: 'none' });
+    }
+  };
+
+  // Persist the full feature-toggle payload (same shape/endpoint as the other toggle handlers).
+  const persistFeatureToggles = async (updated: FeatureToggles) => {
+    await request({
+      url: '/api/admin/settings/feature-toggles',
+      method: 'PUT',
+      data: {
+        codeRedemptionEnabled: updated.codeRedemptionEnabled,
+        pointsClaimEnabled: updated.pointsClaimEnabled,
+        adminProductsEnabled: updated.adminProductsEnabled,
+        adminOrdersEnabled: updated.adminOrdersEnabled,
+        adminContentReviewEnabled: updated.adminContentReviewEnabled,
+        adminCategoriesEnabled: updated.adminCategoriesEnabled,
+        adminEmailProductsEnabled: updated.adminEmailProductsEnabled,
+        adminEmailContentEnabled: updated.adminEmailContentEnabled,
+        emailPointsEarnedEnabled: updated.emailPointsEarnedEnabled,
+        emailNewOrderEnabled: updated.emailNewOrderEnabled,
+        emailOrderShippedEnabled: updated.emailOrderShippedEnabled,
+        emailNewProductEnabled: updated.emailNewProductEnabled,
+        emailNewContentEnabled: updated.emailNewContentEnabled,
+        emailContentUpdatedEnabled: updated.emailContentUpdatedEnabled,
+        emailWeeklyDigestEnabled: updated.emailWeeklyDigestEnabled,
+        emailWishAdoptedEnabled: updated.emailWishAdoptedEnabled,
+        emailWishFulfilledEnabled: updated.emailWishFulfilledEnabled,
+        emailWishRejectedEnabled: updated.emailWishRejectedEnabled,
+        emailUglExitReminderEnabled: updated.emailUglExitReminderEnabled,
+        emailUglExitNotificationEnabled: updated.emailUglExitNotificationEnabled,
+        reservationApprovalPoints: updated.reservationApprovalPoints,
+        leaderboardRankingEnabled: updated.leaderboardRankingEnabled,
+        leaderboardAnnouncementEnabled: updated.leaderboardAnnouncementEnabled,
+        leaderboardUpdateFrequency: updated.leaderboardUpdateFrequency,
+        brandLogoListEnabled: updated.brandLogoListEnabled,
+        brandLogoDetailEnabled: updated.brandLogoDetailEnabled,
+        employeeStoreEnabled: updated.employeeStoreEnabled,
+        employeeContentAutoApproved: updated.employeeContentAutoApproved,
+        wishPoolEnabled: updated.wishPoolEnabled,
+        wishFulfilledRewardPoints: updated.wishFulfilledRewardPoints,
+        contentReviewMode: updated.contentReviewMode,
+        contentReviewerIds: updated.contentReviewerIds,
+        productManagementMode: updated.productManagementMode,
+        productManagerIds: updated.productManagerIds,
+        additionalNotificationRecipients: updated.additionalNotificationRecipients,
+      },
+    });
+  };
+
+  const handleAddRecipient = async () => {
+    const email = recipientInput.trim();
+    if (!email) return;
+    // Client-side email-format pre-check (same regex used across the frontend auth pages).
+    const emailFormat = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailFormat.test(email)) {
+      setRecipientError(t('admin.settings.additionalNotificationRecipientsInvalidEmail'));
+      return;
+    }
+    if (settings.additionalNotificationRecipients.includes(email)) {
+      // Already present — clear the input, no write needed.
+      setRecipientInput('');
+      setRecipientError('');
+      return;
+    }
+    const prevRecipients = settings.additionalNotificationRecipients;
+    const updated = {
+      ...settings,
+      additionalNotificationRecipients: [...prevRecipients, email],
+    };
+    setSettings(updated);
+    setRecipientInput('');
+    setRecipientError('');
+    try {
+      await persistFeatureToggles(updated);
+      Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
+    } catch (err) {
+      // Roll back ONLY this field so other unsaved toggle edits stay intact.
+      setSettings((cur) => ({ ...cur, additionalNotificationRecipients: prevRecipients }));
+      if (err instanceof RequestError && (err.statusCode === 400 || err.code === 'INVALID_REQUEST')) {
+        setRecipientError(t('admin.settings.additionalNotificationRecipientsInvalidEmail'));
+      } else {
+        Taro.showToast({ title: t('admin.settings.updateFailed'), icon: 'none' });
+      }
+    }
+  };
+
+  const handleRemoveRecipient = async (email: string) => {
+    const prevRecipients = settings.additionalNotificationRecipients;
+    const updated = {
+      ...settings,
+      additionalNotificationRecipients: prevRecipients.filter((e) => e !== email),
+    };
+    setSettings(updated);
+    setRecipientError('');
+    try {
+      await persistFeatureToggles(updated);
+      Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
+    } catch {
+      // Roll back ONLY this field so other unsaved toggle edits stay intact.
+      setSettings((cur) => ({ ...cur, additionalNotificationRecipients: prevRecipients }));
       Taro.showToast({ title: t('admin.settings.updateFailed'), icon: 'none' });
     }
   };
@@ -1430,6 +1542,7 @@ export default function AdminSettingsPage() {
           contentReviewerIds: updated.contentReviewerIds,
           productManagementMode: updated.productManagementMode,
           productManagerIds: updated.productManagerIds,
+          additionalNotificationRecipients: updated.additionalNotificationRecipients,
         },
       });
       Taro.showToast({ title: t('admin.settings.updateSuccess'), icon: 'none' });
@@ -1673,6 +1786,7 @@ export default function AdminSettingsPage() {
           contentReviewerIds: settings.contentReviewerIds,
           productManagementMode: settings.productManagementMode,
           productManagerIds: settings.productManagerIds,
+          additionalNotificationRecipients: settings.additionalNotificationRecipients,
           pointsRuleConfig,
         },
       });
@@ -2321,6 +2435,49 @@ export default function AdminSettingsPage() {
                     >
                       <Text className='email-seed-btn__text'>{t('admin.settings.seedTemplateButton')}</Text>
                       <Text className='email-seed-btn__hint'>{t('admin.settings.seedTemplateHint')}</Text>
+                    </View>
+                  </View>
+                </CollapsibleSection>
+                <CollapsibleSection
+                  title={t('admin.settings.additionalNotificationRecipientsLabel')}
+                  description={t('admin.settings.additionalNotificationRecipientsDesc')}
+                >
+                  <View className='recipient-editor'>
+                    <View className='recipient-editor__add'>
+                      <Input
+                        className='recipient-editor__input'
+                        value={recipientInput}
+                        placeholder={t('admin.settings.additionalNotificationRecipientsPlaceholder')}
+                        onInput={(e) => {
+                          setRecipientInput(e.detail.value);
+                          if (recipientError) setRecipientError('');
+                        }}
+                        onConfirm={handleAddRecipient}
+                      />
+                      <View
+                        className={`recipient-editor__add-btn${recipientInput.trim() ? '' : ' recipient-editor__add-btn--disabled'}`}
+                        onClick={recipientInput.trim() ? handleAddRecipient : undefined}
+                      >
+                        <Text className='recipient-editor__add-btn-text'>
+                          {t('admin.settings.additionalNotificationRecipientsAddButton')}
+                        </Text>
+                      </View>
+                    </View>
+                    {recipientError ? (
+                      <Text className='recipient-editor__error'>{recipientError}</Text>
+                    ) : null}
+                    <View className='recipient-editor__chips'>
+                      {settings.additionalNotificationRecipients.map((email) => (
+                        <View key={email} className='recipient-editor__chip'>
+                          <Text className='recipient-editor__chip-text'>{email}</Text>
+                          <View
+                            className='recipient-editor__chip-remove'
+                            onClick={() => handleRemoveRecipient(email)}
+                          >
+                            <Text className='recipient-editor__chip-remove-text'>✕</Text>
+                          </View>
+                        </View>
+                      ))}
                     </View>
                   </View>
                 </CollapsibleSection>

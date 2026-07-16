@@ -89,6 +89,7 @@ const featureTogglesArb: fc.Arbitrary<FeatureToggles> = contentRolePermissionsAr
     wishFulfilledRewardPoints: 50,
     productManagementMode: 'all',
     productManagerIds: [],
+    additionalNotificationRecipients: [],
   }),
 );
 

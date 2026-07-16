@@ -3,22 +3,24 @@ import fc from 'fast-check';
 import type { APIGatewayProxyEvent } from 'aws-lambda';
 
 // ============================================================
-// Feature: ugl-inactivity-exit-flow, Property 12: Authorization gate for the
-// pending-exit list and review actions
+// Feature: ugl-inactivity-exit-flow, Property 16: Authorization gate for
+// awaiting-reminder, send-reminder, pending-exit list, and review action endpoints
 //
 // For any caller role set NOT containing 'SuperAdmin' (but still admin-eligible,
 // i.e. containing at least one of Admin/SuperAdmin/OrderAdmin so the outer isAdmin
 // gate is passed and we're exercising the SuperAdmin-specific gate itself — OrderAdmin
 // is excluded here since it is rejected earlier by the OrderAdmin whitelist, which is
-// a separate, already-tested gate), all four ugl-exit admin routes:
+// a separate, already-tested gate), all five ugl-exit admin routes:
+//   GET  /api/admin/ugl-exit/awaiting-reminder
+//   POST /api/admin/ugl-exit/send-reminder
 //   GET  /api/admin/ugl-exit/pending
 //   POST /api/admin/ugl-exit/detection-job
 //   POST /api/admin/ugl-exit/{userId}/confirm-exit
 //   POST /api/admin/ugl-exit/{userId}/restore-tracking
-// return 403 FORBIDDEN, and the target user's record is left completely unmodified —
-// regardless of that user's current uglExitStatus.
+// return 403 FORBIDDEN, and the tracking table / target user's record is left
+// completely unmodified — regardless of that user's current uglExitStatus.
 //
-// **Validates: Requirements 9.2, 10.5**
+// **Validates: Requirements 5.10, 12.2, 13.5**
 // ============================================================
 
 // ---- Mock AWS SDK clients before importing handler ----
@@ -57,15 +59,30 @@ vi.mock('@aws-sdk/client-lambda', () => ({
 // ---- Mock the ugl-exit modules the routes call into ----
 // If the 403 gate is working, none of these should ever be invoked.
 
-const { mockQueryPendingExitUGLs, mockRunUGLDetectionJob, mockConfirmExit, mockRestoreTracking } = vi.hoisted(() => ({
+const {
+  mockQueryPendingExitUGLs,
+  mockRunUGLDetectionJob,
+  mockConfirmExit,
+  mockRestoreTracking,
+  mockQueryAwaitingReminderUGLs,
+  mockSendReminderAction,
+} = vi.hoisted(() => ({
   mockQueryPendingExitUGLs: vi.fn(),
   mockRunUGLDetectionJob: vi.fn(),
   mockConfirmExit: vi.fn(),
   mockRestoreTracking: vi.fn(),
+  mockQueryAwaitingReminderUGLs: vi.fn(),
+  mockSendReminderAction: vi.fn(),
 }));
 
 vi.mock('../ugl-exit/pending-exit-list', () => ({
   queryPendingExitUGLs: mockQueryPendingExitUGLs,
+}));
+vi.mock('../ugl-exit/awaiting-reminder-list', () => ({
+  queryAwaitingReminderUGLs: mockQueryAwaitingReminderUGLs,
+}));
+vi.mock('../ugl-exit/send-reminder-action', () => ({
+  sendReminderAction: mockSendReminderAction,
 }));
 vi.mock('../ugl-exit/quarter', () => ({
   resolveDetectionQuarter: vi.fn(),
@@ -281,7 +298,7 @@ const uglExitStatusArb = fc.constantFrom<undefined | 'pending_exit' | 'other'>(
 
 const targetUserIdArb = fc.stringMatching(/^[a-zA-Z0-9]{1,20}$/).filter((s) => s.length > 0);
 
-describe('Feature: ugl-inactivity-exit-flow, Property 12: Authorization gate for the pending-exit list and review actions', () => {
+describe('Feature: ugl-inactivity-exit-flow, Property 16: Authorization gate for awaiting-reminder, send-reminder, pending-exit list, and review action endpoints', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockDynamoSend.mockReset();
@@ -289,6 +306,58 @@ describe('Feature: ugl-inactivity-exit-flow, Property 12: Authorization gate for
     mockRunUGLDetectionJob.mockReset();
     mockConfirmExit.mockReset();
     mockRestoreTracking.mockReset();
+    mockQueryAwaitingReminderUGLs.mockReset();
+    mockSendReminderAction.mockReset();
+  });
+
+  it('GET /api/admin/ugl-exit/awaiting-reminder returns 403 FORBIDDEN for any non-SuperAdmin caller with no tracking-table access', async () => {
+    await fc.assert(
+      fc.asyncProperty(nonSuperAdminCallerRolesArb, async (roles) => {
+        mockUserRoles = roles;
+        // If the 403 gate were bypassed, the list query would read the tracking table —
+        // fail loudly if any DB access happens.
+        mockDynamoSend.mockRejectedValue(new Error('No DB access expected — 403 gate should short-circuit'));
+
+        const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/ugl-exit/awaiting-reminder' });
+
+        const result = await handler(event);
+
+        expect(result.statusCode).toBe(403);
+        expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+        expect(mockQueryAwaitingReminderUGLs).not.toHaveBeenCalled();
+        expect(mockDynamoSend).not.toHaveBeenCalled();
+      }),
+      { numRuns: 50 },
+    );
+  });
+
+  it('POST /api/admin/ugl-exit/send-reminder returns 403 FORBIDDEN for any non-SuperAdmin caller with no tracking-table mutation', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        nonSuperAdminCallerRolesArb,
+        fc.array(targetUserIdArb, { maxLength: 5 }),
+        async (roles, userIds) => {
+          mockUserRoles = roles;
+          // If the 403 gate were bypassed, sendReminderAction would mutate the tracking
+          // table — fail loudly if any DB access happens.
+          mockDynamoSend.mockRejectedValue(new Error('No DB access expected — 403 gate should short-circuit'));
+
+          const event = makeEvent({
+            httpMethod: 'POST',
+            path: '/api/admin/ugl-exit/send-reminder',
+            body: JSON.stringify({ userIds }),
+          });
+
+          const result = await handler(event);
+
+          expect(result.statusCode).toBe(403);
+          expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+          expect(mockSendReminderAction).not.toHaveBeenCalled();
+          expect(mockDynamoSend).not.toHaveBeenCalled();
+        },
+      ),
+      { numRuns: 50 },
+    );
   });
 
   it('GET /api/admin/ugl-exit/pending returns 403 FORBIDDEN for any non-SuperAdmin caller', async () => {

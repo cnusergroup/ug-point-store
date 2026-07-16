@@ -1,4 +1,4 @@
-import { DynamoDBDocumentClient, GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, QueryCommand, BatchGetCommand } from '@aws-sdk/lib-dynamodb';
 import { ErrorCodes, ErrorMessages } from '@points-mall/shared';
 import type { ContentItem, ContentItemSummary } from '@points-mall/shared';
 
@@ -28,6 +28,7 @@ export async function listContentItems(
   options: ListContentItemsOptions,
   dynamoClient: DynamoDBDocumentClient,
   contentItemsTable: string,
+  usersTable?: string,
 ): Promise<ListContentItemsResult> {
   const { categoryId, tag, pageSize = 20, lastKey } = options;
 
@@ -93,11 +94,37 @@ export async function listContentItems(
 
   const rawItems = (result.Items ?? []) as ContentItem[];
 
+  // Live nickname lookup: override snapshot uploaderNickname with current nickname from Users table
+  let nicknameMap: Map<string, string> | undefined;
+  if (usersTable && rawItems.length > 0) {
+    const uploaderIds = [...new Set(rawItems.map(item => item.uploaderId).filter(Boolean))];
+    if (uploaderIds.length > 0) {
+      nicknameMap = new Map();
+      for (let i = 0; i < uploaderIds.length; i += 100) {
+        const chunk = uploaderIds.slice(i, i + 100);
+        const batchResult = await dynamoClient.send(
+          new BatchGetCommand({
+            RequestItems: {
+              [usersTable]: {
+                Keys: chunk.map(userId => ({ userId })),
+                ProjectionExpression: 'userId, nickname',
+              },
+            },
+          }),
+        );
+        const items = batchResult.Responses?.[usersTable] ?? [];
+        for (const item of items) {
+          nicknameMap.set(item.userId as string, (item.nickname as string) ?? '');
+        }
+      }
+    }
+  }
+
   const items: ContentItemSummary[] = rawItems.map((item) => ({
     contentId: item.contentId,
     title: item.title,
     categoryName: item.categoryName,
-    uploaderNickname: item.uploaderNickname,
+    uploaderNickname: nicknameMap?.get(item.uploaderId) ?? item.uploaderNickname,
     likeCount: item.likeCount,
     commentCount: item.commentCount,
     reservationCount: item.reservationCount,
@@ -133,7 +160,7 @@ export async function getContentDetail(
   contentId: string,
   userId: string | null,
   dynamoClient: DynamoDBDocumentClient,
-  tables: { contentItemsTable: string; reservationsTable: string; likesTable: string },
+  tables: { contentItemsTable: string; reservationsTable: string; likesTable: string; usersTable?: string },
 ): Promise<GetContentDetailResult> {
   // Fetch the content item
   const contentResult = await dynamoClient.send(
@@ -158,6 +185,20 @@ export async function getContentDetail(
       success: false,
       error: { code: ErrorCodes.CONTENT_NOT_FOUND, message: ErrorMessages[ErrorCodes.CONTENT_NOT_FOUND] },
     };
+  }
+
+  // Override uploaderNickname with live value from Users table
+  if (tables.usersTable && item.uploaderId) {
+    const userResult = await dynamoClient.send(
+      new GetCommand({
+        TableName: tables.usersTable,
+        Key: { userId: item.uploaderId },
+        ProjectionExpression: 'nickname',
+      }),
+    );
+    if (userResult.Item?.nickname) {
+      item.uploaderNickname = userResult.Item.nickname as string;
+    }
   }
 
   // If no userId, return content without user-specific flags

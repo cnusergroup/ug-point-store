@@ -1161,23 +1161,44 @@ export async function queryEmployeeEngagement(
     // 2. Query PointsRecords type-createdAt-index GSI with type=earn and date range
     const { startDate, endDate } = applyDefaultDateRange(filter.startDate, filter.endDate);
 
-    const earnItems = await queryAll(
-      dynamoClient,
-      tables.pointsRecordsTable,
-      'type-createdAt-index',
-      '#type = :type AND createdAt BETWEEN :start AND :end',
-      {
-        ':type': 'earn',
-        ':start': startDate,
-        ':end': endDate,
-      },
-      {
-        expressionAttributeNames: { '#type': 'type' },
-      },
-    );
+    // earn 与 adjust 分别查询同一 GSI（type-createdAt-index）后合并。
+    // adjust（batch-points-adjust.ts 写入的修正记录）带符号 amount，与 earn 合并后
+    // aggregateEmployeeEngagement 按 amount 求和，使积分总额反映后续调整/删除修正，
+    // 与用户实际余额保持一致。adjust 记录的 source 不以「批量发放」开头，因此不会被
+    // 计入活动次数（activityCount / totalActivities），避免修正记录被错误当成一次新活动参与。
+    const [earnItems, adjustItems] = await Promise.all([
+      queryAll(
+        dynamoClient,
+        tables.pointsRecordsTable,
+        'type-createdAt-index',
+        '#type = :type AND createdAt BETWEEN :start AND :end',
+        {
+          ':type': 'earn',
+          ':start': startDate,
+          ':end': endDate,
+        },
+        {
+          expressionAttributeNames: { '#type': 'type' },
+        },
+      ),
+      queryAll(
+        dynamoClient,
+        tables.pointsRecordsTable,
+        'type-createdAt-index',
+        '#type = :type AND createdAt BETWEEN :start AND :end',
+        {
+          ':type': 'adjust',
+          ':start': startDate,
+          ':end': endDate,
+        },
+        {
+          expressionAttributeNames: { '#type': 'type' },
+        },
+      ),
+    ]);
 
     // 3. Filter records in memory to keep only employee userIds
-    const employeeRecords = earnItems.filter(
+    const employeeRecords = [...earnItems, ...adjustItems].filter(
       item => employeeUserIds.has(item.userId as string),
     );
 

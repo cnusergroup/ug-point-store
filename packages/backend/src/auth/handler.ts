@@ -10,6 +10,7 @@ import { verifyEmail } from './verify-email';
 import { getWechatQrCode, handleWechatCallback } from './wechat';
 import { generateToken, verifyToken } from './token';
 import { changePassword } from './change-password';
+import { changeNickname } from '../user/change-nickname';
 import { forgotPassword } from './forgot-password';
 import { resetPassword } from './reset-password';
 
@@ -23,6 +24,7 @@ const VERIFY_BASE_URL = process.env.VERIFY_BASE_URL ?? '';
 const RESET_BASE_URL = process.env.RESET_BASE_URL ?? '';
 const INVITES_TABLE = process.env.INVITES_TABLE ?? '';
 const REGISTER_BASE_URL = process.env.REGISTER_BASE_URL ?? '';
+const NICKNAME_INDEX_NAME = process.env.NICKNAME_INDEX_NAME ?? 'nickname-index';
 
 const CORS_HEADERS = {
   'Content-Type': 'application/json',
@@ -111,6 +113,11 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
     // POST /api/auth/change-password
     if (method === 'POST' && path === '/api/auth/change-password') {
       return await handleChangePassword(event);
+    }
+
+    // POST /api/user/change-nickname
+    if (method === 'POST' && path === '/api/user/change-nickname') {
+      return await handleChangeNickname(event);
     }
 
     // POST /api/auth/forgot-password
@@ -318,6 +325,54 @@ async function handleChangePassword(event: APIGatewayProxyEvent): Promise<APIGat
   }
 
   return jsonResponse(200, { message: '密码修改成功' });
+}
+
+async function handleChangeNickname(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
+  // 1. Extract JWT from Authorization header
+  const authHeader = event.headers?.Authorization || event.headers?.authorization;
+  if (!authHeader) {
+    return errorResponse(ErrorCodes.TOKEN_EXPIRED, ErrorMessages.TOKEN_EXPIRED, 401);
+  }
+
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
+  const verifyResult = await verifyToken(token);
+
+  if (!verifyResult.valid || !verifyResult.payload) {
+    const code = verifyResult.error === 'TOKEN_EXPIRED' ? ErrorCodes.TOKEN_EXPIRED : 'INVALID_TOKEN';
+    const message = verifyResult.error === 'TOKEN_EXPIRED' ? ErrorMessages.TOKEN_EXPIRED : 'Invalid token';
+    return errorResponse(code, message, 401);
+  }
+
+  // 2. Extract userId from token payload
+  const userId = verifyResult.payload.userId as string;
+
+  // 3. Parse body for newNickname field
+  const body = parseBody(event);
+  if (!body || !body.newNickname) {
+    return errorResponse(
+      ErrorCodes.NICKNAME_EMPTY,
+      ErrorMessages[ErrorCodes.NICKNAME_EMPTY],
+      (ErrorHttpStatus as Record<string, number>)[ErrorCodes.NICKNAME_EMPTY] ?? 400,
+    );
+  }
+
+  // 4. Call changeNickname
+  const result = await changeNickname(
+    userId,
+    body.newNickname as string,
+    dynamoClient,
+    USERS_TABLE,
+    NICKNAME_INDEX_NAME,
+  );
+
+  if (!result.success) {
+    const code = result.error!.code;
+    const status = (ErrorHttpStatus as Record<string, number>)[code] ?? 400;
+    return jsonResponse(status, result.error);
+  }
+
+  // 5. On success return message
+  return jsonResponse(200, { message: '昵称修改成功' });
 }
 
 async function handleForgotPassword(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {

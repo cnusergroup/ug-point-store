@@ -143,6 +143,12 @@ vi.mock('../reports/insight-query', () => ({
 vi.mock('../ugl-exit/pending-exit-list', () => ({
   queryPendingExitUGLs: vi.fn(),
 }));
+vi.mock('../ugl-exit/awaiting-reminder-list', () => ({
+  queryAwaitingReminderUGLs: vi.fn(),
+}));
+vi.mock('../ugl-exit/send-reminder-action', () => ({
+  sendReminderAction: vi.fn(),
+}));
 vi.mock('../ugl-exit/quarter', () => ({
   resolveDetectionQuarter: vi.fn(),
 }));
@@ -204,6 +210,8 @@ import { queryPointsDetail, queryUGActivitySummary, queryUserPointsRanking, quer
 import { executeExport, validateExportInput } from '../reports/export';
 import { queryPopularProducts, queryHotContent, queryContentContributors, queryInventoryAlert, queryTravelStatistics, queryInviteConversion } from '../reports/insight-query';
 import { queryPendingExitUGLs } from '../ugl-exit/pending-exit-list';
+import { queryAwaitingReminderUGLs } from '../ugl-exit/awaiting-reminder-list';
+import { sendReminderAction } from '../ugl-exit/send-reminder-action';
 import { resolveDetectionQuarter } from '../ugl-exit/quarter';
 import { runUGLDetectionJob } from '../ugl-exit/detection-job';
 import { confirmExit, restoreTracking } from '../ugl-exit/review-actions';
@@ -1296,7 +1304,10 @@ describe('Admin Lambda Handler', () => {
       const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/content' });
       const result = await handler(event);
       expect(result.statusCode).toBe(200);
-      expect(JSON.parse(result.body)).toEqual({ success: true, items: [], lastKey: undefined });
+      // handleListAllContent strips the internal `success` flag and returns only the
+      // data fields, consistent with the sibling handleListAllClaims ({ claims, lastKey })
+      // and what the frontend (content.tsx / email-content.tsx) actually reads (items/lastKey).
+      expect(JSON.parse(result.body)).toEqual({ items: [], lastKey: undefined });
     });
 
     it('passes status, pageSize and lastKey query params', async () => {
@@ -1664,6 +1675,7 @@ describe('Admin Lambda Handler', () => {
           wishFulfilledRewardPoints: 20,
           productManagementMode: 'all' as const,
           productManagerIds: [],
+          additionalNotificationRecipients: [],
           updatedAt: '2024-01-01T00:00:00.000Z',
           updatedBy: 'admin-user-id',
         },
@@ -2484,6 +2496,7 @@ describe('Admin Lambda Handler', () => {
           wishFulfilledRewardPoints: 50,
           productManagementMode: 'all' as const,
           productManagerIds: [],
+          additionalNotificationRecipients: [],
           updatedAt: '2024-01-01T00:00:00.000Z',
           updatedBy: 'admin-user-id',
         },
@@ -2558,6 +2571,7 @@ describe('Admin Lambda Handler', () => {
           wishFulfilledRewardPoints: 50,
           productManagementMode: 'all' as const,
           productManagerIds: [],
+          additionalNotificationRecipients: [],
           updatedAt: '2024-01-01T00:00:00.000Z',
           updatedBy: 'admin-user-id',
         },
@@ -4387,6 +4401,131 @@ describe('Admin Lambda Handler', () => {
     });
   });
 
+  describe('GET /api/admin/ugl-exit/awaiting-reminder', () => {
+    it('returns 403 for non-SuperAdmin and does not query', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/ugl-exit/awaiting-reminder' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(queryAwaitingReminderUGLs).not.toHaveBeenCalled();
+    });
+
+    it('returns 200 with items for a valid SuperAdmin request', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(queryAwaitingReminderUGLs).mockResolvedValue([
+        {
+          userId: 'u1',
+          nickname: 'Nick1',
+          email: 'u1@test.com',
+          ugName: 'UG1',
+          quarter: '2024-Q1',
+          recordedAt: '2024-04-01T00:00:00.000Z',
+        },
+      ]);
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/ugl-exit/awaiting-reminder' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.items).toHaveLength(1);
+      expect(body.items[0].userId).toBe('u1');
+      expect(body.items[0].quarter).toBe('2024-Q1');
+      expect(queryAwaitingReminderUGLs).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          trackingTable: expect.any(String),
+          usersTable: expect.any(String),
+          ugsTable: expect.any(String),
+        }),
+      );
+    });
+
+    it('returns 200 with an empty items array when there are no awaiting-reminder entries', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(queryAwaitingReminderUGLs).mockResolvedValue([]);
+      const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/ugl-exit/awaiting-reminder' });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body).items).toEqual([]);
+    });
+  });
+
+  describe('POST /api/admin/ugl-exit/send-reminder', () => {
+    it('returns 403 for non-SuperAdmin and does not dispatch', async () => {
+      mockUserRoles = ['Admin'];
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/ugl-exit/send-reminder',
+        body: JSON.stringify({ userIds: ['u1'] }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(403);
+      expect(JSON.parse(result.body).code).toBe('FORBIDDEN');
+      expect(sendReminderAction).not.toHaveBeenCalled();
+    });
+
+    it('returns 200 with the summary for a mixed batch', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(sendReminderAction).mockResolvedValue({
+        sentCount: 2,
+        alreadySentCount: 1,
+        sendFailedCount: 1,
+        errors: 0,
+      });
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/ugl-exit/send-reminder',
+        body: JSON.stringify({ userIds: ['u1', 'u2', 'u3', 'u4'] }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body).toEqual({ sentCount: 2, alreadySentCount: 1, sendFailedCount: 1, errors: 0 });
+      expect(sendReminderAction).toHaveBeenCalledWith(
+        ['u1', 'u2', 'u3', 'u4'],
+        expect.anything(),
+      );
+    });
+
+    it('treats an empty userIds array as a no-op returning an all-zero summary (not a 400)', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(sendReminderAction).mockResolvedValue({
+        sentCount: 0,
+        alreadySentCount: 0,
+        sendFailedCount: 0,
+        errors: 0,
+      });
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/ugl-exit/send-reminder',
+        body: JSON.stringify({ userIds: [] }),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body).toEqual({ sentCount: 0, alreadySentCount: 0, sendFailedCount: 0, errors: 0 });
+      expect(sendReminderAction).toHaveBeenCalledWith([], expect.anything());
+    });
+
+    it('treats a missing userIds field as an empty batch no-op', async () => {
+      mockUserRoles = ['SuperAdmin'];
+      vi.mocked(sendReminderAction).mockResolvedValue({
+        sentCount: 0,
+        alreadySentCount: 0,
+        sendFailedCount: 0,
+        errors: 0,
+      });
+      const event = makeEvent({
+        httpMethod: 'POST',
+        path: '/api/admin/ugl-exit/send-reminder',
+        body: JSON.stringify({}),
+      });
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+      expect(sendReminderAction).toHaveBeenCalledWith([], expect.anything());
+    });
+  });
+
   describe('POST /api/admin/ugl-exit/detection-job', () => {
     it('returns 403 for non-SuperAdmin', async () => {
       mockUserRoles = ['Admin'];
@@ -4410,8 +4549,8 @@ describe('Admin Lambda Handler', () => {
         quarter: '2023-Q2',
         eligibleCount: 3,
         fullyInactiveCount: 1,
-        remindersSent: 1,
-        remindersSkippedAlreadyClaimed: 0,
+        awaitingReminderRecorded: 1,
+        awaitingReminderSkippedAlreadyRecorded: 0,
         errors: 0,
       });
 
@@ -4424,7 +4563,7 @@ describe('Admin Lambda Handler', () => {
       expect(result.statusCode).toBe(200);
       const body = JSON.parse(result.body);
       expect(body.quarter).toBe('2023-Q2');
-      expect(body.remindersSent).toBe(1);
+      expect(body.awaitingReminderRecorded).toBe(1);
       expect(resolveDetectionQuarter).toHaveBeenCalledWith('2023-Q2');
       expect(runUGLDetectionJob).toHaveBeenCalledWith('2023-Q2', expect.anything());
     });

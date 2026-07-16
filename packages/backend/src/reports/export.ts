@@ -158,7 +158,7 @@ export function validateExportInput(body: unknown): { valid: boolean; error?: { 
 async function queryAllRecordsForExport(
   dynamoClient: DynamoDBDocumentClient,
   tableName: string,
-  type: 'earn' | 'spend',
+  type: 'earn' | 'spend' | 'adjust',
   startDate: string,
   endDate: string,
   filterExpressions?: string[],
@@ -326,7 +326,9 @@ export async function executeExport(
       };
 
       if (!filterType || filterType === 'all') {
-        const [earnResult, spendResult] = await Promise.all([
+        // earn + spend + adjust。adjust（batch-points-adjust.ts 写入）带 activityDate 且带符号，
+        // 与 earn 同样按 activityDate 精筛后并入明细。
+        const [earnResult, spendResult, adjustResult] = await Promise.all([
           queryAllRecordsForExport(
             dynamoClient, tables.pointsRecordsTable, 'earn', widenedStart, widenedEnd,
             filterExpressions.length > 0 ? filterExpressions : undefined,
@@ -339,24 +341,51 @@ export async function executeExport(
             Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
             undefined, lambdaStartTime,
           ),
+          queryAllRecordsForExport(
+            dynamoClient, tables.pointsRecordsTable, 'adjust', widenedStart, widenedEnd,
+            filterExpressions.length > 0 ? filterExpressions : undefined,
+            Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
+            undefined, lambdaStartTime,
+          ),
         ]);
 
         if (earnResult.error) return { success: false, error: earnResult.error };
         if (spendResult.error) return { success: false, error: spendResult.error };
+        if (adjustResult.error) return { success: false, error: adjustResult.error };
 
-        allRawItems = [...earnResult.items.filter(earnInActivityRange), ...spendResult.items];
+        allRawItems = [
+          ...earnResult.items.filter(earnInActivityRange),
+          ...spendResult.items,
+          ...adjustResult.items.filter(earnInActivityRange),
+        ];
         if (allRawItems.length > MAX_EXPORT_RECORDS) {
           return { success: false, error: { code: 'EXPORT_LIMIT_EXCEEDED', message: '导出数据量超过限制，请缩小筛选范围' } };
         }
       } else if (filterType === 'earn') {
-        const result = await queryAllRecordsForExport(
-          dynamoClient, tables.pointsRecordsTable, 'earn', widenedStart, widenedEnd,
-          filterExpressions.length > 0 ? filterExpressions : undefined,
-          Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
-          undefined, lambdaStartTime,
-        );
-        if (result.error) return { success: false, error: result.error };
-        allRawItems = result.items.filter(earnInActivityRange);
+        // earn + adjust（adjust 是对 earn 发放的修正，一并纳入）。spend 不含。
+        const [earnResult, adjustResult] = await Promise.all([
+          queryAllRecordsForExport(
+            dynamoClient, tables.pointsRecordsTable, 'earn', widenedStart, widenedEnd,
+            filterExpressions.length > 0 ? filterExpressions : undefined,
+            Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
+            undefined, lambdaStartTime,
+          ),
+          queryAllRecordsForExport(
+            dynamoClient, tables.pointsRecordsTable, 'adjust', widenedStart, widenedEnd,
+            filterExpressions.length > 0 ? filterExpressions : undefined,
+            Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
+            undefined, lambdaStartTime,
+          ),
+        ]);
+        if (earnResult.error) return { success: false, error: earnResult.error };
+        if (adjustResult.error) return { success: false, error: adjustResult.error };
+        allRawItems = [
+          ...earnResult.items.filter(earnInActivityRange),
+          ...adjustResult.items.filter(earnInActivityRange),
+        ];
+        if (allRawItems.length > MAX_EXPORT_RECORDS) {
+          return { success: false, error: { code: 'EXPORT_LIMIT_EXCEEDED', message: '导出数据量超过限制，请缩小筛选范围' } };
+        }
       } else {
         // spend：按 createdAt 过滤（兑换记录无 activityDate）
         const result = await queryAllRecordsForExport(
@@ -415,7 +444,7 @@ export async function executeExport(
           userId: (r.userId as string) ?? '',
           nickname: userInfo?.nickname ?? '',
           amount: (r.amount as number) ?? 0,
-          type: (r.type as 'earn' | 'spend') ?? 'earn',
+          type: (r.type as 'earn' | 'spend' | 'adjust') ?? 'earn',
           source: (r.source as string) ?? '',
           activityUG: (r.activityUG as string) ?? '',
           activityTopic: (r.activityTopic as string) ?? '',
@@ -439,13 +468,21 @@ export async function executeExport(
       fileBuffer = format === 'csv' ? generateCSV(formatted, columns) : generateExcel(formatted, columns);
 
     } else if (reportType === 'ug-activity-summary') {
-      const result = await queryAllRecordsForExport(
-        dynamoClient, tables.pointsRecordsTable, 'earn', startDate, endDate,
-        undefined, undefined, undefined, lambdaStartTime,
-      );
-      if (result.error) return { success: false, error: result.error };
+      // earn + adjust 合并聚合。adjust 带符号 amount，使汇总总额反映后续调整/删除修正。
+      const [earnResult, adjustResult] = await Promise.all([
+        queryAllRecordsForExport(
+          dynamoClient, tables.pointsRecordsTable, 'earn', startDate, endDate,
+          undefined, undefined, undefined, lambdaStartTime,
+        ),
+        queryAllRecordsForExport(
+          dynamoClient, tables.pointsRecordsTable, 'adjust', startDate, endDate,
+          undefined, undefined, undefined, lambdaStartTime,
+        ),
+      ]);
+      if (earnResult.error) return { success: false, error: earnResult.error };
+      if (adjustResult.error) return { success: false, error: adjustResult.error };
 
-      const rawRecords = result.items as unknown as RawPointsRecord[];
+      const rawRecords = [...earnResult.items, ...adjustResult.items] as unknown as RawPointsRecord[];
       const aggregated = aggregateByUG(rawRecords);
       const sorted = sortRecords(aggregated, 'totalPoints', 'desc');
       const formatted = formatUGSummaryForExport(sorted);
@@ -459,15 +496,25 @@ export async function executeExport(
         rankExprValues[':targetRole'] = filters.targetRole;
       }
 
-      const result = await queryAllRecordsForExport(
-        dynamoClient, tables.pointsRecordsTable, 'earn', startDate, endDate,
-        rankFilterExpressions.length > 0 ? rankFilterExpressions : undefined,
-        Object.keys(rankExprValues).length > 0 ? rankExprValues : undefined,
-        undefined, lambdaStartTime,
-      );
-      if (result.error) return { success: false, error: result.error };
+      // earn + adjust 合并聚合。adjust 带符号 amount，使排行总额与用户余额一致。
+      const [earnResult, adjustResult] = await Promise.all([
+        queryAllRecordsForExport(
+          dynamoClient, tables.pointsRecordsTable, 'earn', startDate, endDate,
+          rankFilterExpressions.length > 0 ? rankFilterExpressions : undefined,
+          Object.keys(rankExprValues).length > 0 ? rankExprValues : undefined,
+          undefined, lambdaStartTime,
+        ),
+        queryAllRecordsForExport(
+          dynamoClient, tables.pointsRecordsTable, 'adjust', startDate, endDate,
+          rankFilterExpressions.length > 0 ? rankFilterExpressions : undefined,
+          Object.keys(rankExprValues).length > 0 ? rankExprValues : undefined,
+          undefined, lambdaStartTime,
+        ),
+      ]);
+      if (earnResult.error) return { success: false, error: earnResult.error };
+      if (adjustResult.error) return { success: false, error: adjustResult.error };
 
-      const rawRecords = result.items as unknown as RawPointsRecord[];
+      const rawRecords = [...earnResult.items, ...adjustResult.items] as unknown as RawPointsRecord[];
       const aggregated = aggregateByUser(rawRecords);
       const sorted = aggregated.sort((a, b) => b.totalEarnPoints - a.totalEarnPoints);
 
@@ -509,15 +556,25 @@ export async function executeExport(
         actExprValues[':ugName'] = filters.ugName;
       }
 
-      const result = await queryAllRecordsForExport(
-        dynamoClient, tables.pointsRecordsTable, 'earn', startDate, endDate,
-        actFilterExpressions.length > 0 ? actFilterExpressions : undefined,
-        Object.keys(actExprValues).length > 0 ? actExprValues : undefined,
-        undefined, lambdaStartTime,
-      );
-      if (result.error) return { success: false, error: result.error };
+      // earn + adjust 合并聚合。adjust 带符号 amount，使活动积分总额反映调整/删除修正。
+      const [earnResult, adjustResult] = await Promise.all([
+        queryAllRecordsForExport(
+          dynamoClient, tables.pointsRecordsTable, 'earn', startDate, endDate,
+          actFilterExpressions.length > 0 ? actFilterExpressions : undefined,
+          Object.keys(actExprValues).length > 0 ? actExprValues : undefined,
+          undefined, lambdaStartTime,
+        ),
+        queryAllRecordsForExport(
+          dynamoClient, tables.pointsRecordsTable, 'adjust', startDate, endDate,
+          actFilterExpressions.length > 0 ? actFilterExpressions : undefined,
+          Object.keys(actExprValues).length > 0 ? actExprValues : undefined,
+          undefined, lambdaStartTime,
+        ),
+      ]);
+      if (earnResult.error) return { success: false, error: earnResult.error };
+      if (adjustResult.error) return { success: false, error: adjustResult.error };
 
-      const rawRecords = result.items as unknown as RawPointsRecord[];
+      const rawRecords = [...earnResult.items, ...adjustResult.items] as unknown as RawPointsRecord[];
       const aggregated = aggregateByActivity(rawRecords);
       const sorted = sortRecords(aggregated, 'activityDate', 'desc');
       const formatted = formatActivitySummaryForExport(sorted);

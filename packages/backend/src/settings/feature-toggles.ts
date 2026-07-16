@@ -116,6 +116,8 @@ export interface FeatureToggles {
   productManagementMode: 'all' | 'specific';
   /** List of userId strings for specific product managers, only used when productManagementMode is 'specific' */
   productManagerIds: string[];
+  /** Additional email addresses (not necessarily belonging to registered accounts) that also receive the Detection_Completion_Notification */
+  additionalNotificationRecipients: string[];
 }
 
 export interface UpdateFeatureTogglesInput {
@@ -154,6 +156,7 @@ export interface UpdateFeatureTogglesInput {
   wishFulfilledRewardPoints: number;
   productManagementMode: 'all' | 'specific';
   productManagerIds: string[];
+  additionalNotificationRecipients: string[];
   updatedBy: string;
 }
 
@@ -177,6 +180,9 @@ export interface UpdateContentRolePermissionsResult {
 // ---- Constants ----
 
 const FEATURE_TOGGLES_KEY = 'feature-toggles';
+
+/** Email format validation regex — same pattern used elsewhere in this codebase (e.g. login/register/forgot-password pages) for email fields. */
+const EMAIL_FORMAT_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const DEFAULT_ROLE_PERMISSIONS: RolePermissions = {
   canAccess: true,
@@ -239,6 +245,7 @@ const DEFAULT_TOGGLES: FeatureToggles = {
   wishFulfilledRewardPoints: 20,                          // default: 20 points for wish fulfillment
   productManagementMode: 'all',                           // default: all Admins can manage products
   productManagerIds: [],                                  // default: empty product manager list
+  additionalNotificationRecipients: [],                   // default: empty additional recipient list
 };
 
 // ---- Core Functions ----
@@ -339,6 +346,11 @@ export async function getFeatureToggles(
         Array.isArray(result.Item.productManagerIds) &&
         result.Item.productManagerIds.every((id: unknown) => typeof id === 'string')
           ? result.Item.productManagerIds as string[]
+          : [],  // default []
+      additionalNotificationRecipients:
+        Array.isArray(result.Item.additionalNotificationRecipients) &&
+        result.Item.additionalNotificationRecipients.every((id: unknown) => typeof id === 'string')
+          ? result.Item.additionalNotificationRecipients as string[]
           : [],  // default []
       pointsRuleConfig: (() => {
         const raw = result.Item.pointsRuleConfig as Record<string, unknown> | undefined;
@@ -456,6 +468,19 @@ export async function updateFeatureToggles(
     };
   }
 
+  // Validate additionalNotificationRecipients — every entry must be a string matching the email format regex
+  if (
+    !Array.isArray(input.additionalNotificationRecipients) ||
+    !input.additionalNotificationRecipients.every(
+      (email: unknown) => typeof email === 'string' && EMAIL_FORMAT_REGEX.test(email),
+    )
+  ) {
+    return {
+      success: false,
+      error: { code: 'INVALID_REQUEST', message: '请求参数无效' },
+    };
+  }
+
   // Validate leaderboardUpdateFrequency
   const validFrequencies = ['realtime', 'daily', 'weekly', 'monthly'];
   if (!validFrequencies.includes(input.leaderboardUpdateFrequency)) {
@@ -522,6 +547,7 @@ export async function updateFeatureToggles(
         wishFulfilledRewardPoints = :wfrp,
         productManagementMode = :pmm,
         productManagerIds = :pmi,
+        additionalNotificationRecipients = :anr,
         updatedAt = :ua,
         updatedBy = :ub`;
 
@@ -560,6 +586,7 @@ export async function updateFeatureToggles(
         ':wfrp': input.wishFulfilledRewardPoints,
         ':pmm': input.productManagementMode,
         ':pmi': input.productManagerIds,
+        ':anr': input.additionalNotificationRecipients,
         ':ua': now,
         ':ub': input.updatedBy,
   };
@@ -640,6 +667,7 @@ export async function updateFeatureToggles(
       wishFulfilledRewardPoints: input.wishFulfilledRewardPoints,
       productManagementMode: input.productManagementMode,
       productManagerIds: input.productManagerIds,
+      additionalNotificationRecipients: input.additionalNotificationRecipients,
       pointsRuleConfig: input.pointsRuleConfig ?? (item.pointsRuleConfig as PointsRuleConfig | undefined) ?? { ...DEFAULT_POINTS_RULE_CONFIG },
       updatedAt: now,
       updatedBy: input.updatedBy,

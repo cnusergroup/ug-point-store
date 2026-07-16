@@ -124,6 +124,7 @@ describe('Order Lambda Handler', () => {
       wishFulfilledRewardPoints: 50,
       productManagementMode: 'all' as const,
       productManagerIds: [],
+      additionalNotificationRecipients: [],
     });
   });
 
@@ -660,6 +661,7 @@ describe('Order Lambda Handler', () => {
         wishFulfilledRewardPoints: 50,
         productManagementMode: 'all' as const,
         productManagerIds: [],
+        additionalNotificationRecipients: [],
       });
       vi.mocked(getAdminOrders).mockResolvedValue({
         success: true,
@@ -728,6 +730,7 @@ describe('Order Lambda Handler', () => {
         wishFulfilledRewardPoints: 50,
         productManagementMode: 'all' as const,
         productManagerIds: [],
+        additionalNotificationRecipients: [],
       });
       const event = makeEvent({ httpMethod: 'GET', path: '/api/admin/orders' });
       const result = await handler(event);

@@ -127,6 +127,16 @@ export class DatabaseStack extends cdk.Stack {
       projectionType: dynamodb.ProjectionType.ALL,
     });
 
+    // GSI for nickname uniqueness check during nickname-change.
+    // NOTE: DynamoDB only allows one GSI creation per CloudFormation update —
+    // deploy this GSI alone and wait for ACTIVE state before deploying
+    // any Lambda code that queries this index (changeNickname).
+    this.usersTable.addGlobalSecondaryIndex({
+      indexName: 'nickname-index',
+      partitionKey: { name: 'nickname', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.KEYS_ONLY,
+    });
+
     // Products table: PK=productId, GSI: type-status-index (PK=type, SK=status)
     this.productsTable = new dynamodb.Table(this, 'ProductsTable', {
       tableName: 'PointsMall-Products',

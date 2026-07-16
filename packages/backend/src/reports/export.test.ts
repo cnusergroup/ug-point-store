@@ -231,9 +231,15 @@ describe('executeExport — EXPORT_LIMIT_EXCEEDED', () => {
       targetRole: 'Speaker',
     }));
 
-    // Return all items in one page but with LastEvaluatedKey to simulate pagination
+    // Return all items in one page but with LastEvaluatedKey to simulate pagination.
+    // earn query returns >50k items and triggers EXPORT_LIMIT_EXCEEDED inside the helper.
     dynamoClient.send.mockResolvedValueOnce({
       Items: largeItems,
+      LastEvaluatedKey: undefined,
+    });
+    // adjust query (runs in parallel via Promise.all) — return empty
+    dynamoClient.send.mockResolvedValueOnce({
+      Items: [],
       LastEvaluatedKey: undefined,
     });
 
@@ -287,6 +293,9 @@ describe('executeExport — S3 upload and presigned URL', () => {
       LastEvaluatedKey: undefined,
     });
 
+    // Mock adjust query (parallel) — empty
+    dynamoClient.send.mockResolvedValueOnce({ Items: [], LastEvaluatedKey: undefined });
+
     // Mock S3 PutObject
     s3Client.send.mockResolvedValueOnce({});
 
@@ -326,6 +335,9 @@ describe('executeExport — S3 upload and presigned URL', () => {
       ],
       LastEvaluatedKey: undefined,
     });
+
+    // Mock adjust query (parallel) — empty
+    dynamoClient.send.mockResolvedValueOnce({ Items: [], LastEvaluatedKey: undefined });
 
     // Mock BatchGet for user nicknames
     dynamoClient.send.mockResolvedValueOnce({
@@ -383,6 +395,9 @@ describe('executeExport — S3 upload and presigned URL', () => {
       LastEvaluatedKey: undefined,
     });
 
+    // Mock adjust query (parallel with earn+spend) — empty
+    dynamoClient.send.mockResolvedValueOnce({ Items: [], LastEvaluatedKey: undefined });
+
     // Mock BatchGet for user nicknames
     dynamoClient.send.mockResolvedValueOnce({
       Responses: {
@@ -429,6 +444,9 @@ describe('executeExport — S3 upload and presigned URL', () => {
       ],
       LastEvaluatedKey: undefined,
     });
+
+    // Mock adjust query (parallel) — empty
+    dynamoClient.send.mockResolvedValueOnce({ Items: [], LastEvaluatedKey: undefined });
 
     // Mock S3 PutObject
     s3Client.send.mockResolvedValueOnce({});
@@ -863,5 +881,159 @@ describe('executeExport — new report type branches', () => {
       dynamoClient,
       { productsTable: 'Products' },
     );
+  });
+});
+
+// ============================================================
+// 8. executeExport — adjust records merged into aggregation exports
+// (regression for report/balance consistency bug)
+// ============================================================
+
+describe('executeExport — adjust correction records', () => {
+  let dynamoClient: ReturnType<typeof createMockDynamoClient>;
+  let s3Client: ReturnType<typeof createMockS3Client>;
+
+  beforeEach(() => {
+    dynamoClient = createMockDynamoClient();
+    s3Client = createMockS3Client();
+    vi.clearAllMocks();
+  });
+
+  function csvBody(): string {
+    return (s3Client.send.mock.calls[0][0].input.Body as Buffer).toString('utf-8');
+  }
+
+  it('user-points-ranking: negative adjust reduces a user total below the original earn', async () => {
+    // earn: u1 gets 1000 (Speaker)
+    dynamoClient.send.mockResolvedValueOnce({
+      Items: [
+        {
+          recordId: 'r1', userId: 'u1', type: 'earn', amount: 1000,
+          source: '批量发放:讲师积分', createdAt: '2024-01-15T10:00:00Z',
+          activityUG: 'Tokyo', activityTopic: 'Summit', activityId: 'act-1',
+          activityDate: '2024-01-15', targetRole: 'Speaker',
+        },
+      ],
+      LastEvaluatedKey: undefined,
+    });
+    // adjust: u1 gets -300 correction (发放删除)
+    dynamoClient.send.mockResolvedValueOnce({
+      Items: [
+        {
+          recordId: 'r2', userId: 'u1', type: 'adjust', amount: -300,
+          source: '发放删除:讲师积分', createdAt: '2024-01-20T10:00:00Z',
+          activityUG: 'Tokyo', activityTopic: 'Summit', activityId: 'act-1',
+          activityDate: '2024-01-15', targetRole: 'Speaker',
+        },
+      ],
+      LastEvaluatedKey: undefined,
+    });
+    // BatchGet nicknames
+    dynamoClient.send.mockResolvedValueOnce({
+      Responses: { [TABLES.usersTable]: [{ userId: 'u1', nickname: 'Alice' }] },
+    });
+    s3Client.send.mockResolvedValueOnce({});
+
+    const input: ExportInput = {
+      reportType: 'user-points-ranking',
+      format: 'csv',
+      filters: {},
+    };
+    const result = await executeExport(input, dynamoClient, s3Client, TABLES, BUCKET);
+
+    expect(result.success).toBe(true);
+    const body = csvBody();
+    // net total is 1000 + (-300) = 700, NOT the original 1000
+    expect(body).toContain('700');
+    expect(body).not.toContain('1000');
+  });
+
+  it('ug-activity-summary: positive adjust increases the UG total', async () => {
+    // earn: UG-A total 1000
+    dynamoClient.send.mockResolvedValueOnce({
+      Items: [
+        {
+          recordId: 'r1', userId: 'u1', type: 'earn', amount: 1000,
+          source: '批量发放', createdAt: '2024-01-15T10:00:00Z',
+          activityUG: 'UG-A', activityTopic: 'Summit', activityId: 'act-1',
+          targetRole: 'Speaker',
+        },
+      ],
+      LastEvaluatedKey: undefined,
+    });
+    // adjust: UG-A +250 upward correction
+    dynamoClient.send.mockResolvedValueOnce({
+      Items: [
+        {
+          recordId: 'r2', userId: 'u1', type: 'adjust', amount: 250,
+          source: '积分调整', createdAt: '2024-01-20T10:00:00Z',
+          activityUG: 'UG-A', activityTopic: 'Summit', activityId: 'act-1',
+          targetRole: 'Speaker',
+        },
+      ],
+      LastEvaluatedKey: undefined,
+    });
+    s3Client.send.mockResolvedValueOnce({});
+
+    const input: ExportInput = {
+      reportType: 'ug-activity-summary',
+      format: 'csv',
+      filters: {},
+    };
+    const result = await executeExport(input, dynamoClient, s3Client, TABLES, BUCKET);
+
+    expect(result.success).toBe(true);
+    const body = csvBody();
+    // net total is 1000 + 250 = 1250
+    expect(body).toContain('1250');
+  });
+
+  it('points-detail (type=all): adjust rows are included in the detail export', async () => {
+    // earn
+    dynamoClient.send.mockResolvedValueOnce({
+      Items: [
+        {
+          recordId: 'r1', userId: 'u1', type: 'earn', amount: 100,
+          source: '批量发放:讲师积分', createdAt: '2024-01-15T10:00:00Z',
+          activityUG: 'Tokyo', activityTopic: 'Summit', activityId: 'act-1',
+          activityDate: '2024-01-15', targetRole: 'Speaker',
+        },
+      ],
+      LastEvaluatedKey: undefined,
+    });
+    // spend
+    dynamoClient.send.mockResolvedValueOnce({ Items: [], LastEvaluatedKey: undefined });
+    // adjust — a deletion correction that must appear in the detail
+    dynamoClient.send.mockResolvedValueOnce({
+      Items: [
+        {
+          recordId: 'r-adj', userId: 'u1', type: 'adjust', amount: -100,
+          source: '发放删除:讲师积分', createdAt: '2024-01-20T10:00:00Z',
+          activityUG: 'Tokyo', activityTopic: 'Summit', activityId: 'act-1',
+          activityDate: '2024-01-15', targetRole: 'Speaker',
+        },
+      ],
+      LastEvaluatedKey: undefined,
+    });
+    // BatchGet nicknames
+    dynamoClient.send.mockResolvedValueOnce({
+      Responses: { [TABLES.usersTable]: [{ userId: 'u1', nickname: 'Alice' }] },
+    });
+    // BatchDistributions
+    dynamoClient.send.mockResolvedValueOnce({ Items: [], LastEvaluatedKey: undefined });
+    s3Client.send.mockResolvedValueOnce({});
+
+    const input: ExportInput = {
+      reportType: 'points-detail',
+      format: 'csv',
+      // explicit range so the earn/adjust activityDate (2024-01-15) is in the精筛 window
+      filters: { type: 'all', startDate: '2024-01-01', endDate: '2024-01-31' },
+    };
+    const result = await executeExport(input, dynamoClient, s3Client, TABLES, BUCKET);
+
+    expect(result.success).toBe(true);
+    const body = csvBody();
+    // The adjust record's source must be present in the exported detail
+    expect(body).toContain('发放删除:讲师积分');
   });
 });

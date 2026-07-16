@@ -12,7 +12,7 @@
 
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, QueryCommand as DDBQueryCommand, BatchGetCommand as DDBBatchGetCommand } from '@aws-sdk/lib-dynamodb';
 import { S3Client } from '@aws-sdk/client-s3';
 import { ErrorCodes, ErrorMessages, ErrorHttpStatus } from '@points-mall/shared';
 import type { ErrorCode } from '@points-mall/shared';
@@ -33,6 +33,7 @@ import {
   queryTotalCount,
   queryEmployeeActivityDetail,
   queryActivityDetail,
+  queryImpactSummary,
 } from './query';
 import type { QueryContext, ViewFilter, ActivityViewFilter } from './query';
 import { executeParticipationExport } from './export';
@@ -53,6 +54,7 @@ const POINTS_RECORDS_TABLE = process.env.POINTS_RECORDS_TABLE ?? '';
 const BATCH_DISTRIBUTIONS_TABLE = process.env.BATCH_DISTRIBUTIONS_TABLE ?? '';
 const ACTIVITIES_TABLE = process.env.ACTIVITIES_TABLE ?? '';
 const IMAGES_BUCKET = process.env.IMAGES_BUCKET ?? '';
+const CONTENT_ITEMS_TABLE = process.env.CONTENT_ITEMS_TABLE ?? '';
 
 const queryContext: QueryContext = {
   dynamoClient,
@@ -146,21 +148,31 @@ export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return jsonResponse(200, { success: true });
     }
 
-    // 受保护路由：withQuerySession 包装
+    // 公开路由（无需会话校验）：驱动 store.awscommunity.cn 的公开榜单页
+    // （Top Speakers / Top Volunteers / Event Contribution Record）。
+    // 这三个视图仅暴露花名、邮箱与支持次数/活动记录，供社区公开展示。
     if (method === 'GET' && path === '/api/query/speaker-support') {
-      return await withQuerySession(handleSpeakerSupport)(event);
+      return await handleSpeakerSupport(event);
     }
     if (method === 'GET' && path === '/api/query/volunteer-support') {
-      return await withQuerySession(handleVolunteerSupport)(event);
+      return await handleVolunteerSupport(event);
     }
+    if (method === 'GET' && path === '/api/query/activity-detail') {
+      return await handleActivityDetail(event);
+    }
+    if (method === 'GET' && path === '/api/query/impact-summary') {
+      return await handleImpactSummary(event);
+    }
+    if (method === 'GET' && path === '/api/query/content-contributors') {
+      return await handleContentContributors(event);
+    }
+
+    // 受保护路由：withQuerySession 包装（内部查询工具使用，需登录）
     if (method === 'GET' && path === '/api/query/total-count') {
       return await withQuerySession(handleTotalCount)(event);
     }
     if (method === 'GET' && path === '/api/query/employee-activity-detail') {
       return await withQuerySession(handleEmployeeActivityDetail)(event);
-    }
-    if (method === 'GET' && path === '/api/query/activity-detail') {
-      return await withQuerySession(handleActivityDetail)(event);
     }
     if (method === 'POST' && path === '/api/query/export') {
       return await withQuerySession(handleExport)(event);
@@ -325,6 +337,148 @@ async function handleActivityDetail(event: APIGatewayProxyEvent): Promise<APIGat
     totalPages: result.totalPages,
     total: result.total,
   });
+}
+
+/**
+ * GET /api/query/impact-summary（公开）
+ *
+ * 解析 startDate、endDate 查询参数，返回顶部影响力汇总：
+ * RSVP 总数 / SA Impacted RSVP / Meetup 场次总数 / SA 参加场次数。
+ */
+async function handleImpactSummary(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
+  const filter = parseActivityViewFilter(event);
+  const result = await queryImpactSummary(filter, queryContext);
+
+  if (!result.success) {
+    const { code, message } = result.error!;
+    return errorResponse(code, message, errorStatusFor(code));
+  }
+
+  return jsonResponse(200, { summary: result.summary });
+}
+
+/**
+ * GET /api/query/content-contributors（公开）
+ *
+ * 查询内容贡献者排行：仅员工（isEmployee=true），按 approved 内容数量降序排列。
+ * 并列排名（同一数量的人获得相同排名）。
+ * 返回每人的内容数量和去重后的 tags 合集。
+ */
+async function handleContentContributors(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
+  const qs = event.queryStringParameters ?? {};
+  const startDate = qs.startDate ?? undefined;
+  const endDate = qs.endDate ?? undefined;
+
+  try {
+    // 1. Query ContentItems using status-createdAt-index GSI (status=approved)
+    let keyCondition = '#status = :status';
+    const exprValues: Record<string, unknown> = { ':status': 'approved' };
+    const exprNames: Record<string, string> = { '#status': 'status' };
+
+    if (startDate && endDate) {
+      keyCondition += ' AND createdAt BETWEEN :startDate AND :endDate';
+      exprValues[':startDate'] = startDate;
+      exprValues[':endDate'] = endDate;
+    } else if (startDate) {
+      keyCondition += ' AND createdAt >= :startDate';
+      exprValues[':startDate'] = startDate;
+    } else if (endDate) {
+      keyCondition += ' AND createdAt <= :endDate';
+      exprValues[':endDate'] = endDate;
+    }
+
+    // Paginate through all results
+    const allItems: Record<string, unknown>[] = [];
+    let lastKey: Record<string, unknown> | undefined;
+    do {
+      const result = await dynamoClient.send(
+        new DDBQueryCommand({
+          TableName: CONTENT_ITEMS_TABLE,
+          IndexName: 'status-createdAt-index',
+          KeyConditionExpression: keyCondition,
+          ExpressionAttributeNames: exprNames,
+          ExpressionAttributeValues: exprValues,
+          ...(lastKey && { ExclusiveStartKey: lastKey }),
+        }),
+      );
+      allItems.push(...(result.Items ?? []));
+      lastKey = result.LastEvaluatedKey;
+    } while (lastKey);
+
+    // 2. Aggregate by uploaderId: count + tags
+    const uploaderMap = new Map<string, { count: number; tags: Set<string> }>();
+    for (const item of allItems) {
+      const uploaderId = (item.uploaderId as string) ?? '';
+      if (!uploaderId) continue;
+      const existing = uploaderMap.get(uploaderId);
+      const itemTags = (item.tags as string[]) ?? [];
+      if (existing) {
+        existing.count++;
+        for (const tag of itemTags) existing.tags.add(tag);
+      } else {
+        uploaderMap.set(uploaderId, { count: 1, tags: new Set(itemTags) });
+      }
+    }
+
+    if (uploaderMap.size === 0) {
+      return jsonResponse(200, { rows: [] });
+    }
+
+    // 3. BatchGet Users to get nickname + isEmployee filter
+    const userIds = [...uploaderMap.keys()];
+    const userMap = new Map<string, { nickname: string; email: string; isEmployee: boolean }>();
+    for (let i = 0; i < userIds.length; i += 100) {
+      const chunk = userIds.slice(i, i + 100);
+      const batchResult = await dynamoClient.send(
+        new DDBBatchGetCommand({
+          RequestItems: {
+            [USERS_TABLE]: {
+              Keys: chunk.map(userId => ({ userId })),
+              ProjectionExpression: 'userId, nickname, email, isEmployee',
+            },
+          },
+        }),
+      );
+      const items = batchResult.Responses?.[USERS_TABLE] ?? [];
+      for (const u of items) {
+        userMap.set(u.userId as string, {
+          nickname: (u.nickname as string) ?? '',
+          email: (u.email as string) ?? '',
+          isEmployee: (u.isEmployee as boolean) ?? false,
+        });
+      }
+    }
+
+    // 4. Filter to employees only, build sorted list
+    const rows: { nickname: string; email: string; contentCount: number; tags: string[] }[] = [];
+    for (const [userId, data] of uploaderMap) {
+      const user = userMap.get(userId);
+      if (!user || !user.isEmployee) continue;
+      rows.push({
+        nickname: user.nickname,
+        email: user.email,
+        contentCount: data.count,
+        tags: [...data.tags].sort(),
+      });
+    }
+
+    // Sort by contentCount desc, tiebreak by nickname asc
+    rows.sort((a, b) => b.contentCount - a.contentCount || a.nickname.localeCompare(b.nickname));
+
+    // 5. Assign ranks with tie handling (same count = same rank)
+    let currentRank = 1;
+    const rankedRows = rows.map((row, idx) => {
+      if (idx > 0 && row.contentCount < rows[idx - 1].contentCount) {
+        currentRank = idx + 1;
+      }
+      return { rank: currentRank, ...row };
+    });
+
+    return jsonResponse(200, { rows: rankedRows });
+  } catch (err) {
+    console.error('handleContentContributors error:', err);
+    return errorResponse('INTERNAL_ERROR', 'Internal server error', 500);
+  }
 }
 
 /**

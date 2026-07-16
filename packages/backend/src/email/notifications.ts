@@ -49,6 +49,7 @@ const TOGGLE_MAP: Partial<Record<NotificationType, string>> = {
   uglExitReminder: 'emailUglExitReminderEnabled',
   uglExitNotification: 'emailUglExitNotificationEnabled',
   uglExitAdminNotification: 'emailUglExitNotificationEnabled',
+  uglExitDetectionCompletion: 'emailUglExitNotificationEnabled',
 };
 
 const ADMIN_ROLES = ['Admin', 'SuperAdmin', 'OrderAdmin'];
@@ -935,5 +936,109 @@ export async function sendUGLExitNotifications(
   } catch (err) {
     console.error('[Notification] Failed to send uglExitNotifications:', err);
     return { userSent, adminsSent, adminsFailed };
+  }
+}
+
+/**
+ * Send the Detection_Completion_Notification summarizing a UGL_Detection_Job
+ * run's Detection_Quarter and the count of newly recorded Awaiting_Reminder_UGL
+ * entries (including zero) to every current SuperAdmin's registered email
+ * address and every address in Additional_Notification_Recipients.
+ *
+ * Gated by the emailUglExitNotificationEnabled toggle (shared with
+ * uglExitNotification/uglExitAdminNotification — see TOGGLE_MAP), checked
+ * once up front. Recipient lookup mirrors sendUGLExitNotifications's
+ * SuperAdmin Scan shape (ProjectionExpression + #roles filter); the
+ * Additional_Notification_Recipients addresses come from
+ * getFeatureToggles(...).additionalNotificationRecipients and are not
+ * required to belong to any registered account, so they are sent to directly
+ * without going through loadUser/locale resolution — they always receive the
+ * DEFAULT_LOCALE-rendered template. Best-effort per recipient: one failure is
+ * logged and does not block delivery to any other recipient. Sent even when
+ * newlyRecordedCount === 0, per Req 6.2.
+ */
+export async function sendDetectionCompletionNotification(
+  ctx: NotificationContext,
+  detectionQuarter: string,
+  newlyRecordedCount: number,
+): Promise<{ recipientsSent: number; recipientsFailed: number }> {
+  let recipientsSent = 0;
+  let recipientsFailed = 0;
+
+  try {
+    if (!(await isEmailEnabled(ctx, 'uglExitDetectionCompletion'))) {
+      return { recipientsSent: 0, recipientsFailed: 0 };
+    }
+
+    // 1. Find all SuperAdmin recipients (Scan, mirroring sendUGLExitNotifications's admin-lookup shape).
+    const result = await ctx.dynamoClient.send(
+      new ScanCommand({
+        TableName: ctx.usersTable,
+        ProjectionExpression: 'email, nickname, locale, #roles',
+        ExpressionAttributeNames: { '#roles': 'roles' },
+      }),
+    );
+
+    const superAdmins: { email: string; locale: EmailLocale }[] = [];
+    for (const item of result.Items ?? []) {
+      const roles: string[] = Array.isArray(item.roles) ? item.roles : [];
+      if (roles.includes('SuperAdmin') && item.email) {
+        superAdmins.push({
+          email: item.email as string,
+          locale: (item.locale as EmailLocale) ?? DEFAULT_LOCALE,
+        });
+      }
+    }
+
+    // 2. Load Additional_Notification_Recipients from the feature-toggles settings record.
+    const toggles = await getFeatureToggles(ctx.dynamoClient, ctx.usersTable);
+    const additionalRecipients: string[] = Array.isArray(toggles.additionalNotificationRecipients)
+      ? toggles.additionalNotificationRecipients
+      : [];
+
+    // 3. Union of every SuperAdmin email and every additional recipient (de-duplicated).
+    const recipients = new Map<string, EmailLocale>();
+    for (const admin of superAdmins) {
+      recipients.set(admin.email, admin.locale);
+    }
+    for (const email of additionalRecipients) {
+      if (!recipients.has(email)) {
+        recipients.set(email, DEFAULT_LOCALE);
+      }
+    }
+
+    const variables: Record<string, string> = {
+      detectionQuarter,
+      newlyRecordedCount: String(newlyRecordedCount),
+    };
+
+    // 4. Send to each recipient, best-effort (one failure never blocks the others).
+    for (const [email, locale] of recipients) {
+      try {
+        const template = await loadTemplateWithFallback(ctx, 'uglExitDetectionCompletion', locale);
+        if (!template) {
+          console.error('[Notification] uglExitDetectionCompletion template not found');
+          recipientsFailed += 1;
+          continue;
+        }
+
+        const subject = replaceVariables(template.subject, variables);
+        const htmlBody = replaceVariables(template.body, variables);
+
+        await sendEmail(ctx.sesClient, { to: email, subject, htmlBody }, ctx.senderEmail);
+        recipientsSent += 1;
+      } catch (err) {
+        console.error(`[Notification] Failed to send uglExitDetectionCompletion email to ${email}:`, err);
+        recipientsFailed += 1;
+      }
+    }
+
+    console.log(
+      `[Notification] uglExitDetectionCompletion complete: recipientsSent=${recipientsSent}, recipientsFailed=${recipientsFailed}`,
+    );
+    return { recipientsSent, recipientsFailed };
+  } catch (err) {
+    console.error('[Notification] Failed to send uglExitDetectionCompletion notifications:', err);
+    return { recipientsSent, recipientsFailed };
   }
 }

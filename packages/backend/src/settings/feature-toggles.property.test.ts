@@ -68,6 +68,7 @@ function createInMemoryClient() {
           ':wfrp': 'wishFulfilledRewardPoints',
           ':pmm': 'productManagementMode',
           ':pmi': 'productManagerIds',
+          ':anr': 'additionalNotificationRecipients',
           ':ua': 'updatedAt',
           ':ub': 'updatedBy',
           ':crp': 'contentRolePermissions',
@@ -202,6 +203,7 @@ describe('Property 3: ????????��???????', () => {
               wishFulfilledRewardPoints: 50,
               productManagementMode: 'all',
               productManagerIds: [],
+              additionalNotificationRecipients: [],
               updatedBy: 'test-user',
             },
             client,
@@ -258,6 +260,7 @@ describe('Property 3: ????????��???????', () => {
               wishFulfilledRewardPoints: 50,
               productManagementMode: 'all',
               productManagerIds: [],
+              additionalNotificationRecipients: [],
               updatedBy: 'test-user',
             },
             client,
@@ -314,6 +317,7 @@ describe('Property 3: ????????��???????', () => {
               wishFulfilledRewardPoints: 50,
               productManagementMode: 'all',
               productManagerIds: [],
+              additionalNotificationRecipients: [],
               updatedBy: 'test-user',
             },
             client,
@@ -388,6 +392,7 @@ describe('Property 4: ?????????', () => {
                 wishFulfilledRewardPoints: 50,
                 productManagementMode: 'all',
                 productManagerIds: [],
+                additionalNotificationRecipients: [],
                 updatedBy: 'admin-1',
               },
               client,
@@ -435,6 +440,7 @@ describe('Property 4: ?????????', () => {
                 wishFulfilledRewardPoints: 50,
                 productManagementMode: 'all',
                 productManagerIds: [],
+                additionalNotificationRecipients: [],
                 updatedBy: 'admin-1',
               },
               client,
@@ -517,6 +523,7 @@ describe('Property 6: ??��??????Round-trip??', () => {
                 wishFulfilledRewardPoints: 50,
                 productManagementMode: 'all',
                 productManagerIds: [],
+                additionalNotificationRecipients: [],
                 updatedBy: 'admin-1',
               },
               client,
@@ -624,6 +631,7 @@ describe('Property 5: ????????????????', () => {
                 wishFulfilledRewardPoints: 50,
                 productManagementMode: 'all',
                 productManagerIds: [],
+                additionalNotificationRecipients: [],
                 updatedBy: 'admin',
               },
               client,
@@ -695,6 +703,7 @@ describe('Property 5: ????????????????', () => {
                 wishFulfilledRewardPoints: 50,
                 productManagementMode: 'all',
                 productManagerIds: [],
+                additionalNotificationRecipients: [],
                 updatedBy: 'admin',
               },
               client,
@@ -883,6 +892,7 @@ function createInMemoryClientWithUpdate(initialItem?: Record<string, unknown>) {
           ':wfrp': 'wishFulfilledRewardPoints',
           ':pmm': 'productManagementMode',
           ':pmi': 'productManagerIds',
+          ':anr': 'additionalNotificationRecipients',
           ':ua': 'updatedAt',
           ':ub': 'updatedBy',
           ':crp': 'contentRolePermissions',
@@ -1094,6 +1104,7 @@ describe('Property 2 (content-role-settings): adminContentReviewEnabled ��??
               wishFulfilledRewardPoints: 50,
               productManagementMode: 'all',
               productManagerIds: [],
+              additionalNotificationRecipients: [],
               updatedBy: 'test-user',
             },
             client,
@@ -1204,3 +1215,184 @@ describe('Property 4 (content-role-settings): contentRolePermissions ?????????',
     );
   });
 });
+
+// ============================================================================
+// Feature: ugl-inactivity-exit-flow, Property 13: Additional Notification
+// Recipients CRUD correctness and authorization
+//
+// For any arbitrary list of email strings:
+//   - well-formed lists (all entries match the email format regex) persist and
+//     read back unchanged via updateFeatureToggles -> getFeatureToggles round-trip
+//   - malformed lists (at least one entry does not match the email format regex)
+//     are rejected with INVALID_REQUEST and leave the previously stored value
+//     completely untouched
+// For any caller role set NOT containing 'SuperAdmin', the existing isSuperAdmin
+// gate in handleUpdateFeatureToggles (admin/handler.ts) rejects the call with
+// 403 FORBIDDEN without invoking updateFeatureToggles or modifying stored state.
+//
+// **Validates: Requirements 7.2, 7.3, 7.4, 7.5**
+// ============================================================================
+
+/** Base valid UpdateFeatureTogglesInput (all fields except additionalNotificationRecipients). */
+function baseUpdateInput(additionalNotificationRecipients: string[], updatedBy = 'test-user') {
+  return {
+    codeRedemptionEnabled: false,
+    pointsClaimEnabled: false,
+    adminProductsEnabled: true,
+    adminOrdersEnabled: true,
+    adminContentReviewEnabled: false,
+    adminCategoriesEnabled: false,
+    emailPointsEarnedEnabled: false,
+    emailNewOrderEnabled: false,
+    emailOrderShippedEnabled: false,
+    emailNewProductEnabled: false,
+    emailNewContentEnabled: false,
+    emailContentUpdatedEnabled: false,
+    emailWeeklyDigestEnabled: false,
+    emailWishAdoptedEnabled: true,
+    emailWishFulfilledEnabled: true,
+    emailWishRejectedEnabled: true,
+    emailUglExitReminderEnabled: true,
+    emailUglExitNotificationEnabled: true,
+    adminEmailProductsEnabled: false,
+    adminEmailContentEnabled: false,
+    reservationApprovalPoints: 10,
+    leaderboardRankingEnabled: false,
+    leaderboardAnnouncementEnabled: false,
+    leaderboardUpdateFrequency: 'weekly' as const,
+    brandLogoListEnabled: true,
+    brandLogoDetailEnabled: true,
+    employeeStoreEnabled: true,
+    employeeContentAutoApproved: false,
+    contentReviewMode: 'all' as const,
+    contentReviewerIds: [] as string[],
+    wishPoolEnabled: false,
+    wishFulfilledRewardPoints: 50,
+    productManagementMode: 'all' as const,
+    productManagerIds: [] as string[],
+    additionalNotificationRecipients,
+    updatedBy,
+  };
+}
+
+/** Arbitrary generating a single well-formed email address. */
+const wellFormedEmailArb = fc
+  .tuple(
+    fc.stringMatching(/^[a-zA-Z0-9_]{1,10}$/),
+    fc.stringMatching(/^[a-zA-Z0-9]{1,10}$/),
+    fc.constantFrom('com', 'org', 'net', 'io'),
+  )
+  .map(([local, domain, tld]) => `${local}@${domain}.${tld}`);
+
+/** Arbitrary generating a list of well-formed emails (0-6 entries). */
+const wellFormedEmailListArb = fc.array(wellFormedEmailArb, { minLength: 0, maxLength: 6 });
+
+/** Arbitrary generating a single malformed "email" string (fails EMAIL_FORMAT_REGEX). */
+const malformedEmailArb = fc
+  .oneof(
+    fc.constant(''),
+    fc.constant('no-at-sign'),
+    fc.constant('missing-domain@'),
+    fc.constant('@missing-local.com'),
+    fc.constant('no-dot@domain'),
+    fc.stringMatching(/^[a-zA-Z0-9 ]{1,10}$/).filter((s) => !s.includes('@')),
+  )
+  .filter((s) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s));
+
+/** Arbitrary generating a list with well-formed emails plus at least one malformed entry, in a random position. */
+const listWithMalformedEntryArb = fc
+  .tuple(wellFormedEmailListArb, malformedEmailArb, fc.nat())
+  .map(([wellFormed, malformed, insertAtRaw]) => {
+    const insertAt = wellFormed.length === 0 ? 0 : insertAtRaw % (wellFormed.length + 1);
+    const result = [...wellFormed];
+    result.splice(insertAt, 0, malformed);
+    return result;
+  });
+
+describe('Property 13: Additional Notification Recipients CRUD correctness and authorization', () => {
+  it(
+    'well-formed email lists persist and read back unchanged (round-trip)',
+    async () => {
+      await fc.assert(
+        fc.asyncProperty(wellFormedEmailListArb, async (emails) => {
+          const client = createInMemoryClientWithUpdate();
+
+          const writeResult = await updateFeatureToggles(baseUpdateInput(emails), client, TABLE);
+          expect(writeResult.success).toBe(true);
+          expect(writeResult.settings?.additionalNotificationRecipients).toEqual(emails);
+
+          const readResult = await getFeatureToggles(client, TABLE);
+          expect(readResult.additionalNotificationRecipients).toEqual(emails);
+        }),
+        { numRuns: 100 },
+      );
+    },
+  );
+
+  it(
+    'malformed email lists are rejected with INVALID_REQUEST and leave the prior value untouched',
+    async () => {
+      await fc.assert(
+        fc.asyncProperty(
+          wellFormedEmailListArb,
+          listWithMalformedEntryArb,
+          async (priorEmails, malformedList) => {
+            const client = createInMemoryClientWithUpdate();
+
+            // Seed a prior, valid value first
+            const seedResult = await updateFeatureToggles(baseUpdateInput(priorEmails), client, TABLE);
+            expect(seedResult.success).toBe(true);
+
+            // Attempt to update with a malformed list
+            const updateResult = await updateFeatureToggles(
+              baseUpdateInput(malformedList, 'another-user'),
+              client,
+              TABLE,
+            );
+
+            expect(updateResult.success).toBe(false);
+            expect(updateResult.error?.code).toBe('INVALID_REQUEST');
+
+            // The prior value must be left completely untouched
+            const readResult = await getFeatureToggles(client, TABLE);
+            expect(readResult.additionalNotificationRecipients).toEqual(priorEmails);
+          },
+        ),
+        { numRuns: 100 },
+      );
+    },
+  );
+
+  it(
+    'a single malformed entry rejects the whole update, regardless of position',
+    async () => {
+      await fc.assert(
+        fc.asyncProperty(malformedEmailArb, async (malformedEmail) => {
+          const client = createInMemoryClientWithUpdate();
+
+          const result = await updateFeatureToggles(
+            baseUpdateInput([malformedEmail]),
+            client,
+            TABLE,
+          );
+
+          expect(result.success).toBe(false);
+          expect(result.error?.code).toBe('INVALID_REQUEST');
+        }),
+        { numRuns: 100 },
+      );
+    },
+  );
+});
+
+// Note: the authorization-gate portion of Property 13 (non-SuperAdmin callers
+// rejected with 403 FORBIDDEN via the isSuperAdmin gate in
+// handleUpdateFeatureToggles, admin/handler.ts) requires importing and
+// exercising the real Lambda handler with its full dependency mock set. That
+// requires mocking '@aws-sdk/lib-dynamodb', which would break the
+// command.constructor.name-based dispatch used by the in-memory DynamoDB
+// mocks in this file's other property tests. Following this codebase's
+// established convention (see admin/email-permission.property.test.ts and
+// admin/ugl-exit-routes.property.test.ts for other 403 FORBIDDEN gate
+// properties), that portion is covered in
+// admin/feature-toggles-recipients-auth.property.test.ts instead.

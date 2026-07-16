@@ -30,7 +30,8 @@ export interface PointsDetailRecord {
   userId: string;
   nickname: string;
   amount: number;
-  type: 'earn' | 'spend';
+  // 'adjust' 为 batch-points-adjust.ts 写入的带符号修正记录（积分调整/发放删除/技能指派/技能释放）
+  type: 'earn' | 'spend' | 'adjust';
   source: string;
   activityUG: string;
   activityTopic: string;
@@ -135,7 +136,8 @@ export interface ActivitySummaryResult {
 export interface RawPointsRecord {
   recordId: string;
   userId: string;
-  type: 'earn' | 'spend';
+  // 'adjust' 为 batch-points-adjust.ts 写入的带符号修正记录，与 earn 合并按 amount 求和
+  type: 'earn' | 'spend' | 'adjust';
   amount: number;
   source: string;
   balanceAfter: number;
@@ -400,7 +402,7 @@ export function aggregateByActivity(records: RawPointsRecord[]): ActivitySummary
 async function queryByTypeAndDateRange(
   dynamoClient: DynamoDBDocumentClient,
   tableName: string,
-  type: 'earn' | 'spend',
+  type: 'earn' | 'spend' | 'adjust',
   startDate: string,
   endDate: string,
   filterExpressions?: string[],
@@ -638,103 +640,116 @@ export async function queryPointsDetail(
     let allRecords: Record<string, unknown>[] = [];
     let nextLastKey: Record<string, unknown> | undefined;
 
-    if (type === 'all') {
-      // For type=all, decode separate cursors for earn and spend
-      let earnStartKey: Record<string, unknown> | undefined;
-      let spendStartKey: Record<string, unknown> | undefined;
-      if (exclusiveStartKey) {
-        earnStartKey = (exclusiveStartKey as any).earnKey;
-        spendStartKey = (exclusiveStartKey as any).spendKey;
+    // 三条数据流：earn / spend / adjust。
+    // - earn、adjust 均带 activityDate，用放宽的 createdAt 范围 + activityDate 精筛；
+    // - spend（兑换）无 activityDate，按 createdAt 过滤，且不含 adjust。
+    // type filter 语义：
+    //   'all'   → earn + spend + adjust
+    //   'earn'  → earn + adjust（adjust 是对 earn 发放的修正，必须一并展示）
+    //   'spend' → 仅 spend
+    // 参考 leaderboard/announcements.ts 的 earn/adjust 双流合并 + 每类型游标写法，
+    // 这里扩展为三流 { earnKey, spendKey, adjustKey }。
+    const includeEarn = type === 'all' || type === 'earn';
+    const includeSpend = type === 'all' || type === 'spend';
+    const includeAdjust = type === 'all' || type === 'earn';
+
+    const namesArg = Object.keys(expressionAttributeNames).length > 0 ? expressionAttributeNames : undefined;
+
+    // Decode per-type cursors. New cursor shape: { earnKey, spendKey, adjustKey }
+    // (each undefined | null | DynamoDB key). Backward compatible with the old
+    // { earnKey, spendKey } shape (missing adjustKey → undefined → adjust starts fresh)
+    // and with a legacy flat single-type cursor.
+    let earnStartKey: Record<string, unknown> | null | undefined;
+    let spendStartKey: Record<string, unknown> | null | undefined;
+    let adjustStartKey: Record<string, unknown> | null | undefined;
+    if (exclusiveStartKey) {
+      const ck = exclusiveStartKey as any;
+      if ('earnKey' in ck || 'spendKey' in ck || 'adjustKey' in ck) {
+        earnStartKey = ck.earnKey;
+        spendStartKey = ck.spendKey;
+        adjustStartKey = ck.adjustKey;
+      } else if (type === 'spend') {
+        // Legacy flat cursor for a spend-only query resumes the spend stream.
+        spendStartKey = ck;
+      } else {
+        // Legacy flat cursor otherwise resumes the earn stream (adjust starts fresh).
+        earnStartKey = ck;
       }
+    }
 
-      // Query earn and spend separately, merge and sort
-      const [earnResult, spendResult] = await Promise.all([
-        earnStartKey !== null ? queryByTypeAndDateRange(
-          dynamoClient, tables.pointsRecordsTable, 'earn', earnWidenedStart, earnWidenedEnd,
-          earnFilterExpressions,
-          earnExpressionAttributeValues,
-          Object.keys(expressionAttributeNames).length > 0 ? expressionAttributeNames : undefined,
-          { limit: pageSize, exclusiveStartKey: earnStartKey },
-        ) : Promise.resolve({ items: [] as Record<string, unknown>[], lastEvaluatedKey: undefined }),
-        spendStartKey !== null ? queryByTypeAndDateRange(
-          dynamoClient, tables.pointsRecordsTable, 'spend', startDate, endDate,
-          filterExpressions.length > 0 ? filterExpressions : undefined,
-          Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
-          Object.keys(expressionAttributeNames).length > 0 ? expressionAttributeNames : undefined,
-          { limit: pageSize, exclusiveStartKey: spendStartKey },
-        ) : Promise.resolve({ items: [] as Record<string, unknown>[], lastEvaluatedKey: undefined }),
-      ]);
+    const emptyStream = { items: [] as Record<string, unknown>[], lastEvaluatedKey: undefined };
 
-      // Merge and sort by createdAt desc
-      const merged = [...earnResult.items, ...spendResult.items]
-        .sort((a, b) => {
-          const aDate = a.createdAt as string;
-          const bDate = b.createdAt as string;
-          return bDate.localeCompare(aDate);
-        });
-      allRecords = merged.slice(0, pageSize);
-
-      // Build separate cursors for earn and spend based on which records were consumed
-      const hasMore = merged.length > pageSize || earnResult.lastEvaluatedKey || spendResult.lastEvaluatedKey;
-      if (allRecords.length === pageSize && hasMore) {
-        // Find the last consumed earn and spend records to build per-type cursors
-        const consumedEarn = allRecords.filter(r => r.type === 'earn');
-        const consumedSpend = allRecords.filter(r => r.type === 'spend');
-
-        // For earn: if we consumed all fetched earn items and there's more, use DynamoDB's key;
-        // otherwise use the last consumed earn record as cursor
-        let nextEarnKey: Record<string, unknown> | null | undefined;
-        if (consumedEarn.length < earnResult.items.length) {
-          // Not all earn items were consumed — use the last consumed earn record as cursor
-          const lastEarn = consumedEarn[consumedEarn.length - 1];
-          if (lastEarn) {
-            nextEarnKey = { type: 'earn', createdAt: lastEarn.createdAt as string, recordId: lastEarn.recordId as string };
-          }
-        } else if (earnResult.lastEvaluatedKey) {
-          nextEarnKey = earnResult.lastEvaluatedKey;
-        } else if (consumedEarn.length > 0) {
-          // All earn items consumed and no more pages — mark earn as exhausted
-          nextEarnKey = null;
-        }
-
-        let nextSpendKey: Record<string, unknown> | null | undefined;
-        if (consumedSpend.length < spendResult.items.length) {
-          const lastSpend = consumedSpend[consumedSpend.length - 1];
-          if (lastSpend) {
-            nextSpendKey = { type: 'spend', createdAt: lastSpend.createdAt as string, recordId: lastSpend.recordId as string };
-          }
-        } else if (spendResult.lastEvaluatedKey) {
-          nextSpendKey = spendResult.lastEvaluatedKey;
-        } else if (consumedSpend.length > 0) {
-          nextSpendKey = null;
-        }
-
-        // Only set nextLastKey if at least one type has more data
-        if (nextEarnKey !== undefined || nextSpendKey !== undefined) {
-          nextLastKey = {
-            earnKey: nextEarnKey ?? null,
-            spendKey: nextSpendKey ?? null,
-          };
-        }
-      }
-    } else {
-      // Query single type. earn 用放宽范围 + activityDate 精筛；spend 用 createdAt。
-      const isEarn = type === 'earn';
-      const result = await queryByTypeAndDateRange(
-        dynamoClient, tables.pointsRecordsTable, type,
-        isEarn ? earnWidenedStart : startDate,
-        isEarn ? earnWidenedEnd : endDate,
-        isEarn
-          ? earnFilterExpressions
-          : (filterExpressions.length > 0 ? filterExpressions : undefined),
-        isEarn
-          ? earnExpressionAttributeValues
-          : (Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined),
-        Object.keys(expressionAttributeNames).length > 0 ? expressionAttributeNames : undefined,
-        { limit: pageSize, exclusiveStartKey },
+    // Query one earn/adjust stream (widened range + activityDate 精筛).
+    const queryActivityStream = (
+      t: 'earn' | 'adjust',
+      startKey: Record<string, unknown> | null | undefined,
+    ) => {
+      if (startKey === null) return Promise.resolve(emptyStream);
+      return queryByTypeAndDateRange(
+        dynamoClient, tables.pointsRecordsTable, t, earnWidenedStart, earnWidenedEnd,
+        earnFilterExpressions, earnExpressionAttributeValues, namesArg,
+        { limit: pageSize, exclusiveStartKey: startKey ?? undefined },
       );
-      allRecords = result.items;
-      nextLastKey = result.lastEvaluatedKey;
+    };
+    // Query the spend stream (createdAt range, no activityDate filter).
+    const querySpendStream = (startKey: Record<string, unknown> | null | undefined) => {
+      if (startKey === null) return Promise.resolve(emptyStream);
+      return queryByTypeAndDateRange(
+        dynamoClient, tables.pointsRecordsTable, 'spend', startDate, endDate,
+        filterExpressions.length > 0 ? filterExpressions : undefined,
+        Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
+        namesArg,
+        { limit: pageSize, exclusiveStartKey: startKey ?? undefined },
+      );
+    };
+
+    const [earnResult, spendResult, adjustResult] = await Promise.all([
+      includeEarn ? queryActivityStream('earn', earnStartKey) : Promise.resolve(emptyStream),
+      includeSpend ? querySpendStream(spendStartKey) : Promise.resolve(emptyStream),
+      includeAdjust ? queryActivityStream('adjust', adjustStartKey) : Promise.resolve(emptyStream),
+    ]);
+
+    // Merge and sort by createdAt desc
+    const merged = [...earnResult.items, ...spendResult.items, ...adjustResult.items]
+      .sort((a, b) => (b.createdAt as string).localeCompare(a.createdAt as string));
+    allRecords = merged.slice(0, pageSize);
+
+    // Build per-type cursors based on which records were consumed
+    const hasMore = merged.length > pageSize
+      || !!earnResult.lastEvaluatedKey || !!spendResult.lastEvaluatedKey || !!adjustResult.lastEvaluatedKey;
+    if (allRecords.length === pageSize && hasMore) {
+      const buildNextKey = (
+        t: 'earn' | 'spend' | 'adjust',
+        streamResult: { items: Record<string, unknown>[]; lastEvaluatedKey?: Record<string, unknown> },
+      ): Record<string, unknown> | null | undefined => {
+        const consumed = allRecords.filter(r => r.type === t);
+        if (consumed.length < streamResult.items.length) {
+          // Not all fetched items of this type were consumed — resume from the last consumed one
+          const last = consumed[consumed.length - 1];
+          if (last) {
+            return { type: t, createdAt: last.createdAt as string, recordId: last.recordId as string };
+          }
+          return undefined;
+        } else if (streamResult.lastEvaluatedKey) {
+          return streamResult.lastEvaluatedKey;
+        } else if (consumed.length > 0) {
+          // All fetched items consumed and DynamoDB reports no more — exhausted
+          return null;
+        }
+        return undefined;
+      };
+
+      const nextEarnKey = includeEarn ? buildNextKey('earn', earnResult) : undefined;
+      const nextSpendKey = includeSpend ? buildNextKey('spend', spendResult) : undefined;
+      const nextAdjustKey = includeAdjust ? buildNextKey('adjust', adjustResult) : undefined;
+
+      if (nextEarnKey !== undefined || nextSpendKey !== undefined || nextAdjustKey !== undefined) {
+        const cursor: Record<string, unknown> = {};
+        if (includeEarn) cursor.earnKey = nextEarnKey ?? null;
+        if (includeSpend) cursor.spendKey = nextSpendKey ?? null;
+        if (includeAdjust) cursor.adjustKey = nextAdjustKey ?? null;
+        nextLastKey = cursor;
+      }
     }
 
     // BatchGet user details (nickname + isEmployee)
@@ -758,7 +773,7 @@ export async function queryPointsDetail(
         userId: (r.userId as string) ?? '',
         nickname: userInfo?.nickname ?? '',
         amount: (r.amount as number) ?? 0,
-        type: (r.type as 'earn' | 'spend') ?? 'earn',
+        type: (r.type as 'earn' | 'spend' | 'adjust') ?? 'earn',
         source: (r.source as string) ?? '',
         activityUG: (r.activityUG as string) ?? '',
         activityTopic: (r.activityTopic as string) ?? '',
@@ -799,10 +814,14 @@ export async function queryUGActivitySummary(
     const widenedStart = new Date(new Date(startDate).getTime() - 60 * 24 * 60 * 60 * 1000).toISOString();
     const widenedEnd = new Date(new Date(endDate).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    // Query earn records with widened createdAt range
-    const { items } = await queryByTypeAndDateRange(
-      dynamoClient, tables.pointsRecordsTable, 'earn', widenedStart, widenedEnd,
-    );
+    // Query earn + adjust records with widened createdAt range and merge.
+    // adjust 记录（batch-points-adjust.ts 写入）带符号 amount，与 earn 合并后 aggregateByUG
+    // 会按 amount 求和，自然把发错下调的分数减掉，使报表总额与用户余额一致。
+    const [earnResult, adjustResult] = await Promise.all([
+      queryByTypeAndDateRange(dynamoClient, tables.pointsRecordsTable, 'earn', widenedStart, widenedEnd),
+      queryByTypeAndDateRange(dynamoClient, tables.pointsRecordsTable, 'adjust', widenedStart, widenedEnd),
+    ]);
+    const items = [...earnResult.items, ...adjustResult.items];
 
     // Filter by activityDate within the user-specified date range.
     // activityDate is YYYY-MM-DD format; startDate/endDate may be YYYY-MM-DD or ISO.
@@ -855,11 +874,16 @@ export async function queryUserPointsRanking(
     // but points were distributed earlier/later, then精筛 by activityDate.
     const widenedStart = new Date(new Date(startDate).getTime() - 60 * 24 * 60 * 60 * 1000).toISOString();
     const widenedEnd = new Date(new Date(endDate).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    const { items } = await queryByTypeAndDateRange(
-      dynamoClient, tables.pointsRecordsTable, 'earn', widenedStart, widenedEnd,
-      filterExpressions.length > 0 ? filterExpressions : undefined,
-      Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
-    );
+    // Query earn + adjust records (same widened range + targetRole filter) and merge.
+    // adjust 记录带符号 amount，与 earn 合并后 aggregateByUser 按 amount 求和，
+    // 使排行总额与用户实际余额一致（发错下调的分数会被自然减掉）。
+    const filterExprArg = filterExpressions.length > 0 ? filterExpressions : undefined;
+    const filterValuesArg = Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined;
+    const [earnResult, adjustResult] = await Promise.all([
+      queryByTypeAndDateRange(dynamoClient, tables.pointsRecordsTable, 'earn', widenedStart, widenedEnd, filterExprArg, filterValuesArg),
+      queryByTypeAndDateRange(dynamoClient, tables.pointsRecordsTable, 'adjust', widenedStart, widenedEnd, filterExprArg, filterValuesArg),
+    ]);
+    const items = [...earnResult.items, ...adjustResult.items];
 
     // Filter by activityDate (活动发生日期) within the user-specified range.
     const adStart = startDate.substring(0, 10);
@@ -946,11 +970,16 @@ export async function queryActivityPointsSummary(
     // Widen createdAt range, then精筛 by activityDate (活动发生日期).
     const widenedStart = new Date(new Date(startDate).getTime() - 60 * 24 * 60 * 60 * 1000).toISOString();
     const widenedEnd = new Date(new Date(endDate).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    const { items } = await queryByTypeAndDateRange(
-      dynamoClient, tables.pointsRecordsTable, 'earn', widenedStart, widenedEnd,
-      filterExpressions.length > 0 ? filterExpressions : undefined,
-      Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined,
-    );
+    // Query earn + adjust records (same widened range + ugName filter) and merge.
+    // adjust 记录带符号 amount，与 earn 合并后 aggregateByActivity 按 amount 求和，
+    // 使活动积分总额反映后续的调整/删除修正。
+    const filterExprArg = filterExpressions.length > 0 ? filterExpressions : undefined;
+    const filterValuesArg = Object.keys(expressionAttributeValues).length > 0 ? expressionAttributeValues : undefined;
+    const [earnResult, adjustResult] = await Promise.all([
+      queryByTypeAndDateRange(dynamoClient, tables.pointsRecordsTable, 'earn', widenedStart, widenedEnd, filterExprArg, filterValuesArg),
+      queryByTypeAndDateRange(dynamoClient, tables.pointsRecordsTable, 'adjust', widenedStart, widenedEnd, filterExprArg, filterValuesArg),
+    ]);
+    const items = [...earnResult.items, ...adjustResult.items];
 
     // Filter by activityDate within the user-specified range.
     const adStart = startDate.substring(0, 10);

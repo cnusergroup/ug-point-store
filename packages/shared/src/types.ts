@@ -842,6 +842,12 @@ export interface LeaderboardAnnouncementItem {
   activityTopic?: string;
   activityType?: string;
   distributorNickname?: string;
+  /** 角色变更调整：原角色（Original_Role），可解析时提供 */
+  originalRole?: string;
+  /** 角色变更调整：原角色积分（Original_Points），可解析时提供 */
+  originalPoints?: number;
+  /** 角色变更调整：新角色积分（New_Points），可解析时提供 */
+  newPoints?: number;
 }
 
 // ============================================================

@@ -225,7 +225,11 @@ export default function BatchPointsPage() {
       if (append && cursor) url += `&lastKey=${encodeURIComponent(cursor)}`;
       const res = await request<{ activities: ActivityItem[]; lastKey?: string }>({ url });
       if (append) {
-        setActivities((prev) => [...prev, ...(res.activities || [])]);
+        setActivities((prev) => {
+          const existingIds = new Set(prev.map(a => a.activityId));
+          const newItems = (res.activities || []).filter(a => !existingIds.has(a.activityId));
+          return [...prev, ...newItems];
+        });
       } else {
         setActivities(res.activities || []);
       }
@@ -316,9 +320,16 @@ export default function BatchPointsPage() {
     }
   }, [isAuthenticated, selectedActivity, fetchExistingSkillClaims]);
 
-  // Filter activities: only active UG + client-side search
+  // Filter activities: only active UG + client-side search + dedup by activityId
   const filteredActivities = useMemo(() => {
-    let result = activities.filter((a) => activeUGNames.has(a.ugName));
+    // Deduplicate by activityId first (guard against pagination boundary duplication)
+    const seen = new Set<string>();
+    const deduped = activities.filter((a) => {
+      if (seen.has(a.activityId)) return false;
+      seen.add(a.activityId);
+      return true;
+    });
+    let result = deduped.filter((a) => activeUGNames.has(a.ugName));
     if (activitySearch.trim()) {
       const q = activitySearch.trim().toLowerCase();
       result = result.filter(

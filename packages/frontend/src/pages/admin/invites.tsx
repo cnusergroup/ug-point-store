@@ -106,17 +106,24 @@ export default function AdminInvitesPage() {
     setStatusFilter(tab);
   };
 
+  // 当所选角色不再全部属于 Speaker/Volunteer 时，自动取消「AWS员工」勾选
+  useEffect(() => {
+    if (formIsEmployee && !(formRoles.length >= 1 && formRoles.every((r) => r === 'Speaker' || r === 'Volunteer'))) {
+      setFormIsEmployee(false);
+    }
+  }, [formRoles, formIsEmployee]);
+
   const isSuperAdmin = userRoles.includes('SuperAdmin');
   const roleOptions = [
     ...ROLE_OPTIONS,
     ...(isSuperAdmin ? [{ value: 'OrderAdmin', label: t('roles.orderAdmin'), className: 'role-badge--order-admin' }] : []),
   ];
 
+  /** 是否可勾选「AWS员工」：所选角色全部属于 Speaker / Volunteer（可同时选中两者） */
+  const canSelectEmployee = (roles: string[]): boolean =>
+    roles.length >= 1 && roles.every((r) => r === 'Speaker' || r === 'Volunteer');
+
   const toggleRole = (role: string) => {
-    // In employee mode, roles are locked to Speaker only
-    if (formIsEmployee) {
-      return;
-    }
     if (EXCLUSIVE_ROLES.includes(role as any)) {
       // Selecting an exclusive role: clear all others, toggle this one
       setFormRoles((prev) => prev.includes(role) ? [] : [role]);
@@ -260,7 +267,7 @@ export default function AdminInvitesPage() {
                   {roleOptions.map((opt) => (
                     <View
                       key={opt.value}
-                      className={`invite-role-select__item ${formRoles.includes(opt.value) ? 'invite-role-select__item--active' : ''} ${formIsEmployee ? 'invite-role-select__item--disabled' : ''}`}
+                      className={`invite-role-select__item ${formRoles.includes(opt.value) ? 'invite-role-select__item--active' : ''}`}
                       onClick={() => toggleRole(opt.value)}
                     >
                       <Text className={`role-badge ${opt.className}`}>{opt.label}</Text>
@@ -279,24 +286,21 @@ export default function AdminInvitesPage() {
                 />
               </View>
               <View className='form-field form-field--toggle'>
-                <Text className='form-field__label'>是否AWS员工</Text>
+                <Text className='form-field__label'>AWS 员工标识</Text>
                 <Switch
                   checked={formIsEmployee}
-                  onChange={(e) => {
-                    const checked = e.detail.value;
-                    setFormIsEmployee(checked);
-                    if (checked) {
-                      setFormRoles(['Speaker']);
-                    }
-                  }}
+                  disabled={!canSelectEmployee(formRoles)}
+                  onChange={(e) => setFormIsEmployee(e.detail.value)}
                   color='var(--accent-primary)'
                 />
               </View>
-              {formIsEmployee && (
-                <View className='form-field__hint'>
-                  <Text>AWS员工仅限 Speaker 身份</Text>
-                </View>
-              )}
+              <View className='form-field__hint'>
+                <Text>
+                  {canSelectEmployee(formRoles)
+                    ? '勾选代表是员工'
+                    : '仅选择 Speaker / Volunteer 角色时，可勾选员工标识'}
+                </Text>
+              </View>
             </View>
 
             {/* New invites result list */}
