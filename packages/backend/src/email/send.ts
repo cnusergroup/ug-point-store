@@ -47,10 +47,14 @@ export interface BulkSendResult {
 // ============================================================
 
 const DEFAULT_SENDER = 'store@awscommunity.cn';
-// SES counts To + Cc + Bcc together against its 50-destination-per-message limit.
-// sendBulkEmail puts the sender in ToAddresses, which consumes one slot, so only
-// 49 BCC recipients fit per message. Using 50 here made every full batch total 51
-// destinations and fail with "Recipient count exceeds 50."
+/**
+ * Max BCC recipients per message.
+ *
+ * SES counts To + Cc + Bcc together against its 50-destination-per-message limit.
+ * sendBulkEmail puts the sender in ToAddresses, which consumes one slot, so only
+ * 49 BCC recipients fit per message. Using 50 here made every full batch total 51
+ * destinations and fail with "Recipient count exceeds 50."
+ */
 const MAX_BCC_RECIPIENTS = 49;
 const INTER_BATCH_DELAY_MS = 100;
 

@@ -175,8 +175,10 @@ export async function handler(_event: unknown): Promise<void> {
           const err = result.errors.find((e) => e.batchIndex === i);
           console.error(`[Digest] Batch ${i + 1}/${totalBatches} failed: ${err?.error}`);
         } else {
-          const batchSize = Math.min(50, recipients.length - i * 50);
-          console.log(`[Digest] Batch ${i + 1}/${totalBatches} sent (${batchSize} recipients, locale: ${locale})`);
+          // sendBulkEmail already logs the exact recipient count per batch; only the
+          // locale is added here. Deriving the count again from a hard-coded batch
+          // size produced numbers that contradicted the [BulkEmail] lines.
+          console.log(`[Digest] Batch ${i + 1}/${totalBatches} sent (locale: ${locale})`);
         }
       }
 
