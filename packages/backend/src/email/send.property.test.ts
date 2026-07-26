@@ -186,9 +186,13 @@ describe('Property 3: Bulk send batch splitting correctness', () => {
    * **Validates: Requirements 5.5, 5.6, 13.1, 13.2**
    *
    * For any recipient list of size N (where N ≥ 1), `sendBulkEmail` SHALL split
-   * recipients into `Math.ceil(N / 50)` batches, each batch containing at most
-   * 50 recipients, and the total number of recipients across all batches SHALL
-   * equal N.
+   * recipients into `Math.ceil(N / 49)` batches, each batch containing at most
+   * 49 BCC recipients, and the total number of recipients across all batches
+   * SHALL equal N.
+   *
+   * The per-batch cap is 49 rather than 50 because the sender occupies one
+   * ToAddresses slot and SES counts To + Cc + Bcc against a single 50-destination
+   * limit per message.
    */
 
   beforeEach(() => {
@@ -208,20 +212,35 @@ describe('Property 3: Bulk send batch splitting correctness', () => {
       ),
     );
 
-  it('should split recipients into correct number of batches with at most 50 per batch', async () => {
+  it('should split recipients into correct number of batches with at most 49 per batch', async () => {
     await fc.assert(
       fc.asyncProperty(recipientListArb, async (recipients) => {
         const N = recipients.length;
-        const expectedBatches = Math.ceil(N / 50);
+        const expectedBatches = Math.ceil(N / 49);
 
-        // Track all BCC batches sent through the mock SES client
+        // Track all BCC batches and total destination counts per message
         const capturedBatches: string[][] = [];
+        const capturedDestinationTotals: number[] = [];
 
         const mockSesClient = {
           send: vi.fn().mockImplementation(async (command: unknown) => {
-            const cmd = command as { input: { Destination: { BccAddresses?: string[] } } };
-            const bcc = cmd.input.Destination.BccAddresses ?? [];
+            const cmd = command as {
+              input: {
+                Destination: {
+                  ToAddresses?: string[];
+                  CcAddresses?: string[];
+                  BccAddresses?: string[];
+                };
+              };
+            };
+            const dest = cmd.input.Destination;
+            const bcc = dest.BccAddresses ?? [];
             capturedBatches.push([...bcc]);
+            capturedDestinationTotals.push(
+              (dest.ToAddresses?.length ?? 0) +
+                (dest.CcAddresses?.length ?? 0) +
+                bcc.length,
+            );
             return {};
           }),
         };
@@ -240,14 +259,19 @@ describe('Property 3: Bulk send batch splitting correctness', () => {
         await vi.runAllTimersAsync();
         const result = await resultPromise;
 
-        // 1. Total batches should equal Math.ceil(N / 50)
+        // 1. Total batches should equal Math.ceil(N / 49)
         expect(result.totalBatches).toBe(expectedBatches);
         expect(capturedBatches.length).toBe(expectedBatches);
 
-        // 2. Each batch should contain at most 50 recipients
+        // 2. Each batch should contain at most 49 BCC recipients
         for (const batch of capturedBatches) {
-          expect(batch.length).toBeLessThanOrEqual(50);
+          expect(batch.length).toBeLessThanOrEqual(49);
           expect(batch.length).toBeGreaterThan(0);
+        }
+
+        // 2b. Total destinations per message must never exceed the SES limit of 50
+        for (const total of capturedDestinationTotals) {
+          expect(total).toBeLessThanOrEqual(50);
         }
 
         // 3. Total recipients across all batches should equal N
@@ -290,7 +314,7 @@ describe('Property 7: Bulk send resilience and summary accuracy', () => {
   const bulkSendWithFailuresArb = fc
     .integer({ min: 1, max: 300 })
     .chain((recipientCount) => {
-      const totalBatches = Math.ceil(recipientCount / 50);
+      const totalBatches = Math.ceil(recipientCount / 49);
       const recipients = Array.from(
         { length: recipientCount },
         (_, i) => `user${i}@example.com`,
@@ -310,7 +334,7 @@ describe('Property 7: Bulk send resilience and summary accuracy', () => {
   it('should attempt all batches even when some fail, and successCount + failureCount === totalBatches', async () => {
     await fc.assert(
       fc.asyncProperty(bulkSendWithFailuresArb, async ([recipients, failIndices]) => {
-        const totalBatches = Math.ceil(recipients.length / 50);
+        const totalBatches = Math.ceil(recipients.length / 49);
         let batchCallCount = 0;
 
         const mockSesClient = {

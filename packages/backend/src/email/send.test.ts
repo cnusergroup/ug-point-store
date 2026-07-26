@@ -80,7 +80,7 @@ describe('sendBulkEmail', () => {
     vi.useFakeTimers();
   });
 
-  it('should send a single batch for <= 50 recipients', async () => {
+  it('should send a single batch for <= 49 recipients', async () => {
     const ses = createMockSESClient();
     const input: SendBulkEmailInput = {
       recipients: makeRecipients(10),
@@ -102,7 +102,7 @@ describe('sendBulkEmail', () => {
     expect(command.input.Destination.BccAddresses).toHaveLength(10);
   });
 
-  it('should split into multiple batches for > 50 recipients', async () => {
+  it('should split into multiple batches for > 49 recipients', async () => {
     const ses = createMockSESClient();
     const input: SendBulkEmailInput = {
       recipients: makeRecipients(120),
@@ -114,21 +114,46 @@ describe('sendBulkEmail', () => {
     await vi.runAllTimersAsync();
     const result = await resultPromise;
 
-    expect(result.totalBatches).toBe(3); // ceil(120/50) = 3
+    expect(result.totalBatches).toBe(3); // ceil(120/49) = 3
     expect(result.successCount).toBe(3);
     expect(result.failureCount).toBe(0);
     expect(ses.send).toHaveBeenCalledTimes(3);
 
     // Verify batch sizes
-    expect(ses.send.mock.calls[0][0].input.Destination.BccAddresses).toHaveLength(50);
-    expect(ses.send.mock.calls[1][0].input.Destination.BccAddresses).toHaveLength(50);
-    expect(ses.send.mock.calls[2][0].input.Destination.BccAddresses).toHaveLength(20);
+    expect(ses.send.mock.calls[0][0].input.Destination.BccAddresses).toHaveLength(49);
+    expect(ses.send.mock.calls[1][0].input.Destination.BccAddresses).toHaveLength(49);
+    expect(ses.send.mock.calls[2][0].input.Destination.BccAddresses).toHaveLength(22);
   });
 
-  it('should handle exactly 50 recipients as a single batch', async () => {
+  it('should keep total destinations (To + Bcc) within the SES limit of 50', async () => {
+    // Regression guard: the sender occupies one ToAddresses slot, so a 50-address
+    // BCC batch produced 51 destinations and SES rejected it with
+    // "Recipient count exceeds 50." Every batch must stay at or under 50 total.
     const ses = createMockSESClient();
     const input: SendBulkEmailInput = {
-      recipients: makeRecipients(50),
+      recipients: makeRecipients(145),
+      subject: 'Bulk Test',
+      htmlBody: '<p>Bulk</p>',
+    };
+
+    const resultPromise = sendBulkEmail(ses, input);
+    await vi.runAllTimersAsync();
+    await resultPromise;
+
+    for (const call of ses.send.mock.calls) {
+      const dest = call[0].input.Destination;
+      const total =
+        (dest.ToAddresses?.length ?? 0) +
+        (dest.CcAddresses?.length ?? 0) +
+        (dest.BccAddresses?.length ?? 0);
+      expect(total).toBeLessThanOrEqual(50);
+    }
+  });
+
+  it('should handle exactly 49 recipients as a single batch', async () => {
+    const ses = createMockSESClient();
+    const input: SendBulkEmailInput = {
+      recipients: makeRecipients(49),
       subject: 'Bulk Test',
       htmlBody: '<p>Bulk</p>',
     };
@@ -145,7 +170,7 @@ describe('sendBulkEmail', () => {
   it('should continue processing after a batch failure', async () => {
     const ses = createMockSESClient({ failOnBatch: [1] });
     const input: SendBulkEmailInput = {
-      recipients: makeRecipients(150),
+      recipients: makeRecipients(147),
       subject: 'Bulk Test',
       htmlBody: '<p>Bulk</p>',
     };
@@ -154,7 +179,7 @@ describe('sendBulkEmail', () => {
     await vi.runAllTimersAsync();
     const result = await resultPromise;
 
-    expect(result.totalBatches).toBe(3);
+    expect(result.totalBatches).toBe(3); // ceil(147/49) = 3
     expect(result.successCount).toBe(2);
     expect(result.failureCount).toBe(1);
     expect(result.errors).toHaveLength(1);
@@ -167,7 +192,7 @@ describe('sendBulkEmail', () => {
   it('should satisfy successCount + failureCount === totalBatches', async () => {
     const ses = createMockSESClient({ failOnBatch: [0, 2] });
     const input: SendBulkEmailInput = {
-      recipients: makeRecipients(150),
+      recipients: makeRecipients(147),
       subject: 'Bulk Test',
       htmlBody: '<p>Bulk</p>',
     };

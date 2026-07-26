@@ -24,10 +24,19 @@ const nonControlCharArb = fc.oneof(
   fc.integer({ min: 0xe000, max: 0xffff }).map(c => String.fromCharCode(c)),
 );
 
-/** Arbitrary for a valid nickname string (1–20 codepoints, no control chars) */
+/**
+ * Arbitrary for a valid nickname string (1–20 codepoints, no control chars).
+ *
+ * `nonControlCharArb` can emit whitespace that `String.prototype.trim()` strips —
+ * ASCII space plus Unicode spaces such as U+00A0 (NBSP) and U+3000 (ideographic
+ * space). A nickname made only of those trims to empty, which `validateNickname`
+ * correctly rejects as NICKNAME_EMPTY, so filter those out here to keep this
+ * arbitrary genuinely valid.
+ */
 const validNicknameArb = fc
   .array(nonControlCharArb, { minLength: 1, maxLength: 20 })
-  .map(chars => chars.join(''));
+  .map(chars => chars.join(''))
+  .filter(s => s.trim().length > 0);
 
 /** Arbitrary for whitespace padding */
 const whitespacePaddingArb = fc.string({

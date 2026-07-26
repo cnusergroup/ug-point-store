@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import fc from 'fast-check';
+import { GetCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { changeNickname } from './change-nickname';
 import { ErrorCodes } from '@points-mall/shared';
 
@@ -57,8 +58,8 @@ describe('Feature: nickname-change, Property 2: Same-nickname rejection', () => 
     vi.restoreAllMocks();
   });
 
-  it('rejects with NICKNAME_SAME_AS_CURRENT when trimmed input equals current nickname, no Update or Query called', () => {
-    fc.assert(
+  it('rejects with NICKNAME_SAME_AS_CURRENT when trimmed input equals current nickname, no Update or Query called', async () => {
+    await fc.assert(
       fc.asyncProperty(
         validNicknameArb,
         whitespacePaddingArb,
@@ -112,8 +113,8 @@ describe('Feature: nickname-change, Property 2: Same-nickname rejection', () => 
     );
   });
 
-  it('exact same nickname without whitespace is always rejected with no DB modifications', () => {
-    fc.assert(
+  it('exact same nickname without whitespace is always rejected with no DB modifications', async () => {
+    await fc.assert(
       fc.asyncProperty(
         validNicknameArb,
         userIdArb,
@@ -175,8 +176,8 @@ describe('Feature: nickname-change, Property 5: Successful change correctness', 
     vi.spyOn(Date, 'now').mockReturnValue(new Date('2025-06-01T12:00:00Z').getTime());
   });
 
-  it('UpdateCommand sets nickname=trimmedNew, appends history with previousNickname, sets nicknameChangedAt', () => {
-    fc.assert(
+  it('UpdateCommand sets nickname=trimmedNew, appends history with previousNickname, sets nicknameChangedAt', async () => {
+    await fc.assert(
       fc.asyncProperty(userIdArb, validNicknameArb, validNicknameArb, async (userId, curNick, newNick) => {
         fc.pre(newNick !== curNick);
         let captured: any = null;
@@ -212,8 +213,8 @@ describe('Feature: nickname-change, Property 5: Successful change correctness', 
     );
   });
 
-  it('returns { success: true } for valid inputs with all checks passing', () => {
-    fc.assert(
+  it('returns { success: true } for valid inputs with all checks passing', async () => {
+    await fc.assert(
       fc.asyncProperty(userIdArb, validNicknameArb, validNicknameArb, async (userId, curNick, newNick) => {
         fc.pre(newNick !== curNick);
         const mockSend = vi.fn().mockImplementation((cmd: any) => {
@@ -230,8 +231,8 @@ describe('Feature: nickname-change, Property 5: Successful change correctness', 
     );
   });
 
-  it('UpdateCommand only updates nickname-related fields; key is userId only', () => {
-    fc.assert(
+  it('UpdateCommand only updates nickname-related fields; key is userId only', async () => {
+    await fc.assert(
       fc.asyncProperty(userIdArb, validNicknameArb, validNicknameArb, async (userId, curNick, newNick) => {
         fc.pre(newNick !== curNick);
         let captured: any = null;
@@ -261,8 +262,8 @@ describe('Feature: nickname-change, Property 5: Successful change correctness', 
     );
   });
 
-  it('nicknameHistory uses list_append with if_not_exists for first-time changes', () => {
-    fc.assert(
+  it('nicknameHistory uses list_append with if_not_exists for first-time changes', async () => {
+    await fc.assert(
       fc.asyncProperty(userIdArb, validNicknameArb, validNicknameArb, async (userId, curNick, newNick) => {
         fc.pre(newNick !== curNick);
         let captured: any = null;

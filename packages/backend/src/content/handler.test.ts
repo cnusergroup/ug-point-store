@@ -243,8 +243,9 @@ describe('Content Lambda Handler', () => {
       const result = await handler(event);
       expect(result.statusCode).toBe(200);
       expect(listContentItems).toHaveBeenCalledWith(
-        { categoryId: 'cat-1', pageSize: 10, lastKey: 'some-key' },
+        { categoryId: 'cat-1', tag: undefined, pageSize: 10, lastKey: 'some-key' },
         expect.anything(),
+        '',
         '',
       );
     });
