@@ -73,8 +73,8 @@ const tables = { usersTable: USERS_TABLE, travelApplicationsTable: TRAVEL_APPLIC
 // ============================================================
 
 describe('Property 6: Approval preserves quota', () => {
-  it('should set status=approved, reviewerId/reviewedAt set, travelEarnUsed unchanged (UpdateCommand used)', () => {
-    fc.assert(
+  it('should set status=approved, reviewerId/reviewedAt set, travelEarnUsed unchanged (UpdateCommand used)', async () => {
+    await fc.assert(
       fc.asyncProperty(
         makePendingApplicationArb(),
         fc.string({ minLength: 3, maxLength: 20 }).filter((s) => s.trim().length > 0),
@@ -133,8 +133,8 @@ describe('Property 6: Approval preserves quota', () => {
 // ============================================================
 
 describe('Feature: travel-independent-quota, Property 6: Reject preserves required output fields', () => {
-  it('should return rejected application with all required output fields populated', () => {
-    fc.assert(
+  it('should return rejected application with all required output fields populated', async () => {
+    await fc.assert(
       fc.asyncProperty(
         makePendingApplicationArb(),
         fc.string({ minLength: 3, maxLength: 20 }).filter((s) => s.trim().length > 0),
@@ -199,8 +199,8 @@ describe('Feature: travel-independent-quota, Property 6: Reject preserves requir
 // ============================================================
 
 describe('Feature: travel-independent-quota, Property 7: Rejection uses simple UpdateCommand', () => {
-  it('should use UpdateCommand on reject targeting only TravelApplications table (no user record update)', () => {
-    fc.assert(
+  it('should use UpdateCommand on reject targeting only TravelApplications table (no user record update)', async () => {
+    await fc.assert(
       fc.asyncProperty(
         makePendingApplicationArb(),
         fc.string({ minLength: 3, maxLength: 20 }).filter((s) => s.trim().length > 0),
@@ -258,8 +258,8 @@ describe('Feature: travel-independent-quota, Property 7: Rejection uses simple U
 // ============================================================
 
 describe('Property 8: User isolation in list queries', () => {
-  it('should only return applications for the specified userId', () => {
-    fc.assert(
+  it('should only return applications for the specified userId', async () => {
+    await fc.assert(
       fc.asyncProperty(
         // Generate 2-5 distinct user IDs
         fc.array(userIdArb, { minLength: 2, maxLength: 5 }).chain((userIds) => {
@@ -343,8 +343,8 @@ describe('Property 8: User isolation in list queries', () => {
 // ============================================================
 
 describe('Property 9: Status filter returns only matching records in descending time order', () => {
-  it('should return only matching status records sorted by createdAt descending', () => {
-    fc.assert(
+  it('should return only matching status records sorted by createdAt descending', async () => {
+    await fc.assert(
       fc.asyncProperty(
         // Generate 5-15 applications with mixed statuses
         fc.array(makeApplicationArb(), { minLength: 5, maxLength: 15 }),

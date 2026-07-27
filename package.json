@@ -13,8 +13,10 @@
     "build:weapp": "cd packages/frontend && npm run build:weapp",
     "deploy:frontend": "aws s3 sync packages/frontend/dist/h5 s3://$STATIC_BUCKET --delete && aws cloudfront create-invalidation --distribution-id $CF_DIST_ID --paths \"/*\"",
     "test": "vitest --run",
+    "test:backend": "node scripts/test-backend.mjs",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p packages/shared && tsc --noEmit -p packages/backend && tsc --noEmit -p packages/cdk",
     "synth": "cd packages/cdk && npx cdk synth",
     "deploy": "cd packages/cdk && npx cdk deploy --all"
   },

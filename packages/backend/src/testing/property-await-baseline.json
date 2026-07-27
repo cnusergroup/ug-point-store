@@ -1,0 +1,3452 @@
+{
+  "spec": "property-test-await-reliability",
+  "phase": "pre-fix",
+  "note": "Preservation baseline captured on UNFIXED code. Regenerate only with an explicit, reviewed decision - it is the F side of F(X) = F'(X).",
+  "excludedPrefixes": [
+    "packages/backend/src/testing/"
+  ],
+  "vitestInclude": [
+    "packages/*/src/**/*.test.ts",
+    "packages/*/src/**/*.test.tsx",
+    "packages/cdk/lambda/**/*.test.ts",
+    "packages/cdk/test/**/*.test.ts"
+  ],
+  "vitestTestExclude": [],
+  "files": [
+    "packages/backend/src/admin/activities.property.test.ts",
+    "packages/backend/src/admin/activities.test.ts",
+    "packages/backend/src/admin/activity-filter.property.test.ts",
+    "packages/backend/src/admin/batch-points-adjust.test.ts",
+    "packages/backend/src/admin/batch-points-earnTotal.property.test.ts",
+    "packages/backend/src/admin/batch-points.property.test.ts",
+    "packages/backend/src/admin/batch-points.test.ts",
+    "packages/backend/src/admin/codes-disable.property.test.ts",
+    "packages/backend/src/admin/codes-distribution.property.test.ts",
+    "packages/backend/src/admin/codes.property.test.ts",
+    "packages/backend/src/admin/codes.test.ts",
+    "packages/backend/src/admin/email-permission.property.test.ts",
+    "packages/backend/src/admin/employee-badge.property.test.ts",
+    "packages/backend/src/admin/feature-toggles-recipients-auth.property.test.ts",
+    "packages/backend/src/admin/handler.test.ts",
+    "packages/backend/src/admin/images.property.test.ts",
+    "packages/backend/src/admin/images.test.ts",
+    "packages/backend/src/admin/invites-multi-role.property.test.ts",
+    "packages/backend/src/admin/invites.test.ts",
+    "packages/backend/src/admin/leader-filter.property.test.ts",
+    "packages/backend/src/admin/meetup-config.test.ts",
+    "packages/backend/src/admin/migrate-skill-points-to-volunteer.test.ts",
+    "packages/backend/src/admin/order-admin-access.property.test.ts",
+    "packages/backend/src/admin/order-admin-invite.property.test.ts",
+    "packages/backend/src/admin/products.test.ts",
+    "packages/backend/src/admin/roles-permission.property.test.ts",
+    "packages/backend/src/admin/roles-protection.property.test.ts",
+    "packages/backend/src/admin/roles.property.test.ts",
+    "packages/backend/src/admin/roles.test.ts",
+    "packages/backend/src/admin/skill-claims.test.ts",
+    "packages/backend/src/admin/superadmin-transfer.test.ts",
+    "packages/backend/src/admin/ug.property.test.ts",
+    "packages/backend/src/admin/ug.test.ts",
+    "packages/backend/src/admin/ugl-exit-routes.property.test.ts",
+    "packages/backend/src/admin/user-search.property.test.ts",
+    "packages/backend/src/admin/users.test.ts",
+    "packages/backend/src/auth/change-password.property.test.ts",
+    "packages/backend/src/auth/change-password.test.ts",
+    "packages/backend/src/auth/forgot-password.property.test.ts",
+    "packages/backend/src/auth/forgot-password.test.ts",
+    "packages/backend/src/auth/handler.test.ts",
+    "packages/backend/src/auth/login.test.ts",
+    "packages/backend/src/auth/register-employee.property.test.ts",
+    "packages/backend/src/auth/register.property.test.ts",
+    "packages/backend/src/auth/register.test.ts",
+    "packages/backend/src/auth/reset-password.property.test.ts",
+    "packages/backend/src/auth/reset-password.test.ts",
+    "packages/backend/src/auth/token.property.test.ts",
+    "packages/backend/src/auth/token.test.ts",
+    "packages/backend/src/auth/validators.property.test.ts",
+    "packages/backend/src/auth/validators.test.ts",
+    "packages/backend/src/auth/verify-email.test.ts",
+    "packages/backend/src/auth/wechat.test.ts",
+    "packages/backend/src/cart/address.test.ts",
+    "packages/backend/src/cart/cart-stock-validation.property.test.ts",
+    "packages/backend/src/cart/cart.test.ts",
+    "packages/backend/src/cart/handler.test.ts",
+    "packages/backend/src/claims/images.test.ts",
+    "packages/backend/src/claims/review.test.ts",
+    "packages/backend/src/claims/submit.test.ts",
+    "packages/backend/src/content/admin-tags.property.test.ts",
+    "packages/backend/src/content/admin-tags.test.ts",
+    "packages/backend/src/content/admin.property.test.ts",
+    "packages/backend/src/content/admin.test.ts",
+    "packages/backend/src/content/comment.property.test.ts",
+    "packages/backend/src/content/comment.test.ts",
+    "packages/backend/src/content/content-permission.property.test.ts",
+    "packages/backend/src/content/edit.property.test.ts",
+    "packages/backend/src/content/edit.test.ts",
+    "packages/backend/src/content/handler.test.ts",
+    "packages/backend/src/content/like.property.test.ts",
+    "packages/backend/src/content/like.test.ts",
+    "packages/backend/src/content/list.property.test.ts",
+    "packages/backend/src/content/list.test.ts",
+    "packages/backend/src/content/mine.test.ts",
+    "packages/backend/src/content/reservation-activities.test.ts",
+    "packages/backend/src/content/reservation-approval.property.test.ts",
+    "packages/backend/src/content/reservation-approval.test.ts",
+    "packages/backend/src/content/reservation.property.test.ts",
+    "packages/backend/src/content/reservation.test.ts",
+    "packages/backend/src/content/tags.property.test.ts",
+    "packages/backend/src/content/tags.test.ts",
+    "packages/backend/src/content/upload.property.test.ts",
+    "packages/backend/src/content/upload.test.ts",
+    "packages/backend/src/credentials/association.property.test.ts",
+    "packages/backend/src/credentials/association.test.ts",
+    "packages/backend/src/credentials/batch.test.ts",
+    "packages/backend/src/credentials/credential-id.property.test.ts",
+    "packages/backend/src/credentials/eligibility.property.test.ts",
+    "packages/backend/src/credentials/eligibility.test.ts",
+    "packages/backend/src/credentials/handler.test.ts",
+    "packages/backend/src/credentials/my-credentials.property.test.ts",
+    "packages/backend/src/credentials/render.property.test.ts",
+    "packages/backend/src/credentials/render.test.ts",
+    "packages/backend/src/credentials/revoke.test.ts",
+    "packages/backend/src/credentials/self-apply.property.test.ts",
+    "packages/backend/src/credentials/sequence.property.test.ts",
+    "packages/backend/src/credentials/source-role.property.test.ts",
+    "packages/backend/src/digest/compose.property.test.ts",
+    "packages/backend/src/digest/handler.property.test.ts",
+    "packages/backend/src/digest/handler.test.ts",
+    "packages/backend/src/digest/query.property.test.ts",
+    "packages/backend/src/email/code-distribution-email.property.test.ts",
+    "packages/backend/src/email/integration.test.ts",
+    "packages/backend/src/email/notifications.property.test.ts",
+    "packages/backend/src/email/notifications.test.ts",
+    "packages/backend/src/email/seed.test.ts",
+    "packages/backend/src/email/send.property.test.ts",
+    "packages/backend/src/email/send.test.ts",
+    "packages/backend/src/email/templates.property.test.ts",
+    "packages/backend/src/email/templates.test.ts",
+    "packages/backend/src/integration/e2e.test.ts",
+    "packages/backend/src/leaderboard/announcements.property.test.ts",
+    "packages/backend/src/leaderboard/announcements.test.ts",
+    "packages/backend/src/leaderboard/handler.test.ts",
+    "packages/backend/src/leaderboard/pagination.property.test.ts",
+    "packages/backend/src/leaderboard/ranking.property.test.ts",
+    "packages/backend/src/leaderboard/ranking.test.ts",
+    "packages/backend/src/middleware/auth-middleware.test.ts",
+    "packages/backend/src/orders/admin-order-shipping.property.test.ts",
+    "packages/backend/src/orders/admin-order.test.ts",
+    "packages/backend/src/orders/handler.test.ts",
+    "packages/backend/src/orders/order.test.ts",
+    "packages/backend/src/participation/session.property.test.ts",
+    "packages/backend/src/points/balance.test.ts",
+    "packages/backend/src/points/handler.test.ts",
+    "packages/backend/src/points/records.test.ts",
+    "packages/backend/src/points/redeem-code-limits.property.test.ts",
+    "packages/backend/src/points/redeem-code.property.test.ts",
+    "packages/backend/src/points/redeem-code.test.ts",
+    "packages/backend/src/products/detail-inactive.property.test.ts",
+    "packages/backend/src/products/detail-preservation.property.test.ts",
+    "packages/backend/src/products/detail.test.ts",
+    "packages/backend/src/products/handler.test.ts",
+    "packages/backend/src/products/list-filter.property.test.ts",
+    "packages/backend/src/products/list.property.test.ts",
+    "packages/backend/src/products/list.test.ts",
+    "packages/backend/src/redemptions/code-candidate-resolve.property.test.ts",
+    "packages/backend/src/redemptions/code-only-product.property.test.ts",
+    "packages/backend/src/redemptions/code-redemption-address.property.test.ts",
+    "packages/backend/src/redemptions/code-redemption-binding.property.test.ts",
+    "packages/backend/src/redemptions/code-redemption-no-points.property.test.ts",
+    "packages/backend/src/redemptions/code-redemption.property.test.ts",
+    "packages/backend/src/redemptions/code-redemption.test.ts",
+    "packages/backend/src/redemptions/handler.test.ts",
+    "packages/backend/src/redemptions/history-pagination.property.test.ts",
+    "packages/backend/src/redemptions/history.test.ts",
+    "packages/backend/src/redemptions/points-redemption-address.property.test.ts",
+    "packages/backend/src/redemptions/points-redemption-failure.property.test.ts",
+    "packages/backend/src/redemptions/points-redemption.property.test.ts",
+    "packages/backend/src/redemptions/points-redemption.test.ts",
+    "packages/backend/src/reports/employee-engagement.property.test.ts",
+    "packages/backend/src/reports/employee-engagement.test.ts",
+    "packages/backend/src/reports/employee-filter.property.test.ts",
+    "packages/backend/src/reports/export.test.ts",
+    "packages/backend/src/reports/formatters.property.test.ts",
+    "packages/backend/src/reports/formatters.test.ts",
+    "packages/backend/src/reports/insight-query.property.test.ts",
+    "packages/backend/src/reports/query.property.test.ts",
+    "packages/backend/src/reports/query.test.ts",
+    "packages/backend/src/settings/feature-toggles-email-permission.property.test.ts",
+    "packages/backend/src/settings/feature-toggles-frequency.property.test.ts",
+    "packages/backend/src/settings/feature-toggles.property.test.ts",
+    "packages/backend/src/settings/feature-toggles.test.ts",
+    "packages/backend/src/settings/invite-settings.test.ts",
+    "packages/backend/src/sync/handler.test.ts",
+    "packages/backend/src/sync/meetup-api.property.test.ts",
+    "packages/backend/src/sync/meetup-api.test.ts",
+    "packages/backend/src/sync/meetup-sync.property.test.ts",
+    "packages/backend/src/sync/rsvp-parse.property.test.ts",
+    "packages/backend/src/sync/sync.property.test.ts",
+    "packages/backend/src/sync/taiwan-date-parser.test.ts",
+    "packages/backend/src/travel/apply.property.test.ts",
+    "packages/backend/src/travel/apply.test.ts",
+    "packages/backend/src/travel/review.property.test.ts",
+    "packages/backend/src/travel/review.test.ts",
+    "packages/backend/src/travel/settings.property.test.ts",
+    "packages/backend/src/travel/settings.test.ts",
+    "packages/backend/src/ugl-exit/awaiting-reminder-list.property.test.ts",
+    "packages/backend/src/ugl-exit/awaiting-reminder-list.test.ts",
+    "packages/backend/src/ugl-exit/detection-job.property.test.ts",
+    "packages/backend/src/ugl-exit/eligibility.property.test.ts",
+    "packages/backend/src/ugl-exit/eligibility.test.ts",
+    "packages/backend/src/ugl-exit/grace-evaluation.property.test.ts",
+    "packages/backend/src/ugl-exit/grace-evaluation.test.ts",
+    "packages/backend/src/ugl-exit/grace-period-job.property.test.ts",
+    "packages/backend/src/ugl-exit/grace-period-job.test.ts",
+    "packages/backend/src/ugl-exit/handler.test.ts",
+    "packages/backend/src/ugl-exit/pending-exit-list.property.test.ts",
+    "packages/backend/src/ugl-exit/pending-exit-list.test.ts",
+    "packages/backend/src/ugl-exit/quarter.property.test.ts",
+    "packages/backend/src/ugl-exit/quarter.test.ts",
+    "packages/backend/src/ugl-exit/reminder-tracking.property.test.ts",
+    "packages/backend/src/ugl-exit/reminder-tracking.test.ts",
+    "packages/backend/src/ugl-exit/review-actions.property.test.ts",
+    "packages/backend/src/ugl-exit/send-reminder-action.property.test.ts",
+    "packages/backend/src/ugl-exit/send-reminder-action.test.ts",
+    "packages/backend/src/user/change-nickname.property.test.ts",
+    "packages/backend/src/user/change-nickname.test.ts",
+    "packages/backend/src/user/nickname-validators.property.test.ts",
+    "packages/backend/src/user/nickname-validators.test.ts",
+    "packages/backend/src/user/profile.test.ts",
+    "packages/backend/src/utils/upload-token.property.test.ts",
+    "packages/backend/src/utils/upload-token.test.ts",
+    "packages/cdk/lambda/cf-country-cookie/index.test.ts",
+    "packages/cdk/lambda/edge-signer/index.property.test.ts",
+    "packages/cdk/lambda/edge-signer/index.test.ts",
+    "packages/cdk/test/api-stack.test.ts",
+    "packages/cdk/test/database-stack.test.ts",
+    "packages/cdk/test/frontend-stack.test.ts",
+    "packages/frontend/src/components/Skeleton/skeleton.property.test.tsx",
+    "packages/frontend/src/components/TabBar/TabBar.property.test.tsx",
+    "packages/frontend/src/components/icons/icons.property.test.tsx",
+    "packages/frontend/src/i18n/i18n.property.test.ts",
+    "packages/frontend/src/i18n/locale-detector.property.test.ts",
+    "packages/frontend/src/i18n/locale-detector.test.ts",
+    "packages/frontend/src/pages/admin/credential-source-type.test.tsx",
+    "packages/frontend/src/pages/admin/email-permission-visibility.property.test.ts",
+    "packages/frontend/src/pages/admin/index.test.tsx",
+    "packages/frontend/src/pages/admin/settings.test.tsx",
+    "packages/frontend/src/pages/admin/ugl-exit-review.test.tsx",
+    "packages/frontend/src/pages/admin/users.test.ts",
+    "packages/frontend/src/pages/index/credential-application.test.tsx",
+    "packages/frontend/src/pages/index/header.property.test.tsx",
+    "packages/frontend/src/pages/leaderboard/tab-visibility.property.test.ts",
+    "packages/frontend/src/pages/profile/my-credentials.test.tsx",
+    "packages/frontend/src/pages/profile/profile.property.test.tsx",
+    "packages/frontend/src/pages/settings/settings.property.test.tsx",
+    "packages/shared/src/types.test.ts"
+  ],
+  "stats": {
+    "packages/backend/src/admin/activities.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        114,
+        146,
+        184,
+        216,
+        266,
+        305
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/admin/activity-filter.property.test.ts": {
+      "syncAssertionLines": [
+        65,
+        86,
+        111,
+        146,
+        170,
+        188
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/admin/batch-points-earnTotal.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        42,
+        148,
+        223
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/admin/batch-points.property.test.ts": {
+      "syncAssertionLines": [
+        47,
+        77,
+        98,
+        108,
+        126,
+        148,
+        170,
+        554,
+        563,
+        575,
+        587,
+        599,
+        924
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        200,
+        306,
+        388,
+        474,
+        640,
+        774,
+        875,
+        983,
+        1068,
+        1165
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 1,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/admin/codes-disable.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        51,
+        76,
+        101,
+        126
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/admin/codes-distribution.property.test.ts": {
+      "syncAssertionLines": [
+        463
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        122,
+        165,
+        213,
+        245,
+        317,
+        403
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/admin/codes.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        37,
+        50,
+        68,
+        83,
+        96,
+        114,
+        229,
+        262,
+        279
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        200
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/admin/email-permission.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        237,
+        268,
+        306
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/admin/employee-badge.property.test.ts": {
+      "syncAssertionLines": [
+        162,
+        175,
+        197,
+        210,
+        275,
+        300,
+        324,
+        338,
+        352
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        26,
+        76
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/admin/feature-toggles-recipients-auth.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        272
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/admin/images.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        59,
+        123,
+        163
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/admin/invites-multi-role.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        25,
+        72,
+        132,
+        163
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/admin/leader-filter.property.test.ts": {
+      "syncAssertionLines": [
+        47,
+        71,
+        99,
+        121,
+        140
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/admin/order-admin-access.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        230,
+        295,
+        322
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/admin/order-admin-invite.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        27,
+        74,
+        100
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/admin/roles-permission.property.test.ts": {
+      "syncAssertionLines": [
+        38,
+        53
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        62,
+        86,
+        106
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/admin/roles-protection.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        91,
+        222,
+        267,
+        310,
+        352,
+        440,
+        470,
+        503,
+        537,
+        566,
+        598
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        50,
+        50,
+        50,
+        50,
+        50,
+        50,
+        50,
+        50,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/admin/roles.property.test.ts": {
+      "syncAssertionLines": [
+        146,
+        159,
+        287
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        42,
+        70,
+        94,
+        192,
+        214,
+        236,
+        300,
+        316
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/admin/ug.property.test.ts": {
+      "syncAssertionLines": [
+        13,
+        34,
+        50,
+        66,
+        90
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        141,
+        172,
+        206,
+        274,
+        337,
+        432,
+        462,
+        490,
+        519,
+        570,
+        620,
+        645,
+        679,
+        715,
+        779,
+        840,
+        901,
+        956,
+        1010,
+        1048
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/admin/ugl-exit-routes.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        314,
+        335,
+        364,
+        380,
+        403,
+        440
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        50,
+        50,
+        50,
+        50,
+        50,
+        50
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/admin/user-search.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        101,
+        132,
+        168,
+        204
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/auth/change-password.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        42,
+        81
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/auth/forgot-password.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        48,
+        88
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/auth/register-employee.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        86,
+        115,
+        145,
+        176
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/auth/register.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        74,
+        93,
+        129
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/auth/reset-password.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        51,
+        124,
+        154
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/auth/token.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        34,
+        48
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/auth/validators.property.test.ts": {
+      "syncAssertionLines": [
+        30,
+        42,
+        54,
+        75,
+        84
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        200
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/cart/cart-stock-validation.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        69,
+        124,
+        159,
+        213,
+        286,
+        359
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/content/admin-tags.property.test.ts": {
+      "syncAssertionLines": [
+        496
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        204,
+        351,
+        451
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/content/admin.property.test.ts": {
+      "syncAssertionLines": [
+        48
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        87,
+        141,
+        162,
+        187
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/content/comment.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        82,
+        104,
+        124,
+        162,
+        192
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/content/content-permission.property.test.ts": {
+      "syncAssertionLines": [
+        104,
+        119,
+        136,
+        164,
+        203,
+        217,
+        231,
+        246,
+        259,
+        288,
+        308,
+        327
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        300,
+        300,
+        300
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/content/edit.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        100,
+        218,
+        348,
+        376,
+        404,
+        449,
+        477,
+        526,
+        587,
+        684
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/content/like.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        80,
+        132,
+        169
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/content/list.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        92,
+        111,
+        132,
+        163,
+        188,
+        224,
+        277,
+        297,
+        332,
+        476,
+        516,
+        564
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/content/reservation-approval.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [
+        493,
+        515,
+        550
+      ],
+      "awaitedAsyncAssertionLines": [
+        152,
+        199,
+        254,
+        314,
+        372,
+        425
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/content/reservation.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        156,
+        224,
+        286,
+        362,
+        411,
+        469,
+        515
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/content/tags.property.test.ts": {
+      "syncAssertionLines": [
+        507,
+        557,
+        571,
+        585
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        170,
+        213,
+        254,
+        309,
+        380,
+        611
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/content/upload.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        40
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/credentials/association.property.test.ts": {
+      "syncAssertionLines": [
+        219,
+        274,
+        292,
+        444,
+        455,
+        465
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        490,
+        514
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/credentials/credential-id.property.test.ts": {
+      "syncAssertionLines": [
+        59,
+        70,
+        83
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/credentials/eligibility.property.test.ts": {
+      "syncAssertionLines": [
+        186,
+        239,
+        278,
+        318
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/credentials/my-credentials.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        176
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/credentials/render.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        120
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/credentials/self-apply.property.test.ts": {
+      "syncAssertionLines": [
+        94,
+        113,
+        130,
+        144,
+        158
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        399,
+        518,
+        602,
+        809,
+        898,
+        1253,
+        1328,
+        1415,
+        1471,
+        1542,
+        1867,
+        1968,
+        2047
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/credentials/sequence.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        118,
+        183
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/credentials/source-role.property.test.ts": {
+      "syncAssertionLines": [
+        36,
+        61
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/digest/compose.property.test.ts": {
+      "syncAssertionLines": [
+        73,
+        90,
+        108,
+        119,
+        130,
+        146,
+        170,
+        201
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/digest/handler.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        105,
+        153,
+        220
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/digest/query.property.test.ts": {
+      "syncAssertionLines": [
+        81,
+        114,
+        143,
+        186,
+        212,
+        228,
+        248,
+        275,
+        298,
+        330,
+        359,
+        405,
+        422
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/email/code-distribution-email.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        155,
+        326,
+        472
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/email/notifications.property.test.ts": {
+      "syncAssertionLines": [
+        117,
+        160,
+        202
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        258,
+        339,
+        444,
+        547,
+        682,
+        715,
+        747,
+        778,
+        809,
+        910,
+        1092,
+        1145
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/email/send.property.test.ts": {
+      "syncAssertionLines": [
+        54,
+        66,
+        109,
+        123,
+        136,
+        150,
+        163
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        216,
+        335
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/email/templates.property.test.ts": {
+      "syncAssertionLines": [
+        34,
+        63
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        200
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/leaderboard/announcements.property.test.ts": {
+      "syncAssertionLines": [
+        144,
+        153,
+        170,
+        179,
+        196,
+        205,
+        219,
+        228
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        245,
+        386
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/leaderboard/pagination.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        229,
+        288
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/leaderboard/ranking.property.test.ts": {
+      "syncAssertionLines": [
+        69,
+        109,
+        211,
+        232,
+        254,
+        284,
+        313
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        129
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/orders/admin-order-shipping.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        80,
+        129
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/participation/session.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        41,
+        134
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/points/redeem-code-limits.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        28,
+        70,
+        111,
+        154
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/points/redeem-code.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        53,
+        72,
+        96,
+        123
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/products/detail-inactive.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        75
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/products/detail-preservation.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        76,
+        122
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/products/list-filter.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        79,
+        97,
+        121,
+        145,
+        175
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/products/list.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        65,
+        83,
+        108,
+        132
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/redemptions/code-candidate-resolve.property.test.ts": {
+      "syncAssertionLines": [
+        15,
+        25,
+        42
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/redemptions/code-only-product.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        39,
+        70,
+        100
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/redemptions/code-redemption-address.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        68,
+        93,
+        118,
+        197,
+        235,
+        269,
+        303
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/redemptions/code-redemption-binding.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        53,
+        112,
+        153
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/redemptions/code-redemption-no-points.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        52,
+        103,
+        148
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/redemptions/code-redemption.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        124,
+        183,
+        235,
+        346
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/redemptions/history-pagination.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        52,
+        83,
+        106,
+        132,
+        155,
+        255,
+        297
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/redemptions/points-redemption-address.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        127,
+        152,
+        177,
+        202,
+        229,
+        254,
+        279,
+        362,
+        395,
+        426,
+        457,
+        492,
+        532,
+        564,
+        601
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/redemptions/points-redemption-failure.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        98,
+        122,
+        145,
+        169,
+        192
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/redemptions/points-redemption.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        86,
+        109,
+        136,
+        164,
+        195
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/reports/employee-engagement.property.test.ts": {
+      "syncAssertionLines": [
+        30,
+        52,
+        73,
+        95,
+        119,
+        157,
+        182,
+        224,
+        286
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/reports/employee-filter.property.test.ts": {
+      "syncAssertionLines": [
+        92,
+        124,
+        153,
+        182,
+        196,
+        217,
+        243,
+        257,
+        278,
+        301
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/reports/formatters.property.test.ts": {
+      "syncAssertionLines": [
+        209,
+        260,
+        292,
+        314,
+        336,
+        358
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/reports/insight-query.property.test.ts": {
+      "syncAssertionLines": [
+        51,
+        84,
+        116,
+        137,
+        153,
+        175,
+        208,
+        240,
+        266,
+        295,
+        343,
+        363,
+        383
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/reports/query.property.test.ts": {
+      "syncAssertionLines": [
+        72,
+        88,
+        101,
+        137,
+        195,
+        219,
+        243,
+        274,
+        298,
+        307,
+        316,
+        328,
+        340,
+        352,
+        390,
+        440,
+        487
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/settings/feature-toggles-email-permission.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        101,
+        167,
+        272,
+        329,
+        386
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/settings/feature-toggles-frequency.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        142,
+        165,
+        200
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/settings/feature-toggles.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        117,
+        167,
+        224,
+        281,
+        349,
+        480,
+        590,
+        662,
+        734,
+        781,
+        800,
+        813,
+        951,
+        983,
+        1020,
+        1064,
+        1137,
+        1176,
+        1316,
+        1335,
+        1369
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/sync/meetup-api.property.test.ts": {
+      "syncAssertionLines": [
+        91,
+        242,
+        264,
+        307,
+        317
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        168
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/sync/meetup-sync.property.test.ts": {
+      "syncAssertionLines": [
+        96,
+        162,
+        172
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        238,
+        338
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/sync/rsvp-parse.property.test.ts": {
+      "syncAssertionLines": [
+        16,
+        25,
+        38,
+        47
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        200
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/sync/sync.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        152,
+        183,
+        208
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/travel/apply.property.test.ts": {
+      "syncAssertionLines": [
+        182,
+        198,
+        311,
+        333,
+        367,
+        414,
+        432,
+        460,
+        488,
+        516,
+        679,
+        692,
+        705
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [
+        43,
+        119,
+        236,
+        599,
+        780
+      ],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/travel/review.property.test.ts": {
+      "syncAssertionLines": [
+        422
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [
+        77,
+        137,
+        203,
+        262,
+        347
+      ],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/travel/settings.property.test.ts": {
+      "syncAssertionLines": [
+        43,
+        61,
+        86,
+        111,
+        143
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        204
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/ugl-exit/awaiting-reminder-list.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        141
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/ugl-exit/detection-job.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        202,
+        256,
+        312,
+        349
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        30,
+        50,
+        50,
+        50
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/ugl-exit/eligibility.property.test.ts": {
+      "syncAssertionLines": [
+        52,
+        71,
+        85,
+        181,
+        201,
+        234
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        20,
+        20,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/ugl-exit/grace-evaluation.property.test.ts": {
+      "syncAssertionLines": [
+        57,
+        75,
+        97
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/ugl-exit/grace-period-job.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        267,
+        296,
+        345
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        25,
+        25,
+        30
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/ugl-exit/pending-exit-list.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        101,
+        130
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        10,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/ugl-exit/quarter.property.test.ts": {
+      "syncAssertionLines": [
+        55,
+        74,
+        85,
+        95
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/ugl-exit/reminder-tracking.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        173,
+        209,
+        242,
+        282,
+        321
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/ugl-exit/review-actions.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        113,
+        158,
+        190,
+        256,
+        287,
+        318
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/ugl-exit/send-reminder-action.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        179,
+        272
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        30,
+        50
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/user/change-nickname.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        62,
+        117,
+        180,
+        217,
+        235,
+        266
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/user/nickname-validators.property.test.ts": {
+      "syncAssertionLines": [
+        68,
+        107,
+        125,
+        144,
+        178,
+        198
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        200
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/backend/src/utils/upload-token.property.test.ts": {
+      "syncAssertionLines": [
+        24,
+        62,
+        73,
+        121
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/cdk/lambda/edge-signer/index.property.test.ts": {
+      "syncAssertionLines": [],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [
+        96
+      ],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/frontend/src/components/Skeleton/skeleton.property.test.tsx": {
+      "syncAssertionLines": [
+        74,
+        98
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/frontend/src/components/TabBar/TabBar.property.test.tsx": {
+      "syncAssertionLines": [
+        74,
+        105,
+        149
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/frontend/src/components/icons/icons.property.test.tsx": {
+      "syncAssertionLines": [
+        86,
+        114,
+        142
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/frontend/src/i18n/i18n.property.test.ts": {
+      "syncAssertionLines": [
+        47,
+        74,
+        116,
+        144
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/frontend/src/i18n/locale-detector.property.test.ts": {
+      "syncAssertionLines": [
+        47,
+        65,
+        85,
+        118,
+        133,
+        150,
+        180,
+        193,
+        206,
+        260,
+        287,
+        318,
+        332,
+        347,
+        392,
+        425,
+        445,
+        460,
+        490
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/frontend/src/pages/admin/credential-source-type.test.tsx": {
+      "syncAssertionLines": [
+        91
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/frontend/src/pages/admin/email-permission-visibility.property.test.ts": {
+      "syncAssertionLines": [
+        61
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/frontend/src/pages/admin/index.test.tsx": {
+      "syncAssertionLines": [
+        49
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/frontend/src/pages/index/header.property.test.tsx": {
+      "syncAssertionLines": [
+        70
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/frontend/src/pages/leaderboard/tab-visibility.property.test.ts": {
+      "syncAssertionLines": [
+        46,
+        90,
+        104,
+        118,
+        132
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/frontend/src/pages/profile/profile.property.test.tsx": {
+      "syncAssertionLines": [
+        47
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/frontend/src/pages/settings/settings.property.test.tsx": {
+      "syncAssertionLines": [
+        37
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    },
+    "packages/shared/src/types.test.ts": {
+      "syncAssertionLines": [
+        367,
+        435,
+        448,
+        461,
+        487,
+        499,
+        515,
+        529,
+        541,
+        579,
+        603,
+        630,
+        661,
+        686,
+        740,
+        767,
+        794,
+        816,
+        833,
+        848,
+        862,
+        1006,
+        1028,
+        1048
+      ],
+      "awaitedSyncAssertionLines": [],
+      "awaitedAsyncAssertionLines": [],
+      "unawaitedAsyncAssertionLines": [],
+      "numRuns": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        200,
+        200,
+        200
+      ],
+      "markers": {
+        "skip": 0,
+        "todo": 0,
+        "only": 0,
+        "dangerouslyIgnoreUnhandledErrors": 0
+      }
+    }
+  },
+  "totals": {
+    "files": 229,
+    "syncAssertions": 313,
+    "awaitedAsyncAssertions": 374,
+    "unawaitedAsyncAssertions": 10,
+    "numRunsValues": 700,
+    "markers": {
+      "skip": 1,
+      "todo": 0,
+      "only": 0,
+      "dangerouslyIgnoreUnhandledErrors": 0
+    }
+  }
+}
