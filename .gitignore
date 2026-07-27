@@ -4,7 +4,9 @@ dist/
 .vite/
 coverage/
 cdk.out/
-scripts/
+scripts/*
+# Exception: the backend sharded test runner referenced by `npm run test:backend`
+!scripts/test-backend.mjs
 
 # Temporary debug/test files
 delkey.json
@@ -22,6 +24,9 @@ tmp-q.json
 
 # CDK alternate synth output
 cdk.out2/
+
+# Vitest sharded test blob output
+.vitest-blob/
 
 # Internal project report (cost/Git history) - DO NOT commit
 商城项目汇报.md

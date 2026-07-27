@@ -39,8 +39,8 @@ const pointsRecordArb = fc.record({
 });
 
 describe('Feature: travel-speaker-points, Property 1: Speaker-only earn total filtering', () => {
-  it('should return speakerEarnTotal equal to the sum of only Speaker earn records', () => {
-    fc.assert(
+  it('should return speakerEarnTotal equal to the sum of only Speaker earn records', async () => {
+    await fc.assert(
       fc.asyncProperty(
         fc.array(pointsRecordArb, { minLength: 1, maxLength: 30 }),
         fc.integer({ min: 100, max: 5_000 }),
@@ -115,8 +115,8 @@ describe('Feature: travel-speaker-points, Property 1: Speaker-only earn total fi
     );
   });
 
-  it('should return speakerEarnTotal as 0 when no Speaker earn records exist', () => {
-    fc.assert(
+  it('should return speakerEarnTotal as 0 when no Speaker earn records exist', async () => {
+    await fc.assert(
       fc.asyncProperty(
         fc.array(
           fc.record({
@@ -232,8 +232,8 @@ const travelAppRecordArb = fc.record({
 });
 
 describe('Feature: travel-independent-quota, Property 2: Used count derivation from applications', () => {
-  it('domesticUsedCount and internationalUsedCount should match counts of pending+approved per category', () => {
-    fc.assert(
+  it('domesticUsedCount and internationalUsedCount should match counts of pending+approved per category', async () => {
+    await fc.assert(
       fc.asyncProperty(
         fc.array(travelAppRecordArb, { minLength: 0, maxLength: 30 }),
         fc.integer({ min: 100, max: 5_000 }),
@@ -595,8 +595,8 @@ describe('Feature: travel-independent-quota, Property 5: Submit and resubmit ava
     travelApplicationsTable: 'TravelApplications',
   };
 
-  it('should succeed if and only if categoryUsedCount < floor(earnTotal / categoryThreshold)', () => {
-    fc.assert(
+  it('should succeed if and only if categoryUsedCount < floor(earnTotal / categoryThreshold)', async () => {
+    await fc.assert(
       fc.asyncProperty(
         validCategoryArb,
         validCommunityRoleArb,
@@ -776,8 +776,8 @@ describe('Feature: travel-independent-quota, Property 11: Resubmission correctly
     return { send: sendMock } as any;
   }
 
-  it('should set status to pending with no earnDeducted and use PutCommand after resubmission', () => {
-    fc.assert(
+  it('should set status to pending with no earnDeducted and use PutCommand after resubmission', async () => {
+    await fc.assert(
       fc.asyncProperty(
         fc.constantFrom('domestic', 'international') as fc.Arbitrary<'domestic' | 'international'>,
         fc.constantFrom('domestic', 'international') as fc.Arbitrary<'domestic' | 'international'>,
